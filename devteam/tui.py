@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from rich.text import Text
 from textual.app import App
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Header, Label, Markdown, OptionList, RichLog, Static, TextArea, Tree
@@ -245,6 +246,10 @@ class Confirm(ModalScreen):
             yield Label(Text("y: yes    n or esc: no", "dim"))
 
 
+class ItemTree(Tree):
+    BINDINGS = [Binding("enter", "select_cursor", "Answer / move item")]
+
+
 class Backlog(App):
     TITLE = "devteam"
     CSS = """
@@ -295,7 +300,7 @@ class Backlog(App):
         yield Header()
         yield Static(id="summary")
         with Horizontal():
-            yield Tree("Backlog", id="items")
+            yield ItemTree("Backlog", id="items")
             with VerticalScroll(id="detail"):
                 yield Static(id="card")
                 yield Markdown(id="body")
@@ -303,13 +308,19 @@ class Backlog(App):
         yield Footer()
 
     def on_mount(self):
-        tree = self.query_one("#items", Tree)
-        tree.show_root = False
-        tree.guide_depth = 3
-        tree.focus()
+        # Looked up once: while a dialog is open, queries run against the dialog instead.
+        self.item_tree = self.query_one("#items", Tree)
+        self.summary_bar = self.query_one("#summary", Static)
+        self.detail_pane = self.query_one("#detail", VerticalScroll)
+        self.card_view = self.query_one("#card", Static)
+        self.body_view = self.query_one("#body", Markdown)
+        self.agent_log = self.query_one("#activity", RichLog)
+        self.item_tree.show_root = False
+        self.item_tree.guide_depth = 3
+        self.item_tree.focus()
         if self.runner is not None:
             self.runner.report = lambda message: self.call_from_thread(self.agent_report, message)
-        self.query_one("#activity", RichLog).can_focus = False
+        self.agent_log.can_focus = False
         self.agents_title()
         self.action_reload()
         self.set_interval(REFRESH_SECONDS, self.action_reload)
@@ -323,11 +334,11 @@ class Backlog(App):
         if signature == self.signature:
             return
         self.signature, self.data = signature, data
-        self.query_one("#summary", Static).update(Text(f"ERROR: {error}", INVALID) if error else summary(data))
+        self.summary_bar.update(Text(f"ERROR: {error}", INVALID) if error else summary(data))
         self.rebuild()
 
     def rebuild(self):
-        tree = self.query_one("#items", Tree)
+        tree = self.item_tree
         tree.clear()
         shown = visible(self.data, self.only_mine)
         nodes = {}
@@ -369,8 +380,8 @@ class Backlog(App):
         if row == self.shown:
             return
         self.shown = row
-        self.query_one("#card", Static).update(card(row) if row else Text("Nothing to show.", "dim"))
-        self.query_one("#body", Markdown).update(row.body if row and not row.errors else "")
+        self.card_view.update(card(row) if row else Text("Nothing to show.", "dim"))
+        self.body_view.update(row.body if row and not row.errors else "")
 
     def on_tree_node_highlighted(self, event):
         if isinstance(event.node.data, Row):
@@ -420,7 +431,7 @@ class Backlog(App):
         return True
 
     def agents_title(self):
-        log = self.query_one("#activity", RichLog)
+        log = self.agent_log
         if self.runner is None:
             log.border_title = "Agents: not available"
         elif self.thread is not None and not self.stop.is_set():
@@ -429,7 +440,7 @@ class Backlog(App):
             log.border_title = "Agents: stopped - s to start; agent-owned steps wait until then"
 
     def agent_report(self, message):
-        self.query_one("#activity", RichLog).write(message)
+        self.agent_log.write(message)
         self.action_reload()
 
     def agent_loop(self):
@@ -483,7 +494,7 @@ class Backlog(App):
         self.action_reload()
 
     def action_switch_pane(self):
-        tree, detail = self.query_one("#items", Tree), self.query_one("#detail", VerticalScroll)
+        tree, detail = self.item_tree, self.detail_pane
         (detail if tree.has_focus else tree).focus()
 
 

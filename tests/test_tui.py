@@ -239,6 +239,23 @@ class Acting(Fixture):
             self.assertIn("Waiting on  analyst", app.query_one("#card").content.plain)
             self.assertEqual([], self.calls)
 
+    async def test_refresh_and_agent_reports_while_a_dialog_is_open(self):
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            self.assertIn("enter", [binding.key for binding in app.query_one("#items").BINDINGS if binding.show])
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            self.repo.transition(self.loose.id, "analyse")
+            app.action_reload()
+            app.agent_report("BUG-001 analysis: analyst started")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, tui.Actions)
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertEqual("analysis", self.step(self.waiting))
+            self.assertIn("  BUG-001    analysis", " ".join(n.label.plain for n in self.nodes(app.query_one("#items"))))
+
     async def test_agent_owned_and_finished_items_offer_nothing(self):
         app = tui.Backlog(self.repo, self.runner)
         async with app.run_test(size=(120, 40)) as pilot:
