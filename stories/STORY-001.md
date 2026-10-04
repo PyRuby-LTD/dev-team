@@ -4,7 +4,7 @@ type: story
 title: "Define the workflow in JSON and track each item's step"
 parent: EPIC-001
 workflow: default
-step: review
+step: accept
 ---
 
 # Define the workflow in JSON and track each item's step
@@ -61,3 +61,25 @@ or revisions in front matter. Git history is the audit trail.
   applied, then `step` becomes the target and the body is unchanged byte for
   byte; any other name is refused and the file is untouched.
 - Given a new item is captured, then its `step` is the workflow's `initial`.
+
+## Review
+
+`git diff main...devteam/STORY-001` is empty: the branch tip (18848f3) is the
+same commit as main, so this change adds nothing to review. The criteria are
+already met by code on main (commit 4fcf390), which I read directly:
+
+- Owner and target-step rules: `devteam/workflow.py` `build` rejects bad owners
+  and undefined transition targets with the step name in the message.
+- Unknown role: rejected with the role named (`role 'x' is not in config/roles.toml`).
+- Undefined `workflow` or `step`: `Backlog.step` raises and the validate pass
+  reports the file (`devteam/backlog.py` around lines 186-211).
+- Transition: only the `step:` line is rewritten, the body is checked unchanged,
+  and unknown names are refused with the file untouched (lines 275-291).
+- Capture uses `workflow.initial` (line 235).
+
+`tests/test_workflow.py` has a test per criterion. I could not run the suite in
+this session (command needs approval), so passing tests are unverified.
+
+No defects found in the existing code. Approving on the basis that nothing
+further is needed for this item; if a distinct change was expected on the
+branch, it was not committed.
