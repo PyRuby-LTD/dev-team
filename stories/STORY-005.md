@@ -95,3 +95,7 @@ product-owner transition in the JSON.
   workflow file with no type-specific code in the runner or TUI.
 - [human] Given a one-paragraph idea, when the customer goes through analysis,
   then the resulting work items reflect their answers.
+
+## Feedback
+
+- **rework -> analysis:** The step names here overlap with the default workflow steps, i.e. "review". The review step on analysis is owned by a human, but on the default workflow it's owned by an agent. There needs to be a way of disambiguating these workflows.
