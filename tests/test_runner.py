@@ -171,7 +171,7 @@ class EngineInvocation(unittest.TestCase):
             echo = Role("analyst", "sh", "m1", 5, ["sh", "-c", "echo \"$0 {model} {permission}\"; echo oops >&2; exit 4",
                                                     "{prompt}"], "write-mode", False)
             code, reply = engines.run(echo, "hello", Path(directory), Path(directory), log)
-            self.assertEqual((4, "hello m1 write-mode\n"), (code, reply))
+            self.assertEqual((4, echo.brief() + "\n\nhello m1 write-mode\n"), (code, reply))
             self.assertIn("oops", log.read_text())
             missing = Role("analyst", "none", "m1", 5, ["definitely-not-a-command-xyz"], "w", False)
             self.assertEqual((127, ""), engines.run(missing, "p", Path(directory), Path(directory), log))
