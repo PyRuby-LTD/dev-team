@@ -4,7 +4,7 @@ type: story
 title: "See work items and their steps in a terminal UI"
 parent: EPIC-001
 workflow: default
-step: accept
+step: done
 ---
 
 # See work items and their steps in a terminal UI
