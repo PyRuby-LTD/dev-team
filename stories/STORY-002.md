@@ -4,7 +4,7 @@ type: story
 title: "Run agent-owned steps"
 parent: EPIC-001
 workflow: default
-step: review
+step: implement
 ---
 
 # Run agent-owned steps
@@ -50,3 +50,11 @@ permission sandboxes beyond what the engine templates already apply.
   the runner loops, then the second progresses.
 - Given the analyst needs clarification, when it finishes, then its questions are
   in the item body under `## Questions` and the item is at `answering`.
+
+## Review
+
+Outcome: revise.
+
+- `git diff main...devteam/STORY-002` is empty. The branch tip (1d36194) is the same commit as `main`, and the working tree is clean. There is no change to judge against the acceptance criteria.
+- `devteam/runner.py` and a `run` subcommand already exist on `main`, and `pipeline.py` and `workitem.py` are already gone. If that earlier work is what satisfies this story, this branch does not show it. Nothing here proves the six criteria (fake-engine invocation, valid transition, failure and no retry until restart, human-owned or terminal steps skipped, a waiting item not blocking another, analyst `## Questions` leading to `answering`).
+- Trigger: review the branch as it stands. Result: no code, no tests and no evidence for any criterion. Either commit the implementation and tests to this branch, or show which commits on `main` already deliver the story.
