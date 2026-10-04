@@ -51,3 +51,13 @@ Captured 2026-10-04.
 
 Captured in [STORY-005](stories/STORY-005.md) as a `request` work-item type with
 its own analysis workflow.
+
+## Customer decisions: visible work, pull requests and where the backlog lives
+
+Captured 2026-10-04. Captured in [STORY-007](stories/STORY-007.md).
+
+> I had thought of progressing one thing at a time but I guess it would need a branch per story and multiple stories could be in flight at the same time. Just makes it tricky to see what's going on given the idea of creating a repo, check it out locally and then run devteam in the root. That would imply being able to see the changes in that repo occurring, even if that means only progressing one story / task / bug at a time.
+
+> I'd like to be able to decide to have the agent create a PR and push to github once I've taken a cursory look. Once that's done, it should be able to move on to the next work item in a separate branch.
+
+> Annoying as it is, I think backlog on it's own branch is probably the least worst option. I don't want the backlog externalized, so this feels like it at least keeps it contained to the repo. Could work items in a terminal state be merged into the main branch?

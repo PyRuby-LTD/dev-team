@@ -1,8 +1,9 @@
-# Which engine and model each role uses. Roles are mapped to pipeline stages
-# in devteam/pipeline.py.
+# Which engine and model each role uses. Workflow steps in workflows/*.json name
+# their owning role as agent:<role>.
 
 [engines.claude]
-# {prompt} {model} {cwd} {brief} {extra_dir} are substituted per invocation.
+# {prompt} {model} {cwd} {brief} {extra_dir} {permission} {max_turns} are
+# substituted per invocation. {extra_dir} is the workspace holding the work items.
 command = [
   "claude", "-p", "{prompt}",
   "--model", "{model}",
@@ -12,7 +13,7 @@ command = [
   "--max-turns", "{max_turns}",
   "--output-format", "text",
 ]
-permissions = { read = "plan", write = "acceptEdits" }
+permission = "acceptEdits"
 
 [engines.codex]
 command = [
@@ -23,9 +24,10 @@ command = [
   "--sandbox", "{permission}",
   "--skip-git-repo-check",
 ]
-permissions = { read = "read-only", write = "workspace-write" }
+permission = "workspace-write"
 
 # One entry per role. Swap engine/model freely; that is the point of the file.
+# worktree = true runs the role in a git worktree on branch devteam/<item id>.
 [roles.product_owner]
 engine = "claude"
 model = "sonnet"
@@ -40,8 +42,10 @@ max_turns = 30
 engine = "codex"
 model = "gpt-6.1-sol"
 max_turns = 60
+worktree = true
 
 [roles.reviewer]
 engine = "claude"
 model = "sonnet"
 max_turns = 30
+worktree = true

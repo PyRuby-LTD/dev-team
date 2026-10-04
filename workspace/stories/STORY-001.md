@@ -4,7 +4,7 @@ type: story
 title: "Define the workflow in JSON and track each item's step"
 parent: EPIC-001
 workflow: default
-step: ready
+step: review
 ---
 
 # Define the workflow in JSON and track each item's step
@@ -40,9 +40,8 @@ Proposed default, using the roles that already exist:
 
 A work item's front matter is `id`, `type`, `title`, `parent`, `workflow` and
 `step`. `workflow` names the JSON file; `step` is the only state. Epics carry
-neither. `devteam/backlog.py` already parses and validates these fields but
-does not yet check them against a workflow, and capture hard-codes `default`
-and `captured`; replace both with the loaded definition.
+neither. `devteam/backlog.py` checks both against the loaded definition and
+capture uses the workflow's `initial` step.
 
 Out of scope: workflow versions or digests, guards, display metadata, history
 or revisions in front matter. Git history is the audit trail.

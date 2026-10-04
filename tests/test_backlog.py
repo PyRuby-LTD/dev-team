@@ -128,7 +128,7 @@ class BacklogAcceptance(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()) as output:
             main(prefix + ["capture", "bug", "CLI bug"])
             main(prefix + ["validate"])
-        self.assertIn("BUG-001  captured", output.getvalue())
+        self.assertRegex(output.getvalue(), r"BUG-001\s+captured\s+human")
         self.story.path.write_text("broken")
         with contextlib.redirect_stdout(io.StringIO()) as output, self.assertRaises(SystemExit) as exit:
             main(prefix + ["validate"])

@@ -1,9 +1,12 @@
 """Markdown work items. Front matter holds identity, hierarchy and the current workflow step."""
 from dataclasses import dataclass, field
 from pathlib import Path
+import os
 import re
 
 import yaml
+
+from . import workflow as workflows
 
 
 class InvalidRecord(ValueError):
@@ -46,9 +49,7 @@ FIELDS = {"id", "type", "title", "parent", "workflow", "step"}
 PARENTS = {"story": {"epic"}, "task": {"story", "bug"}, "bug": {"epic", "story", "task"}}
 ID = re.compile(r"[A-Z][A-Z0-9]*-[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 
-# Until workflow definitions are loaded (STORY-001), capture uses these fixed values.
 DEFAULT_WORKFLOW = "default"
-INITIAL_STEP = "captured"
 
 
 def valid_id(value):
@@ -157,8 +158,24 @@ def validate_links(result):
 
 class Repository:
     """Explicit backlog root; only epics/stories/tasks/bugs directories contain items."""
-    def __init__(self, root):
+    def __init__(self, root, workflows=None, roles=None):
         self.root = Path(root).resolve()
+        self.workflow_dir = workflows
+        self.roles = roles
+        self._workflows = {}
+
+    def workflow(self, name):
+        if name not in self._workflows:
+            self._workflows[name] = workflows.load(name, self.workflow_dir, self.roles)
+        return self._workflows[name]
+
+    def step(self, record):
+        """The workflow step a record is at; raises if either is undefined."""
+        definition = self.workflow(record.metadata["workflow"])
+        step = definition.steps.get(record.metadata["step"])
+        if step is None:
+            raise InvalidRecord(f"step {record.metadata['step']!r} is not defined in workflow {definition.name!r}")
+        return step
 
     def scan(self):
         result = Snapshot()
@@ -174,8 +191,10 @@ class Repository:
                     record = parse(path, path.read_bytes().decode("utf-8"))
                     if record.metadata["type"] != kind:
                         raise InvalidRecord(f"type does not match directory {directory.name}")
+                    if kind != "epic":
+                        self.step(record)
                     result.records[path] = record
-                except (InvalidRecord, OSError, UnicodeError) as exc:
+                except (InvalidRecord, workflows.InvalidWorkflow, OSError, UnicodeError) as exc:
                     result.error(path, str(exc))
         return validate_links(result)
 
@@ -195,7 +214,7 @@ class Repository:
         if parent is not None:
             metadata["parent"] = parent
         if kind != "epic":
-            metadata.update(workflow=DEFAULT_WORKFLOW, step=INITIAL_STEP)
+            metadata.update(workflow=DEFAULT_WORKFLOW, step=self.workflow(DEFAULT_WORKFLOW).initial)
         validate_metadata(metadata)
         if item_id in used:
             raise InvalidRecord(f"duplicate ID {item_id}; choose a unique ID")
@@ -208,3 +227,30 @@ class Repository:
         with record.path.open("xb") as fh:
             fh.write(record.render().encode("utf-8"))
         return record
+
+    def transition(self, item_id, name):
+        record = self.scan().valid.get(item_id)
+        if record is None:
+            raise InvalidRecord(f"{item_id} is missing or invalid; run validate")
+        if record.metadata["type"] == "epic":
+            raise InvalidRecord("epics have no workflow step")
+        step = self.step(record)
+        if name not in step.transitions:
+            valid = ", ".join(step.transitions) or "none (terminal step)"
+            raise InvalidRecord(f"{name!r} is not a transition from {step.name!r}; valid: {valid}")
+        target = step.transitions[name]
+        # Rewrite only the step line so the rest of the file stays byte for byte.
+        lines = record.path.read_bytes().decode("utf-8").splitlines(keepends=True)
+        end = next(i for i in range(1, len(lines)) if lines[i].rstrip("\r\n") == "---")
+        for i in range(1, end):
+            if re.match(r"step\s*:", lines[i]):
+                ending = lines[i][len(lines[i].rstrip("\r\n")):]
+                lines[i] = "step: " + yaml.safe_dump(target).splitlines()[0] + ending
+        text = "".join(lines)
+        updated = parse(record.path, text)
+        if updated.metadata["step"] != target or updated.body != record.body:
+            raise InvalidRecord(f"could not rewrite the step line in {record.path}")
+        temporary = record.path.with_name(record.path.name + ".tmp")
+        temporary.write_bytes(text.encode("utf-8"))
+        os.replace(temporary, record.path)
+        return updated

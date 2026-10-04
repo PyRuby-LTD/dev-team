@@ -1,15 +1,17 @@
 import argparse
 from pathlib import Path
 
-from .config import load_roles
-from . import pipeline, workitem
-
 
 def cmd_backlog(args):
     from .backlog import InvalidRecord, Repository
+    from .workflow import InvalidWorkflow
 
     repo = Repository(args.workspace)
     try:
+        if args.backlog_action == "move":
+            record = repo.transition(args.id, args.transition)
+            print(f"{record.id} -> {record.metadata['step']} ({repo.step(record).owner})")
+            return
         if args.backlog_action == "capture":
             body = Path(args.file).read_bytes().decode("utf-8") if args.file else ""
             record = repo.create(args.type, args.title, body, parent=args.parent, item_id=args.id)
@@ -20,67 +22,31 @@ def cmd_backlog(args):
             for error in errors:
                 print(f"{path}: ERROR: {error}")
         for record in snapshot.valid.values():
-            print(f"{record.id}  {record.metadata.get('step', '-'):<12} {record.metadata['title']}")
+            step = repo.step(record) if "step" in record.metadata else None
+            print(f"{record.id:<10} {step.name if step else '-':<12} "
+                  f"{'-' if step is None or step.terminal else step.owner:<18} {record.metadata['title']}")
         if snapshot.errors:
             raise SystemExit(1)
-    except (InvalidRecord, OSError, UnicodeError) as exc:
+    except (InvalidRecord, InvalidWorkflow, OSError, UnicodeError) as exc:
         raise SystemExit(str(exc)) from exc
 
 
-def cmd_new(args):
-    request = args.request or Path(args.file).read_text()
-    item = workitem.create(request, Path(args.repo))
-    print(f"created {item.id} in {item.path}")
-
-
-def cmd_step(args):
-    print(pipeline.step(workitem.load(args.id), load_roles()))
-
-
 def cmd_run(args):
-    item, roles = workitem.load(args.id), load_roles()
-    while item["status"] == "ready" and item["stage"] not in pipeline.TERMINAL:
-        print(pipeline.step(item, roles))
+    from .backlog import Repository
+    from .runner import Runner
 
-
-def cmd_status(args):
-    for item in workitem.all_items():
-        title = item["title"] or item.artifact("request.md").splitlines()[0][:48]
-        print(f"{item.id}  {item['stage']:<12} {item['status']:<14} {title}")
-
-
-def cmd_show(args):
-    item = workitem.load(args.id)
-    print(f"{item.id}  {item['title']}")
-    print(f"stage={item['stage']} status={item['status']} revisions={item['revisions']}")
-    print(f"worktree={item['worktree']} branch={item['branch']}")
-    for entry in item["history"]:
-        print(f"  {entry['at']}  {entry['stage']:<12} {entry['role']:<14} "
-              f"{entry['engine']}/{entry['model']}  exit={entry['exit_code']}")
-    for entry in item["human"]:
-        print(f"  {entry['at']}  HUMAN {entry['action']}: {entry['note']}")
-
-
-def cmd_decide(args):
-    item = workitem.load(args.id)
-    item["human"].append({"at": workitem.now(), "action": args.action, "note": args.note or ""})
-    if args.action == "approve":
-        item["stage"], item["status"] = "done", "done"
-    elif args.action == "revise":
-        item["revisions"] += 1
-        item["stage"], item["status"] = "implement", "ready"
-    elif args.action == "reject":
-        item["stage"], item["status"] = "done", "rejected"
-    else:  # resume, after answering questions in request.md
-        item["status"] = "ready"
-    item.save()
-    print(f"{item.id} -> stage={item['stage']} status={item['status']}")
+    try:
+        Runner(Repository(args.workspace)).run(once=args.once)
+    except KeyboardInterrupt:
+        pass
 
 
 def cmd_clean(args):
-    item = workitem.load(args.id)
-    pipeline.remove_worktree(item)
-    print(f"removed worktree for {item.id}")
+    from .runner import remove_worktree
+
+    if not remove_worktree(args.workspace, args.id):
+        raise SystemExit(f"no worktree for {args.id}")
+    print(f"removed worktree for {args.id}")
 
 
 def main(argv=None):
@@ -98,31 +64,20 @@ def main(argv=None):
     capture.add_argument("--parent")
     capture.add_argument("--file", help="UTF-8 Markdown body; metadata is generated separately")
     capture.set_defaults(func=cmd_backlog)
+    move = actions.add_parser("move", help="apply one of the current step's transitions")
+    move.add_argument("id")
+    move.add_argument("transition")
+    move.set_defaults(func=cmd_backlog)
 
-    p = sub.add_parser("new", help="create a work item")
-    p.add_argument("request", nargs="?")
-    p.add_argument("-f", "--file", help="read the request from a file")
-    p.add_argument("-r", "--repo", required=True, help="repository the team works on")
-    p.set_defaults(func=cmd_new)
+    p = sub.add_parser("run", help="invoke the owning agent for every item at an agent-owned step")
+    p.add_argument("--workspace", required=True)
+    p.add_argument("--once", action="store_true", help="exit when no agent-owned step is left, rather than waiting")
+    p.set_defaults(func=cmd_run)
 
-    for name, fn, help_text in [
-        ("step", cmd_step, "run the current stage once"),
-        ("run", cmd_run, "run stages until a human gate or failure"),
-        ("show", cmd_show, "show one item's state and history"),
-        ("clean", cmd_clean, "remove an item's git worktree"),
-    ]:
-        p = sub.add_parser(name, help=help_text)
-        p.add_argument("id")
-        p.set_defaults(func=fn)
-
-    p = sub.add_parser("status", help="list work items")
-    p.set_defaults(func=cmd_status)
-
-    p = sub.add_parser("decide", help="record your decision at a gate")
+    p = sub.add_parser("clean", help="remove an item's git worktree")
+    p.add_argument("--workspace", required=True)
     p.add_argument("id")
-    p.add_argument("action", choices=["approve", "revise", "reject", "resume"])
-    p.add_argument("-m", "--note")
-    p.set_defaults(func=cmd_decide)
+    p.set_defaults(func=cmd_clean)
 
     args = parser.parse_args(argv)
     args.func(args)

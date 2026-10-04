@@ -1,0 +1,13 @@
+{
+  "initial": "captured",
+  "steps": {
+    "captured":  {"owner": "human",             "transitions": {"analyse": "analysis"}},
+    "analysis":  {"owner": "agent:analyst",     "transitions": {"questions": "answering", "ready": "ready"}},
+    "answering": {"owner": "human",             "transitions": {"answered": "analysis"}},
+    "ready":     {"owner": "human",             "transitions": {"play": "implement", "rework": "analysis"}},
+    "implement": {"owner": "agent:implementer", "transitions": {"implemented": "review"}},
+    "review":    {"owner": "agent:reviewer",    "transitions": {"approve": "accept", "revise": "implement"}},
+    "accept":    {"owner": "human",             "transitions": {"accept": "done", "revise": "implement"}},
+    "done":      {"owner": "human",             "transitions": {}}
+  }
+}

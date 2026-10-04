@@ -12,10 +12,11 @@ at one and it produces that product's artifacts in a workspace outside itself.
 team/                 the roster - one charter per role, the source of truth
 .claude/skills/       how to convene a role for an interview, in the main thread
 .claude/agents/       the two roles that work without you: challenger, coherence
-devteam/              the delivery pipeline: work item to reviewed change
-roles/ prompts/       the delivery pipeline's own role briefs and stage prompts
+devteam/              the runner: reads each work item's step and invokes its owner
+workflows/            the steps, their owners and valid transitions, as JSON
+roles/ prompts/       role briefs, and one prompt per agent-owned step
 config/workspace      where the current product's output goes
-config/roles.toml     which engine and model each delivery role uses
+config/roles.toml     which engine and model each role uses
 tools/workspace       point the team at a different product
 examples/             a completed engagement, kept as a worked example
 ```
@@ -26,14 +27,13 @@ quality attributes, the architecture and its decisions, the platform, and a
 first slice of stories with checkable acceptance criteria. Convene one with its
 slash command: `/product-owner`, `/architect`, and so on.
 
-**Delivery** - a deterministic pipeline that takes one work item through intake,
-investigation, implementation and review by shelling out to coding agent CLIs,
-and stops for your decision before anything merges. The rest of this file
-describes that half.
+**Delivery** - work items are Markdown files whose front matter names a workflow
+and the item's current step. A workflow is JSON: each step has one owner, a
+human or an agent role, and named transitions to other steps. The runner
+invokes the owning agent for agent-owned steps by shelling out to coding agent
+CLIs, and waits on human-owned ones. The rest of this file describes that half.
 
-The seam between them is a story, carrying the acceptance criteria the pipeline
-reviews against. Nothing is promoted automatically - you decide what enters the
-pipeline and when.
+Nothing is promoted automatically - `play` is a transition only you can make.
 
 ---
 
@@ -44,100 +44,82 @@ and `codex` by default, both signed in with your own subscription.
 
 ## Use
 
-Markdown work items can be captured and validated separately from the legacy
-delivery pipeline:
-
 ```bash
 python3 -m pip install -r requirements.txt
-python3 -m devteam backlog --workspace workspace validate
+python3 -m devteam backlog --workspace workspace capture story "CSV export drops the final row" --parent EPIC-001
+python3 -m devteam backlog --workspace workspace validate            # every item, its step and owner
+python3 -m devteam backlog --workspace workspace move STORY-007 analyse
+python3 -m devteam run --workspace workspace --once                  # run agent-owned steps until none is left
+python3 -m devteam clean --workspace workspace STORY-007             # drop the item's git worktree
 python3 -m unittest discover -s tests -v
 ```
 
-See [the work item format](docs/backlog.md). Each item's front matter holds its
-current workflow step. Running agents from that step and the terminal UI are
-not implemented yet; see `workspace/stories/`. The commands below use legacy
-ITEM directories.
+`move` applies one of the current step's transitions; that is how you answer,
+play and accept until the terminal UI exists. `run` without `--once` keeps
+watching for items that reach an agent-owned step.
 
-```bash
-python3 -m devteam new "The CSV export drops the final row" --repo ~/code/myapp
-python3 -m devteam run ITEM-001        # runs until a gate or a failure
-python3 -m devteam status
-python3 -m devteam show ITEM-001       # state, per-stage engine, history
-python3 -m devteam decide ITEM-001 approve -m "merged by hand"
-python3 -m devteam clean ITEM-001      # drop the git worktree
-```
+See [the work item and workflow format](docs/backlog.md).
 
-`step` runs exactly one stage, which is the mode to use while you still want to
-read everything. `run` loops until the pipeline needs you.
+## Workflow
 
-## Pipeline
+`workflows/default.json`:
 
-| Stage | Role | Repository access | Advances when |
-|---|---|---|---|
-| intake | product owner | none | the request is answerable without further questions |
-| investigate | analyst | read-only | the repository supports the request; writes acceptance criteria |
-| implement | implementer | read-write, in a worktree | the criteria are satisfied |
-| review | reviewer | read-only | the diff matches the criteria |
+| Step | Owner | Transitions |
+|---|---|---|
+| captured | you | `analyse` |
+| analysis | analyst | `questions` (to answering), `ready` |
+| answering | you | `answered` (back to analysis) |
+| ready | you | `play`, `rework` |
+| implement | implementer, in a worktree | `implemented` |
+| review | reviewer, in the same worktree | `approve`, `revise` |
+| accept | you | `accept`, `revise` |
+| done | - | |
 
-Review returning `revise` sends the item back to implement, bounded by
-`max_revisions` in `state.json`. After that it is your call. `investigate`
-returning `proceed: false` is a legitimate ending: the request was wrong.
+Change an owner or a transition by editing the JSON. The reviewer should be a
+different engine from the implementer; that independence is most of the value.
 
-The reviewer reads the diff, never `implementation.md`, and should be a
-different engine from the implementer. That independence is most of the value.
+## How an agent step runs
 
-## Work items
+The runner renders `prompts/<step>.md`, appends the path of the work item and
+the list of valid transitions, and invokes the owning role's CLI with the role
+brief from `roles/<role>.md`. The agent reads the item, may edit its body
+(questions, findings, implementation notes) but not its front matter, and ends
+its reply with `TRANSITION: <name>`. The runner checks the name against the
+step's transitions and moves the item.
 
-Everything an item knows lives in `work/ITEM-NNN/`:
+A nonzero exit, a missing or unknown transition, or changed front matter leaves
+the item where it is; the failure is printed with the path of the transcript
+under `<workspace>/log/<item id>/`, and the item is not retried until the
+runner is restarted. An item is run at most eight times per runner session, so
+a review/revise loop cannot continue unattended without limit.
 
-```
-request.md         what you asked for
-intake.md          the product owner's reading of it
-criteria.md        the contract review judges against
-investigation.md   findings
-implementation.md  what changed, and check output
-review.md          findings against the diff
-state.json         stage, status, per-stage engine history, your decisions
-log/               every invocation: argv, and the full transcript
-```
-
-Implementation happens in a `git worktree` under `worktrees/`, on branch
-`devteam/ITEM-NNN`, so a bad run is `devteam clean` rather than a mess in your
-checkout. Nothing is merged for you.
+Roles marked `worktree = true` run in a `git worktree` at
+`<workspace>/worktrees/<item id>` on branch `devteam/<item id>`, so a bad run is
+`devteam clean` rather than a mess in your checkout. Nothing is merged for you.
 
 ## Choosing models per role
 
-`config/roles.toml` maps each role to an engine and a model. Engines are
-argv templates, so changing a flag does not mean changing code:
+`config/roles.toml` maps each role to an engine and a model. Engines are argv
+templates, so changing a flag does not mean changing code:
 
 ```toml
 [roles.reviewer]
 engine = "claude"
 model = "sonnet"
+worktree = true
 ```
 
 Placeholders substituted per invocation: `{prompt}` `{model}` `{brief}`
-`{cwd}` `{extra_dir}` (the work item directory) `{permission}` `{max_turns}`.
-`{permission}` resolves through the engine's `permissions` table by the stage's
-access level, so read-only stages get `plan` / `read-only` and write stages get
-`acceptEdits` / `workspace-write`.
+`{cwd}` `{extra_dir}` (the workspace) `{permission}` `{max_turns}`.
 
-Role briefs are `roles/<role>.md`, passed as a system prompt. Stage prompts are
-`prompts/<stage>.md` with `{{placeholder}}` substitution. Both are prose you
-should edit as you learn what each role gets wrong.
+Role briefs and step prompts are prose you should edit as you learn what each
+role gets wrong.
 
 ## Before the first real run
 
 - Confirm the codex model id in `config/roles.toml` against `codex exec --help`
   and your account; the default is a placeholder.
-- Run `step` rather than `run`, on a throwaway repository, and read `log/`.
-- Expect to hit subscription rate limits mid-pipeline. Every stage resumes from
-  disk, so `step` again once the window resets.
-
-## The actual experiment
-
-`state.json` records which engine ran each stage and every decision you made at
-a gate. After twenty items, that history says where you overrode the pipeline
-and where you rubber-stamped it. Where you rubber-stamp, you are not adding
-value; where you override, the stage prompt or the criteria are wrong. That is
-the thing worth measuring, not whether the code compiles.
+- The engine templates have only been exercised with a fake engine in the
+  tests. Try one item on a throwaway repository and read `log/` first.
+- Expect to hit subscription rate limits mid-run. Restart the runner once the
+  window resets; every step resumes from the item file.

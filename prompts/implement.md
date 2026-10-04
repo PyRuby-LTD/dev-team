@@ -1,23 +1,8 @@
-Implement this change in the repository at {{worktree}}. You are on branch
+Implement this work item in the repository at {{worktree}}. You are on branch
 {{branch}}; commit your work there.
 
-## Acceptance criteria
-{{criteria}}
+Work against the acceptance criteria in the item. If the item has a `## Review`
+section, address its findings. Run the project's tests and checks.
 
-## Investigation
-{{investigation}}
-{{revision_notes}}
-
-## Output
-Write two files in {{item_dir}}:
-
-1. `implementation.md` - what you changed and why, and the actual output of
-   any tests or checks you ran.
-2. `implement.json` - exactly this shape, nothing else:
-
-```json
-{"done": true, "summary": "one sentence", "checks_passed": true, "notes": ""}
-```
-
-Set `done` to false if the criteria turned out to be wrong or impossible, and
-explain in `notes`.
+Record what you changed and the actual output of the checks under an
+`## Implementation` heading in the item body, replacing any earlier one.

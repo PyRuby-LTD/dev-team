@@ -23,7 +23,8 @@ class Role:
     model: str
     max_turns: int
     command: list[str]
-    permissions: dict[str, str]
+    permission: str
+    worktree: bool
 
     def brief(self) -> str:
         return (ROOT / "roles" / f"{self.name}.md").read_text()
@@ -40,6 +41,7 @@ def load_roles(path: Path | None = None) -> dict[str, Role]:
             model=spec["model"],
             max_turns=spec.get("max_turns", 30),
             command=engine["command"],
-            permissions=engine["permissions"],
+            permission=engine["permission"],
+            worktree=spec.get("worktree", False),
         )
     return roles

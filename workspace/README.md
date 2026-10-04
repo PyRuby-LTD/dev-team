@@ -16,8 +16,7 @@ itself. It is selected by `../config/workspace`.
 Each work item is a Markdown file whose front matter is `id`, `type`, `title`,
 `parent`, `workflow` and `step`. `step` is the item's only state; the workflow
 definition says who owns that step and where the item can go next. Epics group
-stories and have no step. Stories are numbered in build order; there is no
-dependency field. See the [work item format](../docs/backlog.md).
+stories and have no step. There is no dependency field; [plan](plan.md) gives the build order. See the [work item format](../docs/backlog.md).
 
 `python3 -m devteam backlog --workspace workspace validate` checks the files
 and lists each item's step.

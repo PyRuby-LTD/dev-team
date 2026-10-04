@@ -19,7 +19,8 @@ ones.
 Stories, in build order: [STORY-001](../stories/STORY-001.md),
 [STORY-002](../stories/STORY-002.md), [STORY-003](../stories/STORY-003.md),
 [STORY-004](../stories/STORY-004.md),
-[STORY-005](../stories/STORY-005.md).
+[STORY-005](../stories/STORY-005.md). [STORY-007](../stories/STORY-007.md) was added
+later and should be built straight after STORY-002.
 
 ## Done when
 

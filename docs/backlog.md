@@ -34,9 +34,30 @@ Unknown fields, duplicate keys, YAML aliases, missing or mistyped parents,
 parent cycles and duplicate IDs are reported per file. An item with an invalid
 parent is reported too; unrelated items stay valid. Validation never writes.
 
-Workflow definitions are not loaded yet, so `workflow` and `step` are checked
-only for presence and capture always writes `default` and `captured`. See
-`workspace/stories/STORY-001.md`.
+## Workflows
+
+A workflow is a JSON file in `workflows/`, named by the item's `workflow` field:
+
+```json
+{
+  "initial": "captured",
+  "steps": {
+    "captured": {"owner": "human",         "transitions": {"analyse": "analysis"}},
+    "analysis": {"owner": "agent:analyst", "transitions": {"ready": "ready"}},
+    "ready":    {"owner": "human",         "transitions": {}}
+  }
+}
+```
+
+Each step has exactly one owner, `human` or `agent:<role>` where the role is
+defined in `config/roles.toml`, and its transitions as name -> target step. A
+step with no transitions is terminal. A definition with a missing or malformed
+owner, an unknown role, a transition to an undefined step or a duplicate step
+is rejected with a message naming the step.
+
+An item whose `workflow` or `step` is not defined fails validation. Capture
+puts a new item at its workflow's `initial` step. `move` applies one of the
+current step's transitions and rewrites only the `step` line of the file.
 
 ## Usage
 
@@ -47,11 +68,12 @@ python3 -m pip install -r requirements.txt
 python3 -m devteam backlog --workspace /tmp/example capture epic 'Example'
 python3 -m devteam backlog --workspace /tmp/example capture story 'Feature' --parent EPIC-001
 python3 -m devteam backlog --workspace /tmp/example validate
+python3 -m devteam backlog --workspace /tmp/example move STORY-001 analyse
 python3 -m unittest discover -s tests -v
 ```
 
 Use `--file` to supply the body and `--id` to choose an ID. `validate` lists
-each item with its step and exits 1 if any file has errors.
+each item with its step and that step's owner, and exits 1 if any file has errors.
 
-The `new/run/step/status/show/decide` commands still operate legacy ITEM
-directories and do not read Markdown work items.
+`devteam run --workspace W` invokes the owning agent for every item at an
+agent-owned step; see the README.

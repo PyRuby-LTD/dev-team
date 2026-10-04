@@ -22,6 +22,7 @@ stories, tasks and bugs.
 | [STORY-002](stories/STORY-002.md) | Runner that invokes the owning agent and applies its transition |
 | [STORY-003](stories/STORY-003.md) | Terminal UI listing items by step and owner |
 | [STORY-004](stories/STORY-004.md) | Answering questions and choosing transitions in the UI |
+| [STORY-007](stories/STORY-007.md) | Work visibly in the checkout on a branch per item; backlog on its own branch; pull request on accept |
 | [STORY-005](stories/STORY-005.md) | Enter a request, have the roles analyse it, and get work items created from it |
 
 ## Next: EPIC-002
