@@ -1,28 +1,34 @@
 ---
-schema_version: 1
 id: STORY-003
 type: story
-title: "Preview and import legacy work without destroying originals"
+title: "See work items and their steps in a terminal UI"
 parent: EPIC-001
-state: proposed
-authorisation: not-played
-depends_on: ["STORY-001","STORY-002"]
-owner: product-owner
+workflow: default
+step: ready
 ---
 
-# Preview and import legacy work without destroying originals
+# See work items and their steps in a terminal UI
 
-As the customer, I want to retain existing prototype work and evidence while moving to the authoritative Markdown model.
+As the customer, I want a terminal view of every work item and the step it is
+in, so I can see what is waiting on me and what the agents are doing.
 
-Provide a read-only preview and explicit apply step. Preserve source files and provenance; after import the legacy source is historical evidence only, not live state. Do not bulk-delete or run legacy work.
+## Notes
+
+Add `devteam tui`. List the stories, tasks and bugs grouped under their epic,
+each showing its step and that step's owner from the workflow JSON. Mark the
+items whose step is human-owned as needing the customer. Selecting an item
+shows its Markdown body. The view is read from the files each time; there is no
+cache or separate state.
 
 ## Acceptance criteria
 
-- [automated] Given legacy state.json and narrative/evidence files, when preview runs, then proposed mappings, collisions and uncertainties are reported without writes or agent dispatch. Evidence: preview report and filesystem comparison.
-- [automated] Given a reviewed unambiguous mapping, when import is applied, then the Markdown item retains identity/provenance, meaningful history and evidence links while original files remain byte-for-byte unchanged. Evidence: import fixture and source checksums.
-- [automated] Given an unknown stage, ID collision or legacy approval with unclear meaning, when import is attempted, then the affected item requires resolution and never becomes ready, played or released by inference. Evidence: blocked import fixtures.
-- [automated] Given an already imported source, when import is repeated or restarted, then it creates no duplicate item or history entry; changed sources are reported for reconciliation. Evidence: idempotency/restart tests.
-
-## Refinement and evidence
-
-Source: [brief](../brief.md). Proposals and open questions: [scope](../scope.md). Reconcile with intended [architecture](../architecture.md), [qualities](../qualities.md) and [quality strategy](../quality-strategy.md) before play. These criteria specify future evidence, not completed tests. This is a proposed planning record, not an input compatible with the prototype runner.
+- Given a backlog with items at several steps, when the TUI opens, then each item
+  shows its ID, title, step and owner, grouped under its epic.
+- Given items at human-owned steps, then they are distinguishable from
+  agent-owned and terminal ones by text, not colour alone.
+- Given an item file changes on disk, when the view refreshes, then the new step
+  is shown.
+- Given a file with invalid front matter, then it is listed with its error and
+  the other items remain usable.
+- [human] Given the default workflow, when the customer browses by keyboard, then
+  they can find what needs them and read any item without opening the raw file.

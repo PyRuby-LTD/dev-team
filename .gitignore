@@ -1,5 +1,3 @@
 __pycache__/
 *.pyc
 worktrees/
-.backlog.lock
-.backlog-*.tmp

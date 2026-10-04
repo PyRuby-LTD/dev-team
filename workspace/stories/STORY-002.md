@@ -1,50 +1,52 @@
 ---
-schema_version: 1
 id: STORY-002
 type: story
-title: Preserve authoritative state across writes and conflicts
+title: "Run agent-owned steps"
 parent: EPIC-001
-state: implemented
-authorisation: played
-depends_on:
-- STORY-001
-owner: product-owner
-x-session:
-  customer_instruction: play story ./workspace/stories/STORY-002.md
-  date: '2026-10-04'
-  mode: controlled-implementation
-  evidence: ../evidence/STORY-002.md
-  verification: automated-checks-passed
-revision: 1
-history:
-- id: 4daed7ae-b9c2-4b69-aa00-7b6d3752dcc0
-  actor: controlled-session
-  at: '2026-10-04T10:42:19.812306+00:00'
-  event: update
-  before_revision: 0
-  after_revision: 1
-  before_state: proposed
-  after_state: implemented
-  source_digest: af171815508784bf20ce328adc33610075f577f8137f37108184e7c8fc8604ba
-  evidence:
-  - ../evidence/STORY-002.md
+workflow: default
+step: ready
 ---
 
-# Preserve authoritative state across writes and conflicts
+# Run agent-owned steps
 
-As the customer, I want updates and restarts to preserve my backlog so a crash or competing edit cannot silently lose decisions.
+As the customer, I want Python to hand each item to the right agent whenever
+its current step is agent-owned, so work moves without me driving every stage.
 
-Propose revision-and-content-digest checked atomic updates with execution status distinct from workflow progress. Architect chooses the mechanism; no DB or authoritative sibling JSON is introduced. Supported manual edits pause managed writes for that item, then resume through validation; universal protection against an uncooperative concurrent editor is not promised.
+## Notes
+
+Add `devteam run --workspace W`: loop over the work items; for each one whose
+step is owned by `agent:<role>`, invoke that role using its engine and model
+from `config/roles.toml`, passing the role brief, the item file and the names
+of the valid transitions. Reuse `devteam/engines.py`; it currently takes a
+legacy `WorkItem`, so adapt it to a Markdown record. Step prompts live in
+`prompts/<step>.md`.
+
+The agent may edit the item's body, for example adding questions under a
+`## Questions` heading, but not its front matter. Its reply ends with a line
+`TRANSITION: <name>`. Python checks the name against the step's transitions and
+moves the item (STORY-001). The transcript of every invocation is written under
+`W/log/<item id>/`.
+
+Prove the loop on `analysis` first. `implement` and `review` need the worktree
+and branch handling now in `devteam/pipeline.py`; carry that over, then retire
+`pipeline.py`, `workitem.py` and the legacy `new/step/run/show/decide/clean`
+commands, which this replaces.
+
+Out of scope: attempt identities, replay protection, crash reconciliation and
+permission sandboxes beyond what the engine templates already apply.
 
 ## Acceptance criteria
 
-- [automated] Given a valid record, when an update is interrupted before or during replacement, then reopening yields the previous or complete new valid record, never partial front matter. Evidence: write fault-injection suite.
-- [automated] Given two managed updates based on the same revision and content digest, when both attempt to commit, then one succeeds and the stale one reports conflict without overwriting history or narrative. Evidence: concurrent update fixture.
-- [automated] Given a paused item whose body or metadata was manually edited without incrementing revision, when resume validates its content digest, then the change is recorded with a new revision and old responses are invalidated; malformed edits remain visibly blocked without overwrite. Evidence: supported manual-edit fixtures.
-- [automated] Given detected edits outside the supported pause/edit/resume protocol, when a managed update is attempted, then it reports a conflict and explains reconciliation rather than silently merging. Evidence: digest-conflict fixture; documented remaining editor race limitation.
-- [automated] Given linked evidence and an execution failure, when the record is reopened, then state is reconstructed from Markdown alone and failure is distinguishable from a completed workflow transition. Evidence: persistence/restart fixture.
-- [automated] Given a rejected malformed update, when saving fails, then the last valid content and unrelated fields remain intact. Evidence: before/after content comparison.
-
-## Refinement and evidence
-
-Source: [brief](../brief.md). Proposals and open questions: [scope](../scope.md). Reconcile with intended [architecture](../architecture.md), [qualities](../qualities.md) and [quality strategy](../quality-strategy.md) before play. Implemented in a controlled session after the explicit customer play instruction recorded in front matter. [Evidence](../evidence/STORY-002.md) maps the automated results and documents the supported filesystem and manual-edit boundary. [ADR-002](../decisions/ADR-002.md) records the storage design. This remains a planning record, not input to the prototype runner or proof of customer acceptance or release.
+- Given an item at an agent-owned step, when the runner passes over it, then the
+  owning role's configured engine and model are invoked once with the item and
+  its valid transition names. Checked with a fake engine.
+- Given the agent's reply names a valid transition, then the item's step becomes
+  the target, and the next pass acts on the new step's owner.
+- Given a nonzero exit, or a reply with a missing or unknown transition, then the
+  step is unchanged, the failure and its log path are reported, and the item is
+  not retried until the runner is restarted.
+- Given an item at a human-owned or terminal step, then no agent is invoked.
+- Given one item waiting on the human and another at an agent-owned step, when
+  the runner loops, then the second progresses.
+- Given the analyst needs clarification, when it finishes, then its questions are
+  in the item body under `## Questions` and the item is at `answering`.

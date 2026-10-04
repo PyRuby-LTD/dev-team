@@ -1,22 +1,15 @@
 ---
-schema_version: 1
 id: EPIC-004
 type: epic
-title: "GitHub and CI delivery"
-state: proposed
-authorisation: not-played
-detail: deferred
-depends_on: ["EPIC-003"]
-owner: product-owner
+title: "Staging, user testing and release"
 ---
 
-# GitHub and CI delivery
+# Staging, user testing and release
 
-Named later theme: connect explicitly played work to implementation, tests, review, GitHub and CI evidence. No external integration or story decomposition is authorised now. Revisit after the first-slice customer review and prioritisation.
+Later theme, no stories yet. Add workflow steps for deploying a candidate to
+staging, customer user testing and a separate customer-owned release decision.
+Environment and rollback details need platform analysis first.
 
-## Success criteria
+Revisit when EPIC-003 produces a deliverable candidate.
 
-- [automated] Given a future explicitly played revision, when its delivery workflow completes, then implementation, tests, review and automation evidence are linked to that revision; unplayed work cannot dispatch delivery. Evidence: future integration scenario.
-- [human] Given a delivered candidate, when the customer inspects its progress, then the stages and failed checks are understandable. Evidence: future delivery walkthrough.
-
-Source: [brief](../brief.md). Scope, assumptions and revisit triggers: [scope](../scope.md). Intended design/evidence contracts: [architecture](../architecture.md), [qualities](../qualities.md), [quality strategy](../quality-strategy.md). These are planning records, not runnable prototype inputs; criteria describe future evidence.
+Source: [brief](../brief.md).

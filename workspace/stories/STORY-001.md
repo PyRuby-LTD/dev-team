@@ -1,38 +1,64 @@
 ---
-schema_version: 1
 id: STORY-001
 type: story
-title: "Capture and validate linked Markdown work items"
+title: "Define the workflow in JSON and track each item's step"
 parent: EPIC-001
-state: implemented
-authorisation: played
-depends_on: []
-owner: product-owner
-x-session:
-  customer_instruction: "play story ./workspace/stories/STORY-001.md"
-  date: "2026-10-02"
-  mode: controlled-implementation
-  evidence: ../evidence/STORY-001.md
-  verification: automated-checks-passed
+workflow: default
+step: ready
 ---
 
-# Capture and validate linked Markdown work items
+# Define the workflow in JSON and track each item's step
 
-As the customer, I want to capture and inspect work in readable files so I can trust its identity, hierarchy and status.
+As the customer, I want the workflow held in one JSON file so I can see and
+change who owns each step and where an item can go next.
 
-Include a proposed versioned schema for epic/story/task/bug, required fields, parent rules and dependency references. Runtime fields must eventually hold questions/answers, decisions, attempts and history in front matter; this planning schema alone is not that contract.
+## Notes
+
+Add `workflows/default.json` to the dev-team repository and a small loader
+(`devteam/workflow.py`). A workflow has an `initial` step and a map of steps.
+Each step names exactly one owner, either `human` or `agent:<role>` where the
+role is a key in `config/roles.toml`, and its transitions as name -> target
+step. A step with no transitions is terminal.
+
+Proposed default, using the roles that already exist:
+
+```json
+{
+  "initial": "captured",
+  "steps": {
+    "captured":  {"owner": "human",             "transitions": {"analyse": "analysis"}},
+    "analysis":  {"owner": "agent:analyst",     "transitions": {"questions": "answering", "ready": "ready"}},
+    "answering": {"owner": "human",             "transitions": {"answered": "analysis"}},
+    "ready":     {"owner": "human",             "transitions": {"play": "implement", "rework": "analysis"}},
+    "implement": {"owner": "agent:implementer", "transitions": {"implemented": "review"}},
+    "review":    {"owner": "agent:reviewer",    "transitions": {"approve": "accept", "revise": "implement"}},
+    "accept":    {"owner": "human",             "transitions": {"accept": "done", "revise": "implement"}},
+    "done":      {"owner": "human",             "transitions": {}}
+  }
+}
+```
+
+A work item's front matter is `id`, `type`, `title`, `parent`, `workflow` and
+`step`. `workflow` names the JSON file; `step` is the only state. Epics carry
+neither. `devteam/backlog.py` already parses and validates these fields but
+does not yet check them against a workflow, and capture hard-codes `default`
+and `captured`; replace both with the loaded definition.
+
+Out of scope: workflow versions or digests, guards, display metadata, history
+or revisions in front matter. Git history is the audit trail.
 
 ## Acceptance criteria
 
-- [automated] Given valid fixtures for each supported type, when created and reopened, then unique IDs, parent/dependency links and text survive a round trip and only front matter supplies state. Evidence: schema and round-trip fixture results.
-- [automated] Given duplicate IDs, missing parents, dependency cycles, malformed front matter or unsupported schema versions, when loaded, then actionable per-file errors are shown and affected work is ineligible for execution without silent repair. Evidence: negative fixture report.
-- [automated] Given a newly captured item, when the scheduler scans it before an explicit customer Analyse action, then it remains unplayed and no agent is invoked or provider tokens spent, regardless of instructions in its description. Evidence: creation/idle-scan test with a recording fake engine.
-
-## Refinement and evidence
-
-Source: [brief](../brief.md). Proposals and open questions: [scope](../scope.md).
-Implemented in a controlled session after the explicit customer play instruction
-recorded above. [Evidence](../evidence/STORY-001.md) maps the checks to these
-criteria and records scope decisions against architecture and quality guidance.
-This remains a planning-schema record, not input to the prototype runner or
-proof of verified runtime completion, customer acceptance or release.
+- Given the default workflow, when it is loaded, then every step has exactly one
+  owner and every transition targets a defined step; a definition that breaks
+  either rule is rejected with a message naming the step.
+- Given a step owned by `agent:<role>` where the role is not in
+  `config/roles.toml`, when the workflow is loaded, then it is rejected naming
+  the role.
+- Given an item whose `workflow` or `step` is not defined, when
+  `devteam backlog validate` runs, then the file is reported and the item is not
+  offered for any action.
+- Given an item and one of its step's transition names, when the transition is
+  applied, then `step` becomes the target and the body is unchanged byte for
+  byte; any other name is refused and the file is untouched.
+- Given a new item is captured, then its `step` is the workflow's `initial`.

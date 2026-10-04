@@ -44,21 +44,19 @@ and `codex` by default, both signed in with your own subscription.
 
 ## Use
 
-Markdown backlog capture and validation are available separately from the legacy
+Markdown work items can be captured and validated separately from the legacy
 delivery pipeline:
 
 ```bash
 python3 -m pip install -r requirements.txt
 python3 -m devteam backlog --workspace workspace validate
-python3 -m devteam backlog --workspace workspace scan
 python3 -m unittest discover -s tests -v
 ```
 
-See [the version-one schema and capture examples](docs/backlog-schema-v1.md).
-These commands never invoke agents. Runtime analysis and delivery for Markdown
-records are not implemented yet. The commands below use legacy ITEM directories.
-Managed Markdown updates and pause/edit/resume are also available with revision
-and full-file digest checks; see the schema's persistence and filesystem guidance.
+See [the work item format](docs/backlog.md). Each item's front matter holds its
+current workflow step. Running agents from that step and the terminal UI are
+not implemented yet; see `workspace/stories/`. The commands below use legacy
+ITEM directories.
 
 ```bash
 python3 -m devteam new "The CSV export drops the final row" --repo ~/code/myapp

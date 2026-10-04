@@ -7,47 +7,21 @@ from . import pipeline, workitem
 
 def cmd_backlog(args):
     from .backlog import InvalidRecord, Repository
-    from .scheduler import Scheduler
 
     repo = Repository(args.workspace)
     try:
         if args.backlog_action == "capture":
             body = Path(args.file).read_bytes().decode("utf-8") if args.file else ""
-            record = repo.create(args.type, args.title, body, parent=args.parent,
-                                 depends_on=args.depends_on, item_id=args.id)
-            print(f"created {record.id} in {record.path}; proposed, not-played")
+            record = repo.create(args.type, args.title, body, parent=args.parent, item_id=args.id)
+            print(f"created {record.id} in {record.path}")
             return
-        if args.backlog_action in {"update", "pause", "resume"}:
-            if args.backlog_action == "resume":
-                record = repo.resume(args.id, expected_revision=args.revision, expected_digest=args.digest, actor=args.actor)
-            else:
-                from .backlog import Conflict
-                record = repo.scan().valid.get(args.id)
-                if record is None:
-                    raise InvalidRecord("item is missing or invalid; run validate and repair it first")
-                if record.source_revision != args.revision or record.digest != args.digest:
-                    raise Conflict("revision/content conflict; reload and reconcile before retrying")
-                if args.backlog_action == "pause":
-                    record = repo.pause(record, actor=args.actor)
-                else:
-                    changes = {"title": args.title} if args.title is not None else {}
-                    body = Path(args.file).read_bytes().decode("utf-8") if args.file else None
-                    record = repo.update(record, changes=changes, body=body, actor=args.actor, evidence=args.evidence)
-            print(f"{record.id}: revision={record.source_revision} digest={record.digest}")
-            return
-        scan = Scheduler(repo).scan()
-        for path, errors in scan.snapshot.errors.items():
+        snapshot = repo.scan()
+        for path, errors in snapshot.errors.items():
             for error in errors:
                 print(f"{path}: ERROR: {error}")
-        for record in scan.snapshot.valid.values():
-            print(f"{record.id}  {record.metadata['state']}  "
-                  f"{record.metadata['authorisation']}  {record.metadata['title']}")
-            if args.backlog_action == "scan":
-                print(f"  revision={record.source_revision} digest={record.digest} "
-                      f"execution={record.metadata.get('execution', {}).get('status', 'idle')} "
-                      f"paused={'manual_edit' in record.metadata}")
-                print(f"  blocked: {scan.blocked[record.path]}")
-        if scan.snapshot.errors:
+        for record in snapshot.valid.values():
+            print(f"{record.id}  {record.metadata.get('step', '-'):<12} {record.metadata['title']}")
+        if snapshot.errors:
             raise SystemExit(1)
     except (InvalidRecord, OSError, UnicodeError) as exc:
         raise SystemExit(str(exc)) from exc
@@ -113,31 +87,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="devteam")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("backlog", help="capture and validate Markdown planning records (no agents)")
+    p = sub.add_parser("backlog", help="capture and validate Markdown work items (no agents)")
     p.add_argument("--workspace", required=True, help="root containing epics/stories/tasks/bugs")
     actions = p.add_subparsers(dest="backlog_action", required=True)
-    for action in ("validate", "scan"):
-        action_parser = actions.add_parser(action)
-        action_parser.set_defaults(func=cmd_backlog)
+    actions.add_parser("validate").set_defaults(func=cmd_backlog)
     capture = actions.add_parser("capture")
     capture.add_argument("type", choices=["epic", "story", "task", "bug"])
     capture.add_argument("title")
     capture.add_argument("--id")
     capture.add_argument("--parent")
-    capture.add_argument("--depends-on", action="append", default=[])
     capture.add_argument("--file", help="UTF-8 Markdown body; metadata is generated separately")
     capture.set_defaults(func=cmd_backlog)
-    for action in ("update", "pause", "resume"):
-        mutation = actions.add_parser(action)
-        mutation.add_argument("id")
-        mutation.add_argument("--revision", type=int, required=True)
-        mutation.add_argument("--digest", required=True, help="SHA-256 from the latest scan of the complete file")
-        mutation.add_argument("--actor", default="local-operator")
-        if action == "update":
-            mutation.add_argument("--title")
-            mutation.add_argument("--file", help="replacement UTF-8 narrative body")
-            mutation.add_argument("--evidence", action="append", default=[])
-        mutation.set_defaults(func=cmd_backlog)
 
     p = sub.add_parser("new", help="create a work item")
     p.add_argument("request", nargs="?")
