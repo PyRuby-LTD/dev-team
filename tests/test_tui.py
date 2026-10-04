@@ -342,6 +342,7 @@ class Acting(Fixture):
             await self.settle(pilot, lambda: self.step(self.waiting) == "done")
             self.assertIn("**Answer:** Admins", self.calls[0] and self.repo.scan().valid["STORY-001"].body)
             await pilot.press("s")
+            await self.settle(pilot, lambda: app.thread is None)
 
     async def test_failed_agent_is_shown_and_can_be_retried(self):
         self.repo.transition(self.waiting.id, "analyse")
@@ -358,6 +359,7 @@ class Acting(Fixture):
             await pilot.press("t")
             await self.settle(pilot, lambda: self.step(self.waiting) == "done")
             await pilot.press("s")
+            await self.settle(pilot, lambda: app.thread is None)
 
 
 if __name__ == "__main__":

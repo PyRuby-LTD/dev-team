@@ -352,7 +352,7 @@ class Backlog(App):
         self.item_tree.guide_depth = 3
         self.item_tree.focus()
         if self.runner is not None:
-            self.runner.report = lambda message: self.call_from_thread(self.agent_report, message)
+            self.runner.report = lambda message: self.from_agents(self.agent_report, message)
         self.agent_log.can_focus = False
         self.agents_title()
         self.action_reload()
@@ -502,7 +502,18 @@ class Backlog(App):
             if not ran:
                 self.stop.wait(REFRESH_SECONDS)
         self.thread = None
-        self.call_from_thread(self.agents_title)
+        self.from_agents(self.agents_title)
+
+    def from_agents(self, callback, *args):
+        # The agent thread can outlive the screen; a report after shutdown has nowhere to go.
+        if self.is_running:
+            try:
+                self.call_from_thread(callback, *args)
+            except RuntimeError:
+                pass
+
+    def on_unmount(self):
+        self.stop.set()
 
     def action_toggle_agents(self):
         if self.runner is None:

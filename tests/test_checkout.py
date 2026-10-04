@@ -67,7 +67,6 @@ class CheckoutAcceptance(unittest.TestCase):
         log.write_text("transcript")
         if role.name == "implementer":
             (cwd / f"{item}.txt").write_text("change\n")
-            git.commit_all(cwd, f"{item}: change")
             return 0, "TRANSITION: implemented"
         if role.name == "publisher":
             git.must(cwd, "push", "-q", "-u", "origin", f"devteam/{item}")
@@ -122,6 +121,8 @@ class CheckoutAcceptance(unittest.TestCase):
         self.assertEqual("main", git.base_of(self.product, "devteam/STORY-001"))
         self.assertIn("git diff main...devteam/STORY-001", self.calls[1][2])
         self.assertTrue((self.product / "STORY-001.txt").exists())
+        self.assertEqual(["STORY-001: implement by implementer", "init"], self.commits(self.product))
+        self.assertTrue(git.clean(self.product))
 
     def test_one_item_holds_the_checkout_and_analysis_still_runs(self):
         self.repo.transition(self.first.id, "play")
@@ -147,7 +148,7 @@ class CheckoutAcceptance(unittest.TestCase):
         self.runner.run(once=True)
         self.assertEqual("devteam/STORY-002", git.current_branch(self.product))
         self.assertEqual("main", git.base_of(self.product, "devteam/STORY-002"))
-        self.assertEqual(["STORY-002: change", "init"], self.commits(self.product))
+        self.assertEqual(["STORY-002: implement by implementer", "init"], self.commits(self.product))
         self.assertFalse((self.product / "STORY-001.txt").exists())
         self.assertEqual({**before, "STORY-002": "accept"}, self.steps())
 
@@ -174,7 +175,7 @@ class CheckoutAcceptance(unittest.TestCase):
         record = git.must(self.remote, "show", "devteam/STORY-001:docs/work-items/STORY-001.md")
         self.assertIn("id: STORY-001", record)
         self.assertIn("title: First", record)
-        self.assertEqual(["STORY-001: record the work item", "STORY-001: change", "init"],
+        self.assertEqual(["STORY-001: record the work item", "STORY-001: implement by implementer", "init"],
                          self.commits(self.remote, "devteam/STORY-001"))
         self.assertNotEqual(0, git.run(self.remote, "cat-file", "-e", "main:docs/work-items/STORY-001.md").returncode)
 
