@@ -4,7 +4,7 @@ type: story
 title: "Act on human-owned steps in the terminal UI"
 parent: EPIC-001
 workflow: default
-step: review
+step: accept
 ---
 
 # Act on human-owned steps in the terminal UI
