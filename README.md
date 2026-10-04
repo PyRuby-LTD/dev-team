@@ -113,9 +113,9 @@ carry on. When the holder is finished, the runner returns to its base branch
 and creates the next item's branch from there. It never switches branch over
 uncommitted changes; it waits and says so.
 
-At `accept`, look at the result in place. `pr` hands the item to the publisher,
-which pushes the branch and opens a pull request against the base branch with
-`gh`. Merging is yours to do.
+At `accept`, look at the result in place. `pr` makes the runner push the branch to
+`origin` and hands the item to the publisher, which opens a pull request against
+the base branch with `gh`. Merging is yours to do.
 
 ## Choosing models per role
 
@@ -141,7 +141,7 @@ role gets wrong.
   and your account; the default is a placeholder.
 - The engine templates have only been exercised with a fake engine in the
   tests. Try one item on a throwaway repository and read `log/` first.
-- The publisher needs `git push` access to `origin` and an authenticated `gh`,
-  and the engine's permission mode must allow both.
+- Publishing needs `git push` access to `origin` for you, and an authenticated
+  `gh` that the publisher's engine is permitted to run.
 - Expect to hit subscription rate limits mid-run. Restart the runner once the
   window resets; every step resumes from the item file.

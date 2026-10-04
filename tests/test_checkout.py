@@ -51,7 +51,7 @@ class CheckoutAcceptance(unittest.TestCase):
         workflows.mkdir()
         (workflows / "default.json").write_text(json.dumps(WORKFLOW))
         self.roles = {"analyst": role("analyst"), "implementer": role("implementer", True),
-                      "reviewer": role("reviewer", True), "publisher": role("publisher", True, True)}
+                      "reviewer": role("reviewer", True), "publisher": Role("publisher", "fake", "m", 5, ["fake"], "w", True, True, True)}
         self.backlog = git.ensure_backlog(self.product)
         self.repo = Repository(self.backlog, workflows, self.roles)
         self.epic = self.repo.create("epic", "Epic")
@@ -69,7 +69,6 @@ class CheckoutAcceptance(unittest.TestCase):
             (cwd / f"{item}.txt").write_text("change\n")
             return 0, "TRANSITION: implemented"
         if role.name == "publisher":
-            git.must(cwd, "push", "-q", "-u", "origin", f"devteam/{item}")
             return 0, "TRANSITION: published"
         return 0, "TRANSITION: " + {"analyst": "ready", "reviewer": "approve"}[role.name]
 
@@ -172,12 +171,25 @@ class CheckoutAcceptance(unittest.TestCase):
         self.assertEqual("done", self.steps()["STORY-001"])
         self.assertEqual("publisher", self.calls[-1][1])
         self.assertIn("base branch is main", self.calls[-1][2])
+        self.assertEqual("origin/devteam/STORY-001",
+                         git.must(self.product, "rev-parse", "--abbrev-ref", "devteam/STORY-001@{upstream}"))
         record = git.must(self.remote, "show", "devteam/STORY-001:docs/work-items/STORY-001.md")
         self.assertIn("id: STORY-001", record)
         self.assertIn("title: First", record)
         self.assertEqual(["STORY-001: record the work item", "STORY-001: implement by implementer", "init"],
                          self.commits(self.remote, "devteam/STORY-001"))
         self.assertNotEqual(0, git.run(self.remote, "cat-file", "-e", "main:docs/work-items/STORY-001.md").returncode)
+
+    def test_push_failure_leaves_the_item_at_publish_without_invoking(self):
+        git.must(self.product, "remote", "remove", "origin")
+        self.repo.transition(self.first.id, "play")
+        self.runner.run(once=True)
+        self.repo.transition(self.first.id, "pr")
+        self.runner.run(once=True)
+        self.assertEqual("publish", self.steps()["STORY-001"])
+        self.assertNotEqual("publisher", self.calls[-1][1])
+        self.assertIn("FAILED", self.messages[-1])
+        self.assertIn("push", self.messages[-1])
 
 
 if __name__ == "__main__":
