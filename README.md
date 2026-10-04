@@ -1,0 +1,23 @@
+# Delivery-team harness engagement
+
+This is the backlog for developing the reusable team harness itself. It lives
+on the `devteam-backlog` branch, checked out as `backlog/` in the repository
+root; the harness commits here on every transition.
+
+## Start here
+
+- [Brief](brief.md): verbatim customer messages, ending with the simplification
+  that the current backlog follows.
+- [Scope](scope.md): what the first slice is and what is left out.
+- [Plan](plan.md): build order and the demonstration that proves the slice.
+- [Epics](epics/) and [stories](stories/): the backlog.
+
+## Backlog conventions
+
+Each work item is a Markdown file whose front matter is `id`, `type`, `title`,
+`parent`, `workflow` and `step`. `step` is the item's only state; the workflow
+definition says who owns that step and where the item can go next. Epics group
+stories and have no step. There is no dependency field; [plan](plan.md) gives the build order. See the [work item format](../docs/backlog.md).
+
+`python3 -m devteam backlog validate`, run from the repository root, checks the
+files and lists each item's step and owner.
