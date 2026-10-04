@@ -265,6 +265,34 @@ class Note(ModalScreen):
             self.dismiss(None)
 
 
+class NewRequest(ModalScreen):
+    BINDINGS = [("escape", "dismiss(None)", "Cancel"), ("ctrl+s", "save", "Create request")]
+
+    def compose(self):
+        with Vertical(classes="dialog wide"):
+            yield Label("New request: describe your idea, feature or change")
+            yield TextArea(id="request-text", soft_wrap=True)
+            with Horizontal(classes="buttons"):
+                yield Button("Create request (ctrl+s)", variant="primary", id="save")
+                yield Button("Cancel (esc)", id="cancel")
+
+    def on_mount(self):
+        self.query_one(TextArea).focus()
+
+    def action_save(self):
+        text = self.query_one(TextArea).text
+        if not text.strip():
+            self.notify("Enter some text for the request.", severity="error")
+            return
+        self.dismiss(text)
+
+    def on_button_pressed(self, event):
+        if event.button.id == "save":
+            self.action_save()
+        else:
+            self.dismiss(None)
+
+
 class Confirm(ModalScreen):
     BINDINGS = [("escape", "dismiss(False)", "No"), ("y", "dismiss(True)", "Yes"), ("n", "dismiss(False)", "No")]
 
@@ -306,6 +334,7 @@ class Backlog(App):
     .buttons Button { margin-right: 2; }
     """
     BINDINGS = [
+        ("n", "new_request", "New request"),
         ("y", "toggle_mine", "Only waiting on you"),
         ("g", "toggle_group", "Group by step / epic"),
         ("s", "toggle_agents", "Start / stop agents"),
@@ -516,6 +545,15 @@ class Backlog(App):
             self.thread = threading.Thread(target=self.agent_loop, daemon=True)
             self.thread.start()
         self.agents_title()
+
+    def action_new_request(self):
+        self.push_screen(NewRequest(), self.create_request)
+
+    def create_request(self, text):
+        if text is None or not text.strip():
+            return
+        title = text.lstrip().splitlines()[0].strip()[:80]
+        self.attempt(lambda: self.repository.create("request", title, text))
 
     def action_retry(self):
         row = self.shown

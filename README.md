@@ -48,6 +48,7 @@ Run from the root of the product repository, or pass `--product DIR`:
 
 ```bash
 python3 -m pip install -r requirements.txt
+python3 -m devteam backlog capture request "An idea for the product" --file idea.md
 python3 -m devteam backlog capture story "CSV export drops the final row" --parent EPIC-001
 python3 -m devteam tui                           # see items, answer questions, move them, run agents
 python3 -m devteam backlog validate              # the same list, printed once
@@ -58,6 +59,13 @@ python3 -m unittest discover -s tests -v
 
 `tui` is the main way in: it shows every item, lets you answer an agent's
 questions and choose a transition, and runs the agents once you press `s`.
+Press `n` to create a request from your text. Requests follow `analysis.json`:
+move a submitted request with `analyse`, then the product owner asks questions
+or consults the architect, platform engineer and quality lead. Each role's
+questions return to that role after `answered`. The product owner captures
+the resulting work items and lists their IDs in the request before handing it
+to you at `review`. Choose `revise` to refine it or `approve` to finish. Created
+work stays at its initial step until you choose to move it.
 `move` applies a transition from the command line. `run` without `--once` keeps
 watching for items that reach an agent-owned step.
 
@@ -86,7 +94,8 @@ different engine from the implementer; that independence is most of the value.
 
 ## How an agent step runs
 
-The runner renders `prompts/<step>.md`, appends the path of the work item and
+The runner renders `prompts/<workflow>/<step>.md` when present, falling back to
+`prompts/<step>.md`, then appends the path of the work item and
 the list of valid transitions, and invokes the owning role's CLI in the product
 checkout with the role brief from `roles/<role>.md`. The agent reads the item,
 may edit its body (questions, findings, implementation notes) but not its front

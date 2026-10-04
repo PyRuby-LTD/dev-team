@@ -35,8 +35,10 @@ class Waiting(Exception):
     pass
 
 
-def render(step, values):
-    template = ROOT / "prompts" / f"{step.name}.md"
+def render(step, values, workflow="default"):
+    template = ROOT / "prompts" / workflow / f"{step.name}.md"
+    if not template.is_file():
+        template = ROOT / "prompts" / f"{step.name}.md"
     text = (template.read_text() if template.exists() else "") + PROTOCOL
     for key, value in values.items():
         text = text.replace("{{" + key + "}}", value)
@@ -122,7 +124,7 @@ class Runner:
         self.active = record.id
         self.report(f"{record.id} {step.name}: {role.name} started")
         try:
-            code, reply = self.engine(role, render(step, values), self.checkout or root, root, log)
+            code, reply = self.engine(role, render(step, values, record.metadata["workflow"]), self.checkout or root, root, log)
         finally:
             self.active = None
         if code != 0:

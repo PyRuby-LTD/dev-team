@@ -45,8 +45,8 @@ class Record:
         return "---\n" + yaml.safe_dump(self.metadata, sort_keys=False, allow_unicode=True) + "---\n" + self.body
 
 
-TYPES = {"epic", "story", "task", "bug"}
-DIRECTORIES = {"epic": "epics", "story": "stories", "task": "tasks", "bug": "bugs"}
+TYPES = {"epic", "story", "task", "bug", "request"}
+DIRECTORIES = {"epic": "epics", "story": "stories", "task": "tasks", "bug": "bugs", "request": "requests"}
 FIELDS = {"id", "type", "title", "parent", "workflow", "step"}
 PARENTS = {"story": {"epic"}, "task": {"story", "bug"}, "bug": {"epic", "story", "task"}}
 ID = re.compile(r"[A-Z][A-Z0-9]*-[A-Za-z0-9][A-Za-z0-9_-]*\Z")
@@ -74,12 +74,14 @@ def validate_metadata(data):
         if not isinstance(data[key], str) or not data[key].strip():
             raise InvalidRecord(f"{key} must be a nonempty string")
     if data["type"] not in TYPES:
-        raise InvalidRecord("type must be epic, story, task or bug")
+        raise InvalidRecord("type must be epic, story, task, bug or request")
     if not valid_id(data["id"]) or not data["id"].startswith(data["type"].upper() + "-"):
         raise InvalidRecord("id must use its uppercase type prefix and a nonempty identifier (e.g. STORY-001)")
     parent = data.get("parent")
     if parent is not None and not valid_id(parent):
         raise InvalidRecord("parent must be null or an item ID")
+    if data["type"] == "request" and parent is not None:
+        raise InvalidRecord("requests must have no parent")
     if data["type"] == "epic":
         # Epics group work; only their children move through a workflow.
         extra = {"parent", "workflow", "step"} & {k for k, v in data.items() if v is not None}
@@ -162,7 +164,7 @@ def validate_links(result):
 
 
 class Repository:
-    """Explicit backlog root; only epics/stories/tasks/bugs directories contain items."""
+    """Explicit backlog root; only the item-type directories contain items."""
     def __init__(self, root, workflows=None, roles=None):
         self.root = Path(root).resolve()
         self.workflow_dir = workflows
@@ -218,7 +220,7 @@ class Repository:
 
     def _create(self, kind, title, body, parent, item_id):
         if kind not in TYPES:
-            raise InvalidRecord("type must be epic, story, task or bug")
+            raise InvalidRecord("type must be epic, story, task, bug or request")
         snapshot = self.scan()
         if snapshot.errors:
             raise InvalidRecord("repair backlog errors before capture: " + str(snapshot.errors))
@@ -232,7 +234,8 @@ class Repository:
         if parent is not None:
             metadata["parent"] = parent
         if kind != "epic":
-            metadata.update(workflow=DEFAULT_WORKFLOW, step=self.workflow(DEFAULT_WORKFLOW).initial)
+            workflow = "analysis" if kind == "request" else DEFAULT_WORKFLOW
+            metadata.update(workflow=workflow, step=self.workflow(workflow).initial)
         validate_metadata(metadata)
         if item_id in used:
             raise InvalidRecord(f"duplicate ID {item_id}; choose a unique ID")

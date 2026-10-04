@@ -1,7 +1,7 @@
 # Markdown work items
 
 Work items live in `backlog/` at the root of the product repository, in
-`epics/`, `stories/`, `tasks/` or `bugs/`. Other Markdown files are narrative, not items. Each item file starts
+`epics/`, `stories/`, `tasks/`, `bugs/` or `requests/`. Other Markdown files are narrative, not items. Each item file starts
 with `---`, a YAML mapping and a closing `---` line, followed by a free-form
 Markdown body.
 
@@ -19,9 +19,9 @@ step: ready
 | Field | Contract |
 | --- | --- |
 | `id` | Required, unique within the root; uppercase type prefix then an identifier, e.g. `STORY-001` |
-| `type` | Required `epic`, `story`, `task` or `bug`; must match its directory |
+| `type` | Required `epic`, `story`, `task`, `bug` or `request`; must match its directory |
 | `title` | Required nonempty string |
-| `parent` | Story: an epic. Task: a story or bug. Bug: optional epic, story or task. Epic: none |
+| `parent` | Story: an epic. Task: a story or bug. Bug: optional epic, story or task. Epic and request: none |
 | `workflow` | Required except on epics: the name of the workflow definition the item follows |
 | `step` | Required except on epics: the item's current step in that workflow |
 
@@ -58,6 +58,20 @@ is rejected with a message naming the step.
 An item whose `workflow` or `step` is not defined fails validation. Capture
 puts a new item at its workflow's `initial` step. `move` applies one of the
 current step's transitions and rewrites only the `step` line of the file.
+Requests default to `analysis` / `submitted`; other moving types default to
+`default` / `captured`. Step owners and transitions are resolved within each
+item's workflow, so `review` can be human-owned in `analysis` and agent-owned
+in `default`. Prompts use `prompts/<workflow>/<step>.md` when present and fall
+back to `prompts/<step>.md`.
+
+Request analysis is led by the product owner, who can ask questions, consult
+the architect, platform engineer or quality lead, or complete analysis for
+customer review. Specialists can ask questions or return to the product owner.
+The request preserves the original text, questions, answers and findings.
+Before completing, the product owner captures work with valid parents, lists
+its IDs in the request body and validates it. Epics remain grouping items;
+stories, tasks and bugs stay at their workflow's initial step. At request
+review, `revise` returns to the product owner and `approve` ends the request.
 
 ## Where the backlog lives
 
@@ -85,6 +99,7 @@ from the product repository, or pass `--product DIR` before the command:
 ```sh
 python3 -m pip install -r requirements.txt
 python3 -m devteam backlog capture epic 'Example'
+python3 -m devteam backlog capture request 'A new idea' --file idea.md
 python3 -m devteam backlog capture story 'Feature' --parent EPIC-001
 python3 -m devteam backlog validate
 python3 -m devteam backlog move STORY-001 analyse
@@ -92,7 +107,7 @@ python3 -m devteam run --once
 python3 -m unittest discover -s tests -v
 ```
 
-Use `--file` to supply the body and `--id` to choose an ID. `validate` lists
+Use `--file` to supply the body and `--id` to choose an ID. `list` and `validate` list
 each item with its step and that step's owner, and exits 1 if any file has
 errors. `run` invokes the owning agent for every item at an agent-owned step;
 see the README. `tui` opens a two-pane view: the items on the left, and the selected
@@ -101,6 +116,7 @@ built on Textual and re-reads the files every two seconds.
 
 | Key | Action |
 | --- | --- |
+| `n` | New request: enter text, then ctrl+s to capture it or esc to cancel. The first nonblank line becomes the title (up to 80 characters); the full text becomes the body |
 | `enter` | On an item waiting on you: answer its questions or choose one of its step's transitions. When an agent takes over next, you are offered a note for it |
 | `s` | Start or stop the agents. They are stopped when the UI opens, so nothing is spent until you say so |
 | `t` | Retry the selected item after its agent failed |

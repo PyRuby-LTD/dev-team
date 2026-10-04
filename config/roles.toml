@@ -58,3 +58,18 @@ model = "sonnet"
 max_turns = 20
 branch = true
 record = true
+
+[roles.architect]
+engine = "claude"
+model = "sonnet"
+max_turns = 30
+
+[roles.platform_engineer]
+engine = "claude"
+model = "sonnet"
+max_turns = 30
+
+[roles.quality_lead]
+engine = "claude"
+model = "sonnet"
+max_turns = 30
