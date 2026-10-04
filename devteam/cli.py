@@ -56,6 +56,13 @@ def cmd_run(args):
         pass
 
 
+def cmd_tui(args):
+    from . import tui
+    from .backlog import Repository
+
+    tui.run(Repository(locate(args)[1]))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="devteam")
     parser.add_argument("--product", default=".", help="the product repository; its work items live in backlog/ (default: here)")
@@ -79,6 +86,9 @@ def main(argv=None):
     p = sub.add_parser("run", help="invoke the owning agent for every item at an agent-owned step")
     p.add_argument("--once", action="store_true", help="exit when no agent-owned step can run, rather than waiting")
     p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser("tui", help="browse every work item, its step and who it is waiting on")
+    p.set_defaults(func=cmd_tui)
 
     args = parser.parse_args(argv)
     args.func(args)

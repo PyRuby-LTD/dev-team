@@ -95,4 +95,8 @@ python3 -m unittest discover -s tests -v
 Use `--file` to supply the body and `--id` to choose an ID. `validate` lists
 each item with its step and that step's owner, and exits 1 if any file has
 errors. `run` invokes the owning agent for every item at an agent-owned step;
-see the README.
+see the README. `tui` opens a two-pane view: the items on the left, and the selected
+item's step, owner, valid transitions and rendered Markdown on the right. `y`
+shows only what is waiting on you, `g` switches between grouping by epic and by
+step, `tab` moves between the panes, and the files are re-read every two
+seconds. It is built on Textual.
