@@ -1,11 +1,15 @@
 """Terminal view of the backlog: every work item, its step and who that step is waiting on."""
+import threading
 from dataclasses import dataclass
 
 from rich.text import Text
 from textual.app import App
-from textual.containers import Horizontal, VerticalScroll
-from textual.widgets import Footer, Header, Markdown, Static, Tree
+from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.screen import ModalScreen
+from textual.widgets import Button, Footer, Header, Label, Markdown, OptionList, RichLog, Static, TextArea, Tree
+from textual.widgets.option_list import Option
 
+from . import questions
 from .backlog import InvalidRecord
 from .workflow import InvalidWorkflow
 
@@ -27,6 +31,10 @@ class Row:
     parent: str = ""
     transitions: tuple = ()
     errors: tuple = ()
+    unanswered: int = 0
+    running: bool = False
+    failure: str = ""
+    held: str = ""
 
     @property
     def is_item(self):
@@ -41,7 +49,13 @@ class Row:
         return AGENT if self.waiting_on else DONE
 
 
-def rows(repository):
+def owner_label(step):
+    if step.terminal:
+        return "finished"
+    return "YOU" if step.role is None else step.role
+
+
+def rows(repository, runner=None):
     """Epics with their descendants, then items without an epic, then files that failed validation."""
     snapshot = repository.scan()
     children = {}
@@ -54,12 +68,18 @@ def rows(repository):
                   parent=record.metadata.get("parent") or "")
         if record.metadata["type"] != "epic":
             step = repository.step(record)
-            names = list(repository.workflow(record.metadata["workflow"]).steps)
-            row.step, row.step_order = step.name, names.index(step.name)
-            row.transitions = tuple(step.transitions.items())
+            steps = repository.workflow(record.metadata["workflow"]).steps
+            row.step, row.step_order = step.name, list(steps).index(step.name)
+            row.transitions = tuple((name, target, owner_label(steps[target])) for name, target in step.transitions.items())
             if not step.terminal:
                 row.needs_you = step.role is None
-                row.waiting_on = "YOU" if row.needs_you else step.role
+                row.waiting_on = owner_label(step)
+            if row.needs_you:
+                row.unanswered = sum(not question.answered for question in questions.parse(record.body))
+            if runner is not None and not row.needs_you:
+                row.running = runner.active == record.id
+                row.failure = runner.failed.get(record.id, "")
+                row.held = "" if row.running else runner.waiting.get(record.id, "")
         result.append(row)
         for child in sorted(children.get(record.id, []), key=lambda r: r.id):
             add(child, depth + 1)
@@ -114,8 +134,13 @@ def item_label(row, pending=0):
         if pending:
             text.append(f"  ({pending} waiting on you)", YOU)
         return text
-    return Text.assemble(("* " if row.needs_you else "  ", YOU), (f"{row.label:<10}", "bold"), " ",
-                         (f"{row.step:<10}", row.style), " ", row.title)
+    text = Text.assemble(("* " if row.needs_you else "  ", YOU), (f"{row.label:<10}", "bold"), " ",
+                         (f"{row.step:<10}", row.style), " ")
+    if row.running:
+        text.append("running  ", "bold " + AGENT)
+    elif row.failure:
+        text.append("FAILED  ", INVALID)
+    return text.append(row.title)
 
 
 def card(row):
@@ -130,11 +155,94 @@ def card(row):
         text.append(row.step, row.style)
         text.append("\nWaiting on  ")
         text.append(row.waiting_on or "nobody; this item is finished", row.style)
+        if row.running:
+            text.append("  (running now)", "bold " + AGENT)
         text.append("\nNext        ")
-        text.append("   ".join(f"{name} -> {target}" for name, target in row.transitions) or "-", "dim")
+        text.append("   ".join(f"{name} -> {target}" for name, target, _ in row.transitions) or "-", "dim")
+        if row.failure:
+            text.append(f"\n\nThe agent failed: {row.failure}\nPress t to try again.", INVALID)
+        if row.held:
+            text.append(f"\n\nOn hold: {row.held}", YOU)
+        if row.unanswered:
+            text.append(f"\n\n{row.unanswered} unanswered question{'s' if row.unanswered != 1 else ''}. Press enter to answer.", YOU)
+        elif row.needs_you:
+            text.append("\n\nPress enter to choose what happens next.", YOU)
     if row.parent:
         text.append(f"\nPart of     {row.parent}")
     return text
+
+
+class Actions(ModalScreen):
+    """What the customer can do with an item at a human-owned step: answer, or one of its transitions."""
+    BINDINGS = [("escape", "dismiss(None)", "Cancel")]
+
+    def __init__(self, row):
+        super().__init__()
+        self.row = row
+
+    def compose(self):
+        row = self.row
+        options = []
+        if row.unanswered:
+            options.append(Option(f"Answer {row.unanswered} question{'s' if row.unanswered != 1 else ''}", id="answer"))
+        for name, target, owner in row.transitions:
+            who = "it is finished" if owner == "finished" else ("back to you" if owner == "YOU" else f"the {owner} takes over")
+            options.append(Option(Text.assemble((name, "bold"), f"  ->  {target}  ", (who, "dim")), id=f"move:{name}"))
+        with Vertical(classes="dialog"):
+            yield Label(Text.assemble((row.label, "bold"), "  ", row.title, f"\nNow at {row.step}."))
+            if row.unanswered and row.transitions:
+                yield Label(Text("Unanswered questions remain; moving on now leaves them blank.", YOU))
+            yield OptionList(*options)
+            yield Label(Text("enter: choose    esc: cancel", "dim"))
+
+    def on_option_list_option_selected(self, event):
+        self.dismiss(event.option.id)
+
+
+class Answers(ModalScreen):
+    BINDINGS = [("escape", "dismiss(None)", "Cancel"), ("ctrl+s", "save", "Save answers")]
+
+    def __init__(self, row):
+        super().__init__()
+        self.row = row
+        self.open = [(index, question) for index, question in enumerate(questions.parse(row.body)) if not question.answered]
+
+    def compose(self):
+        with Vertical(classes="dialog wide"):
+            yield Label(Text.assemble((self.row.label, "bold"), "  ", self.row.title))
+            with VerticalScroll():
+                for number, (index, question) in enumerate(self.open, 1):
+                    yield Label(Text(f"{number}. {question.text}", "bold"), classes="question")
+                    yield TextArea(id=f"answer-{index}", soft_wrap=True)
+            with Horizontal(classes="buttons"):
+                yield Button("Save answers (ctrl+s)", variant="primary", id="save")
+                yield Button("Cancel (esc)", id="cancel")
+            yield Label(Text("tab: next answer    blank answers stay unanswered", "dim"))
+
+    def on_mount(self):
+        self.query(TextArea).first().focus()
+
+    def action_save(self):
+        self.dismiss({index: self.query_one(f"#answer-{index}", TextArea).text for index, _ in self.open})
+
+    def on_button_pressed(self, event):
+        if event.button.id == "save":
+            self.action_save()
+        else:
+            self.dismiss(None)
+
+
+class Confirm(ModalScreen):
+    BINDINGS = [("escape", "dismiss(False)", "No"), ("y", "dismiss(True)", "Yes"), ("n", "dismiss(False)", "No")]
+
+    def __init__(self, message):
+        super().__init__()
+        self.message = message
+
+    def compose(self):
+        with Vertical(classes="dialog"):
+            yield Label(self.message)
+            yield Label(Text("y: yes    n or esc: no", "dim"))
 
 
 class Backlog(App):
@@ -147,18 +255,34 @@ class Backlog(App):
     #detail:focus { border: round $accent; }
     #card { padding: 1 1 0 1; }
     #body { padding: 0 0 1 0; }
+    #activity { height: 7; border: round $primary; padding: 0 1; }
+    ModalScreen { align: center middle; }
+    .dialog { width: 70; max-width: 90%; height: auto; max-height: 85%; border: thick $accent; background: $surface; padding: 1 2; }
+    .dialog.wide { width: 100; }
+    .dialog Label { margin-bottom: 1; }
+    .dialog OptionList { height: auto; max-height: 12; margin-bottom: 1; }
+    .dialog VerticalScroll { height: auto; max-height: 30; }
+    .dialog TextArea { height: 5; margin-bottom: 1; }
+    .dialog .question { margin-bottom: 0; }
+    .buttons { height: auto; margin-bottom: 1; }
+    .buttons Button { margin-right: 2; }
     """
     BINDINGS = [
         ("y", "toggle_mine", "Only waiting on you"),
         ("g", "toggle_group", "Group by step / epic"),
+        ("s", "toggle_agents", "Start / stop agents"),
+        ("t", "retry", "Retry failed"),
         ("tab", "switch_pane", "Switch pane"),
         ("r", "reload", "Refresh"),
         ("q", "quit", "Quit"),
     ]
 
-    def __init__(self, repository):
+    def __init__(self, repository, runner=None):
         super().__init__()
         self.repository = repository
+        self.runner = runner
+        self.stop = threading.Event()
+        self.thread = None
         self.sub_title = repository.root.parent.name
         self.only_mine = False
         self.by_step = False
@@ -175,6 +299,7 @@ class Backlog(App):
             with VerticalScroll(id="detail"):
                 yield Static(id="card")
                 yield Markdown(id="body")
+        yield RichLog(id="activity", wrap=True, markup=False)
         yield Footer()
 
     def on_mount(self):
@@ -182,12 +307,16 @@ class Backlog(App):
         tree.show_root = False
         tree.guide_depth = 3
         tree.focus()
+        if self.runner is not None:
+            self.runner.report = lambda message: self.call_from_thread(self.agent_report, message)
+        self.query_one("#activity", RichLog).can_focus = False
+        self.agents_title()
         self.action_reload()
         self.set_interval(REFRESH_SECONDS, self.action_reload)
 
     def action_reload(self):
         try:
-            data, error = rows(self.repository), None
+            data, error = rows(self.repository, self.runner), None
         except (InvalidRecord, InvalidWorkflow, OSError) as exc:
             data, error = [], str(exc)
         signature = (data, error, self.only_mine, self.by_step)
@@ -248,6 +377,103 @@ class Backlog(App):
             self.selected = event.node.data.key
             self.show(event.node.data)
 
+    def check_action(self, action, parameters):
+        # Keys typed into a dialog must not reach the main screen's actions.
+        return len(self.screen_stack) == 1 or action not in {name for _, name, _ in self.BINDINGS}
+
+    def on_tree_node_selected(self, event):
+        row = event.node.data
+        if not isinstance(row, Row) or not row.is_item:
+            return
+        if not row.needs_you:
+            who = f"with the {row.waiting_on}" if row.waiting_on else "finished"
+            self.notify(f"{row.label} is {who}; there is nothing for you to do.")
+            return
+        self.push_screen(Actions(row), lambda choice: self.chosen(row, choice))
+
+    def chosen(self, row, choice):
+        if choice == "answer":
+            self.push_screen(Answers(row), lambda answers: self.answered(row, answers))
+        elif choice:
+            self.attempt(lambda: self.repository.transition(row.key, choice.removeprefix("move:")))
+
+    def answered(self, row, answers):
+        if not answers or not any(text.strip() for text in answers.values()):
+            return
+        current = self.repository.scan().valid.get(row.key)
+        if current is None or current.body != row.body:
+            self.notify(f"{row.label} changed while you were answering; nothing was saved.", severity="error")
+            return
+        if self.attempt(lambda: self.repository.write_body(row.key, questions.answer(row.body, answers), "answers")):
+            fresh = next((item for item in self.data if item.key == row.key), None)
+            if fresh is not None and fresh.needs_you:
+                self.push_screen(Actions(fresh), lambda choice: self.chosen(fresh, choice))
+
+    def attempt(self, change):
+        try:
+            change()
+        except (InvalidRecord, InvalidWorkflow, OSError) as exc:
+            self.notify(str(exc), severity="error")
+            return False
+        finally:
+            self.action_reload()
+        return True
+
+    def agents_title(self):
+        log = self.query_one("#activity", RichLog)
+        if self.runner is None:
+            log.border_title = "Agents: not available"
+        elif self.thread is not None and not self.stop.is_set():
+            log.border_title = "Agents: running - s to stop"
+        else:
+            log.border_title = "Agents: stopped - s to start; agent-owned steps wait until then"
+
+    def agent_report(self, message):
+        self.query_one("#activity", RichLog).write(message)
+        self.action_reload()
+
+    def agent_loop(self):
+        while not self.stop.is_set():
+            ran = 0
+            try:
+                for record, step in self.runner.pending():
+                    if self.stop.is_set():
+                        break
+                    ran += self.runner.run_item(record, step)
+            except Exception as exc:
+                self.runner.report(f"agents stopped after an error: {exc}")
+                self.stop.set()
+            if not ran:
+                self.stop.wait(REFRESH_SECONDS)
+        self.thread = None
+        self.call_from_thread(self.agents_title)
+
+    def action_toggle_agents(self):
+        if self.runner is None:
+            return
+        if self.thread is not None:
+            self.stop.set()
+            if self.runner.active:
+                self.notify(f"Stopping once the agent on {self.runner.active} finishes.")
+        else:
+            self.stop = threading.Event()
+            self.thread = threading.Thread(target=self.agent_loop, daemon=True)
+            self.thread.start()
+        self.agents_title()
+
+    def action_retry(self):
+        row = self.shown
+        if self.runner is not None and row is not None and self.runner.failed.get(row.key):
+            self.runner.retry(row.key)
+            self.action_reload()
+
+    def action_quit(self):
+        if self.runner is not None and self.runner.active:
+            message = f"An agent is still working on {self.runner.active}. Quit and abandon that run?"
+            self.push_screen(Confirm(message), lambda yes: self.exit() if yes else None)
+        else:
+            self.exit()
+
     def action_toggle_mine(self):
         self.only_mine = not self.only_mine
         self.action_reload()
@@ -261,5 +487,5 @@ class Backlog(App):
         (detail if tree.has_focus else tree).focus()
 
 
-def run(repository):
-    Backlog(repository).run()
+def run(repository, runner=None):
+    Backlog(repository, runner).run()

@@ -49,15 +49,16 @@ Run from the root of the product repository, or pass `--product DIR`:
 ```bash
 python3 -m pip install -r requirements.txt
 python3 -m devteam backlog capture story "CSV export drops the final row" --parent EPIC-001
-python3 -m devteam tui                           # browse items, their step and who each waits on
+python3 -m devteam tui                           # see items, answer questions, move them, run agents
 python3 -m devteam backlog validate              # the same list, printed once
 python3 -m devteam backlog move STORY-008 analyse
 python3 -m devteam run --once                    # run agent-owned steps until none can run
 python3 -m unittest discover -s tests -v
 ```
 
-`move` applies one of the current step's transitions; that is how you answer,
-play and accept; the terminal UI is read-only for now. `run` without `--once` keeps
+`tui` is the main way in: it shows every item, lets you answer an agent's
+questions and choose a transition, and runs the agents once you press `s`.
+`move` applies a transition from the command line. `run` without `--once` keeps
 watching for items that reach an agent-owned step.
 
 Work items live in `backlog/`, which is the `devteam-backlog` branch checked out

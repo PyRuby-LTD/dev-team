@@ -60,7 +60,10 @@ def cmd_tui(args):
     from . import tui
     from .backlog import Repository
 
-    tui.run(Repository(locate(args)[1]))
+    from .runner import Runner
+
+    checkout, backlog = locate(args)
+    tui.run(Repository(backlog), Runner(Repository(backlog), checkout=checkout))
 
 
 def main(argv=None):
@@ -87,7 +90,7 @@ def main(argv=None):
     p.add_argument("--once", action="store_true", help="exit when no agent-owned step can run, rather than waiting")
     p.set_defaults(func=cmd_run)
 
-    p = sub.add_parser("tui", help="browse every work item, its step and who it is waiting on")
+    p = sub.add_parser("tui", help="see every work item, answer questions and move items along")
     p.set_defaults(func=cmd_tui)
 
     args = parser.parse_args(argv)

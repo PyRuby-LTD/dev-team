@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import os
 import re
+import threading
 
 import yaml
 
@@ -51,6 +52,9 @@ PARENTS = {"story": {"epic"}, "task": {"story", "bug"}, "bug": {"epic", "story",
 ID = re.compile(r"[A-Z][A-Z0-9]*-[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 
 DEFAULT_WORKFLOW = "default"
+
+# The terminal UI and the runner write from different threads.
+WRITE = threading.RLock()
 
 
 def valid_id(value):
@@ -174,7 +178,8 @@ class Repository:
         # Only a backlog that is its own git working tree is versioned by the harness.
         if (self.root / ".git").exists():
             try:
-                git.commit_all(self.root, message)
+                with WRITE:
+                    git.commit_all(self.root, message)
             except git.GitError as exc:
                 raise InvalidRecord(f"could not commit the backlog: {exc}") from exc
 
@@ -208,6 +213,10 @@ class Repository:
         return validate_links(result)
 
     def create(self, kind, title, body="", *, parent=None, item_id=None):
+        with WRITE:
+            return self._create(kind, title, body, parent, item_id)
+
+    def _create(self, kind, title, body, parent, item_id):
         if kind not in TYPES:
             raise InvalidRecord("type must be epic, story, task or bug")
         snapshot = self.scan()
@@ -239,6 +248,26 @@ class Repository:
         return record
 
     def transition(self, item_id, name):
+        with WRITE:
+            return self._transition(item_id, name)
+
+    def write_body(self, item_id, body, message):
+        """Replace an item's body, leaving its front matter text exactly as it is."""
+        with WRITE:
+            record = self.scan().valid.get(item_id)
+            if record is None:
+                raise InvalidRecord(f"{item_id} is missing or invalid; run validate")
+            text = record.path.read_bytes().decode("utf-8")
+            front = text[:len(text) - len(record.body)]
+            self._replace(record.path, front + body)
+            self.commit(f"{item_id}: {message}")
+
+    def _replace(self, path, text):
+        temporary = path.with_name(path.name + ".tmp")
+        temporary.write_bytes(text.encode("utf-8"))
+        os.replace(temporary, path)
+
+    def _transition(self, item_id, name):
         record = self.scan().valid.get(item_id)
         if record is None:
             raise InvalidRecord(f"{item_id} is missing or invalid; run validate")
@@ -260,8 +289,6 @@ class Repository:
         updated = parse(record.path, text)
         if updated.metadata["step"] != target or updated.body != record.body:
             raise InvalidRecord(f"could not rewrite the step line in {record.path}")
-        temporary = record.path.with_name(record.path.name + ".tmp")
-        temporary.write_bytes(text.encode("utf-8"))
-        os.replace(temporary, record.path)
+        self._replace(record.path, text)
         self.commit(f"{item_id}: {name} -> {target}")
         return updated

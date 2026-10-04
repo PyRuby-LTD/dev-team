@@ -5,14 +5,17 @@ import unittest
 
 from textual.widgets import Markdown, Static, Tree
 
-from devteam import tui
+from devteam import questions, tui
 from devteam.backlog import Repository
+from devteam.config import Role
+from devteam.runner import Runner
 
 WORKFLOW = {
     "initial": "captured",
     "steps": {
         "captured": {"owner": "human", "transitions": {"analyse": "analysis"}},
-        "analysis": {"owner": "agent:analyst", "transitions": {"ready": "done", "back": "captured"}},
+        "analysis": {"owner": "agent:analyst", "transitions": {"ready": "done", "back": "captured", "questions": "answering"}},
+        "answering": {"owner": "human", "transitions": {"answered": "analysis", "withdraw": "done"}},
         "done": {"owner": "human", "transitions": {}},
     },
 }
@@ -25,6 +28,7 @@ class Fixture(unittest.IsolatedAsyncioTestCase):
         workflows = Path(self.temp.name) / "workflows"
         workflows.mkdir()
         (workflows / "default.json").write_text(json.dumps(WORKFLOW))
+        self.workflows = workflows
         self.repo = Repository(Path(self.temp.name) / "backlog", workflows, {"analyst"})
         self.first = self.repo.create("epic", "First epic")
         self.second = self.repo.create("epic", "Second epic")
@@ -64,6 +68,8 @@ class ViewModel(Fixture):
         self.assertIn("Waiting on  analyst", tui.card(rows["STORY-002"]).plain)
         self.assertIn("this item is finished", tui.card(rows["STORY-003"]).plain)
         self.assertIn("Next        analyse -> analysis", tui.card(rows["STORY-001"]).plain)
+        self.assertEqual((("analyse", "analysis", "analyst"),), rows["STORY-001"].transitions)
+        self.assertIn(("ready", "done", "finished"), rows["STORY-002"].transitions)
 
     def test_filter_keeps_items_waiting_on_you_and_their_ancestors(self):
         shown = [row.key for row in tui.visible(tui.rows(self.repo), True)]
@@ -149,6 +155,164 @@ class Screen(Fixture):
             await pilot.press("end")
             await pilot.pause()
             self.assertIn("ERROR:", self.card(app))
+
+
+BODY = """Intro.
+
+## Questions
+
+1. Which users
+   are affected?
+
+   **Answer:** Admins.
+2. What is the deadline?
+- Any budget?
+
+## Notes
+
+1. Not a question.
+"""
+
+
+class QuestionParsing(unittest.TestCase):
+    def test_questions_are_list_items_under_the_heading_and_answers_mark_them(self):
+        found = questions.parse(BODY)
+        self.assertEqual([("Which users are affected?", True), ("What is the deadline?", False), ("Any budget?", False)],
+                         [(q.text, q.answered) for q in found])
+        self.assertEqual([], questions.parse("No questions here.\n1. Nor this.\n"))
+
+    def test_answers_are_written_beneath_their_questions_only(self):
+        updated = questions.answer(BODY, {0: "ignored, already answered", 1: "Friday.\nNo later.", 2: "  "})
+        self.assertIn("2. What is the deadline?\n\n   **Answer:** Friday.\n   No later.\n- Any budget?\n", updated)
+        self.assertEqual(BODY.count("Admins."), updated.count("Admins."))
+        self.assertNotIn("ignored", updated)
+        self.assertEqual([True, True, False], [q.answered for q in questions.parse(updated)])
+        self.assertTrue(updated.endswith("1. Not a question.\n"))
+        windows = questions.answer(BODY.replace("\n", "\r\n"), {2: "None."})
+        self.assertIn("- Any budget?\r\n\r\n   **Answer:** None.\r\n", windows)
+
+
+class Acting(Fixture):
+    def setUp(self):
+        super().setUp()
+        self.calls = []
+        self.replies = []
+        role = Role("analyst", "fake", "m", 5, ["fake"], "w")
+        self.runner = Runner(Repository(self.repo.root, self.workflows, {"analyst"}), {"analyst": role}, self.engine,
+                             lambda message: None)
+
+    def engine(self, role, prompt, cwd, extra_dir, log):
+        self.calls.append(prompt)
+        log.write_text("transcript")
+        return self.replies.pop(0)
+
+    def step(self, record):
+        return self.repo.scan().valid[record.id].metadata["step"]
+
+    def options(self, app):
+        return [str(option.prompt).split("  ")[0] for option in app.screen.query_one("OptionList").options]
+
+    async def settle(self, pilot, condition):
+        for _ in range(100):
+            await pilot.pause(0.05)
+            if condition():
+                return
+        self.fail("the screen did not reach the expected state")
+
+    async def test_human_step_offers_exactly_its_transitions_and_moves_the_item(self):
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, tui.Actions)
+            self.assertEqual(["analyse"], self.options(app))
+            await pilot.press("q", "escape")
+            await pilot.pause()
+            self.assertEqual(1, len(app.screen_stack))
+            self.assertEqual("captured", self.step(self.waiting))
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertEqual("analysis", self.step(self.waiting))
+            self.assertIn("Waiting on  analyst", app.query_one("#card").content.plain)
+            self.assertEqual([], self.calls)
+
+    async def test_agent_owned_and_finished_items_offer_nothing(self):
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            tree = app.query_one("#items")
+            for key in ("STORY-002", "STORY-003", "EPIC-002"):
+                node = next(n for n in self.nodes(tree) if n.data.key == key)
+                tree.move_cursor(node)
+                await pilot.pause()
+                await pilot.press("enter")
+                await pilot.pause()
+                self.assertEqual(1, len(app.screen_stack), key)
+        self.assertEqual(("analysis", "done"), (self.step(self.agent), self.step(self.finished)))
+
+    def nodes(self, tree):
+        found, pending = [], list(tree.root.children)
+        while pending:
+            node = pending.pop()
+            found.append(node)
+            pending.extend(node.children)
+        return found
+
+    async def test_answering_questions_then_moving_on_and_the_agent_resumes(self):
+        self.repo.transition(self.waiting.id, "analyse")
+        self.repo.write_body(self.waiting.id, "Intro.\n\n## Questions\n\n1. Which users?\n2. What deadline?\n", "questions")
+        self.repo.transition(self.waiting.id, "questions")
+        self.replies = [(0, "TRANSITION: ready")]
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("down")
+            await pilot.pause()
+            self.assertIn("2 unanswered questions", app.query_one("#card").content.plain)
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertEqual(["Answer 2 questions", "answered", "withdraw"], self.options(app))
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, tui.Answers)
+            await pilot.press(*"Admins")
+            await pilot.press("tab")
+            await pilot.press(*"Friday")
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            body = self.repo.scan().valid["STORY-001"].body
+            self.assertIn("1. Which users?\n\n   **Answer:** Admins\n2. What deadline?\n\n   **Answer:** Friday\n", body)
+            self.assertEqual("answering", self.step(self.waiting))
+            self.assertIsInstance(app.screen, tui.Actions)
+            self.assertEqual(["answered", "withdraw"], self.options(app))
+            await pilot.press("s")
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertEqual("analysis", self.step(self.waiting))
+            self.assertEqual([], self.calls)
+            await pilot.press("s")
+            await self.settle(pilot, lambda: self.step(self.waiting) == "done")
+            self.assertIn("**Answer:** Admins", self.calls[0] and self.repo.scan().valid["STORY-001"].body)
+            await pilot.press("s")
+
+    async def test_failed_agent_is_shown_and_can_be_retried(self):
+        self.repo.transition(self.waiting.id, "analyse")
+        self.replies = [(2, ""), (0, "TRANSITION: ready"), (0, "TRANSITION: ready")]
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("down", "s")
+            await self.settle(pilot, lambda: "STORY-001" in self.runner.failed and self.step(self.agent) == "done")
+            await pilot.pause(0.1)
+            card = app.query_one("#card").content.plain
+            self.assertIn("The agent failed: exit 2", card)
+            self.assertEqual("analysis", self.step(self.waiting))
+            await pilot.press("t")
+            await self.settle(pilot, lambda: self.step(self.waiting) == "done")
+            await pilot.press("s")
 
 
 if __name__ == "__main__":

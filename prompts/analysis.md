@@ -6,7 +6,9 @@ today, what would change, and whether its acceptance criteria are concrete and
 checkable. Record your findings in the item body, and add or tighten the
 acceptance criteria there.
 
-If you cannot proceed without an answer from the customer, add each question
-under a `## Questions` heading in the item body and choose `questions`. Leave
-earlier questions and their answers in place. Assumptions you are comfortable
+If you cannot proceed without an answer from the customer, add each question as
+an item in a numbered list under a `## Questions` heading in the item body and
+choose `questions`. The customer's reply appears beneath each question as
+`**Answer:** ...`. Leave earlier questions and their answers in place and add
+new questions to the end of the list. Assumptions you are comfortable
 stating are not questions. Otherwise choose `ready`.

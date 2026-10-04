@@ -51,6 +51,7 @@ class Runner:
         self.checkout = checkout
         self.failed = {}
         self.waiting = {}
+        self.active = None
         self.runs = {}
 
     def pending(self):
@@ -116,7 +117,12 @@ class Runner:
             copy.write_bytes(record.path.read_bytes())
             git.commit_all(self.checkout, f"{record.id}: record the work item", str(copy))
         log.parent.mkdir(parents=True, exist_ok=True)
-        code, reply = self.engine(role, render(step, values), self.checkout or root, root, log)
+        self.active = record.id
+        self.report(f"{record.id} {step.name}: {role.name} started")
+        try:
+            code, reply = self.engine(role, render(step, values), self.checkout or root, root, log)
+        finally:
+            self.active = None
         if code != 0:
             raise StepFailed(f"exit {code}")
         lines = reply.strip().splitlines()
@@ -153,6 +159,10 @@ class Runner:
         self.waiting.pop(record.id, None)
         self.report(f"{label}: {name} -> {updated.metadata['step']}")
         return True
+
+    def retry(self, item_id):
+        self.failed.pop(item_id, None)
+        self.runs.pop(item_id, None)
 
     def run_pass(self):
         return sum(self.run_item(record, step) for record, step in self.pending())

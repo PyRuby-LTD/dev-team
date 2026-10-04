@@ -96,7 +96,22 @@ Use `--file` to supply the body and `--id` to choose an ID. `validate` lists
 each item with its step and that step's owner, and exits 1 if any file has
 errors. `run` invokes the owning agent for every item at an agent-owned step;
 see the README. `tui` opens a two-pane view: the items on the left, and the selected
-item's step, owner, valid transitions and rendered Markdown on the right. `y`
-shows only what is waiting on you, `g` switches between grouping by epic and by
-step, `tab` moves between the panes, and the files are re-read every two
-seconds. It is built on Textual.
+item's step, owner, valid transitions and rendered Markdown on the right. It is
+built on Textual and re-reads the files every two seconds.
+
+| Key | Action |
+| --- | --- |
+| `enter` | On an item waiting on you: answer its questions or choose one of its step's transitions |
+| `s` | Start or stop the agents. They are stopped when the UI opens, so nothing is spent until you say so |
+| `t` | Retry the selected item after its agent failed |
+| `y` | Show only what is waiting on you |
+| `g` | Switch between grouping by epic and by step |
+| `tab` | Move between the list and the detail pane |
+| `r` / `q` | Refresh / quit |
+
+## Questions and answers
+
+An agent asks the customer something by adding a numbered list under a
+`## Questions` heading in the item body. Answers typed in the UI are written
+beneath each question as `**Answer:** ...`; a question with such a line is
+answered. Questions left blank stay unanswered.
