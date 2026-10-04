@@ -4,7 +4,7 @@ type: story
 title: "Define the workflow in JSON and track each item's step"
 parent: EPIC-001
 workflow: default
-step: accept
+step: done
 ---
 
 # Define the workflow in JSON and track each item's step
