@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Show or set the engagement workspace.
+#   tools/workspace              show the current workspace
+#   tools/workspace <path>       point the team at a different product
+set -euo pipefail
+cd "$(dirname "$0")/.."
+conf=config/workspace
+if [ $# -eq 0 ]; then
+  path=$(grep -v '^#' "$conf" | grep -v '^$' | head -1)
+  echo "$path"
+  [ -d "$path" ] && echo "  exists" || echo "  not created yet - a role will create it"
+  exit 0
+fi
+head -c0 /dev/null
+{ grep '^#' "$conf"; echo; echo "$1"; } > "$conf.tmp" && mv "$conf.tmp" "$conf"
+echo "workspace is now $1"

@@ -1,0 +1,16 @@
+test_capture_idle_restart_zero_calls_or_tokens (test_backlog.BacklogAcceptance.test_capture_idle_restart_zero_calls_or_tokens) ... ok
+test_capture_rejects_invalid_or_duplicate_without_writes (test_backlog.BacklogAcceptance.test_capture_rejects_invalid_or_duplicate_without_writes) ... ok
+test_cli_capture_validate_scan_and_nonzero_errors (test_backlog.BacklogAcceptance.test_cli_capture_validate_scan_and_nonzero_errors) ... ok
+test_dependency_cycles_quarantine_dependants_only (test_backlog.BacklogAcceptance.test_dependency_cycles_quarantine_dependants_only) ... ok
+test_duplicate_ids_diagnosed_on_both_files_and_dependants (test_backlog.BacklogAcceptance.test_duplicate_ids_diagnosed_on_both_files_and_dependants) ... ok
+test_four_types_roundtrip_and_front_matter_authority (test_backlog.BacklogAcceptance.test_four_types_roundtrip_and_front_matter_authority) ... ok
+test_missing_parent_and_dependency (test_backlog.BacklogAcceptance.test_missing_parent_and_dependency) ... ok
+test_negative_yaml_fixture_matrix (test_backlog.BacklogAcceptance.test_negative_yaml_fixture_matrix) ... ok
+test_parent_cycle_and_wrong_parent_type (test_backlog.BacklogAcceptance.test_parent_cycle_and_wrong_parent_type) ... ok
+test_repository_planning_backlog_compatibility (test_backlog.BacklogAcceptance.test_repository_planning_backlog_compatibility) ... ok
+test_symlink_escape_is_reported (test_backlog.BacklogAcceptance.test_symlink_escape_is_reported) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.235s
+
+OK

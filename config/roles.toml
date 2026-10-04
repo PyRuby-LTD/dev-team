@@ -1,0 +1,47 @@
+# Which engine and model each role uses. Roles are mapped to pipeline stages
+# in devteam/pipeline.py.
+
+[engines.claude]
+# {prompt} {model} {cwd} {brief} {extra_dir} are substituted per invocation.
+command = [
+  "claude", "-p", "{prompt}",
+  "--model", "{model}",
+  "--append-system-prompt", "{brief}",
+  "--add-dir", "{extra_dir}",
+  "--permission-mode", "{permission}",
+  "--max-turns", "{max_turns}",
+  "--output-format", "text",
+]
+permissions = { read = "plan", write = "acceptEdits" }
+
+[engines.codex]
+command = [
+  "codex", "exec", "{prompt}",
+  "--model", "{model}",
+  "--cd", "{cwd}",
+  "--add-dir", "{extra_dir}",
+  "--sandbox", "{permission}",
+  "--skip-git-repo-check",
+]
+permissions = { read = "read-only", write = "workspace-write" }
+
+# One entry per role. Swap engine/model freely; that is the point of the file.
+[roles.product_owner]
+engine = "claude"
+model = "sonnet"
+max_turns = 12
+
+[roles.analyst]
+engine = "claude"
+model = "sonnet"
+max_turns = 30
+
+[roles.implementer]
+engine = "codex"
+model = "gpt-6.1-sol"
+max_turns = 60
+
+[roles.reviewer]
+engine = "claude"
+model = "sonnet"
+max_turns = 30

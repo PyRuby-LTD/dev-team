@@ -1,0 +1,6 @@
+# The engagement workspace: where this team's output for the current product
+# goes. Discovery artifacts and delivery work items both live here.
+#
+# Set it to the product's own repository, or to a directory beside it. Relative
+# paths resolve against this repo. Change it with tools/workspace <path>.
+./workspace
