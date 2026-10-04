@@ -233,6 +233,38 @@ class Answers(ModalScreen):
             self.dismiss(None)
 
 
+class Note(ModalScreen):
+    """Optional feedback for the agent that takes over after a transition."""
+    BINDINGS = [("escape", "dismiss(None)", "Cancel"), ("ctrl+s", "move", "Move")]
+
+    def __init__(self, row, name, target, owner):
+        super().__init__()
+        self.row, self.move_name, self.target, self.next_owner = row, name, target, owner
+
+    def compose(self):
+        with Vertical(classes="dialog wide"):
+            yield Label(Text.assemble((self.row.label, "bold"), "  ", self.row.title))
+            yield Label(Text.assemble((self.move_name, "bold"), f"  ->  {self.target}; the {self.next_owner} takes over."))
+            yield Label(Text(f"Anything the {self.next_owner} should know or change? (optional)", "bold"), classes="question")
+            yield TextArea(id="note", soft_wrap=True)
+            with Horizontal(classes="buttons"):
+                yield Button("Move (ctrl+s)", variant="primary", id="move")
+                yield Button("Cancel (esc)", id="cancel")
+            yield Label(Text("Your note is added to the item under Feedback. Leave it blank to just move.", "dim"))
+
+    def on_mount(self):
+        self.query_one(TextArea).focus()
+
+    def action_move(self):
+        self.dismiss(self.query_one(TextArea).text)
+
+    def on_button_pressed(self, event):
+        if event.button.id == "move":
+            self.action_move()
+        else:
+            self.dismiss(None)
+
+
 class Confirm(ModalScreen):
     BINDINGS = [("escape", "dismiss(False)", "No"), ("y", "dismiss(True)", "Yes"), ("n", "dismiss(False)", "No")]
 
@@ -268,6 +300,7 @@ class Backlog(App):
     .dialog OptionList { height: auto; max-height: 12; margin-bottom: 1; }
     .dialog VerticalScroll { height: auto; max-height: 30; }
     .dialog TextArea { height: 5; margin-bottom: 1; }
+    .dialog #note { height: 8; }
     .dialog .question { margin-bottom: 0; }
     .buttons { height: auto; margin-bottom: 1; }
     .buttons Button { margin-right: 2; }
@@ -406,7 +439,19 @@ class Backlog(App):
         if choice == "answer":
             self.push_screen(Answers(row), lambda answers: self.answered(row, answers))
         elif choice:
-            self.attempt(lambda: self.repository.transition(row.key, choice.removeprefix("move:")))
+            name, target, owner = next(move for move in row.transitions if move[0] == choice.removeprefix("move:"))
+            if owner in ("YOU", "finished"):
+                self.move(row, name, "")
+            else:
+                self.push_screen(Note(row, name, target, owner),
+                                 lambda note: None if note is None else self.move(row, name, note))
+
+    def move(self, row, name, note):
+        current = self.repository.scan().valid.get(row.key)
+        if note.strip() and (current is None or current.body != row.body):
+            self.notify(f"{row.label} changed while you were writing; nothing was moved.", severity="error")
+            return
+        self.attempt(lambda: self.repository.transition(row.key, name, note))
 
     def answered(self, row, answers):
         if not answers or not any(text.strip() for text in answers.values()):

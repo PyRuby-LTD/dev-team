@@ -16,6 +16,8 @@ PROTOCOL = """
 
 The work item is the file {{item}}. Read it first; it is the full context.
 You may edit the body of that file. Do not change its front matter.
+If it has a `## Feedback` section, the last entry there is the customer's reason
+for sending the item to you; act on it.
 
 ## Finishing
 

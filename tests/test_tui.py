@@ -192,6 +192,16 @@ class QuestionParsing(unittest.TestCase):
         self.assertIn("- Any budget?\r\n\r\n   **Answer:** None.\r\n", windows)
 
 
+class Feedback(unittest.TestCase):
+    def test_notes_accumulate_in_one_section_wherever_it_sits(self):
+        first = questions.add_feedback("Intro.\n", "rework -> analysis", "Too big.\nSplit it.")
+        self.assertEqual("Intro.\n\n## Feedback\n\n- **rework -> analysis:** Too big.\n  Split it.\n", first)
+        second = questions.add_feedback(first + "\n## Review\n\nFine.\n", "revise -> implement", "Rename it")
+        self.assertIn("  Split it.\n- **revise -> implement:** Rename it\n\n## Review\n\nFine.\n", second)
+        self.assertEqual(1, second.count("## Feedback"))
+        self.assertEqual("Intro.\n", questions.add_feedback("Intro.\n", "x", "   "))
+
+
 class Acting(Fixture):
     def setUp(self):
         super().setUp()
@@ -235,7 +245,20 @@ class Acting(Fixture):
             await pilot.pause()
             await pilot.press("enter")
             await pilot.pause()
+            self.assertIsInstance(app.screen, tui.Note)
+            self.assertEqual("captured", self.step(self.waiting))
+            await pilot.press("escape")
+            await pilot.pause()
+            self.assertEqual("captured", self.step(self.waiting))
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press(*"Split", "space", *"it", "ctrl+s")
+            await pilot.pause()
             self.assertEqual("analysis", self.step(self.waiting))
+            self.assertTrue(self.repo.scan().valid["STORY-001"].body.endswith(
+                "Some body text.\n\n## Feedback\n\n- **analyse -> analysis:** Split it\n"))
             self.assertIn("Waiting on  analyst", app.query_one("#card").content.plain)
             self.assertEqual([], self.calls)
 
@@ -253,7 +276,10 @@ class Acting(Fixture):
             self.assertIsInstance(app.screen, tui.Actions)
             await pilot.press("enter")
             await pilot.pause()
+            await pilot.press("ctrl+s")
+            await pilot.pause()
             self.assertEqual("analysis", self.step(self.waiting))
+            self.assertNotIn("## Feedback", self.repo.scan().valid["STORY-001"].body)
             self.assertIn("  BUG-001    analysis", " ".join(n.label.plain for n in self.nodes(app.query_one("#items"))))
 
     async def test_agent_owned_and_finished_items_offer_nothing(self):
@@ -307,6 +333,8 @@ class Acting(Fixture):
             self.assertEqual(["answered", "withdraw"], self.options(app))
             await pilot.press("s")
             await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press("ctrl+s")
             await pilot.pause()
             self.assertEqual("analysis", self.step(self.waiting))
             self.assertEqual([], self.calls)

@@ -1,7 +1,8 @@
-"""Questions an agent leaves for the customer in an item body, and the answers written beneath them."""
+"""What the customer and agents say to each other in an item body: questions, answers and feedback."""
 import re
 from dataclasses import dataclass
 
+FEEDBACK = re.compile(r"##\s+Feedback\s*$", re.IGNORECASE)
 SECTION = re.compile(r"##\s+Questions\s*$", re.IGNORECASE)
 HEADING = re.compile(r"#{1,2}\s")
 QUESTION = re.compile(r"\s{0,3}(?:\d+[.)]|[-*])\s+(\S.*)")
@@ -52,3 +53,25 @@ def answer(body, answers):
         at = questions[index].last_line + 1
         lines[at:at] = block
     return newline.join(lines) + (newline if body.endswith(("\n", "\r")) else "")
+
+
+def add_feedback(body, label, text):
+    """Append the customer's note to the '## Feedback' section, creating it at the end if needed."""
+    text = text.strip()
+    if not text:
+        return body
+    newline = "\r\n" if "\r\n" in body else "\n"
+    first, *rest = text.splitlines()
+    entry = [f"- **{label}:** {first}"] + [f"  {line}".rstrip() for line in rest]
+    lines = body.splitlines()
+    start = next((number for number, line in enumerate(lines) if FEEDBACK.match(line)), None)
+    if start is None:
+        while lines and not lines[-1].strip():
+            lines.pop()
+        lines += ["", "## Feedback", ""] + entry
+    else:
+        end = next((number for number in range(start + 1, len(lines)) if HEADING.match(lines[number])), len(lines))
+        while end > start + 1 and not lines[end - 1].strip():
+            end -= 1
+        lines[end:end] = ([""] if end == start + 1 else []) + entry
+    return newline.join(lines) + newline

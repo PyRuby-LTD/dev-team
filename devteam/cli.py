@@ -23,7 +23,7 @@ def cmd_backlog(args):
     repo = Repository(locate(args)[1])
     try:
         if args.backlog_action == "move":
-            record = repo.transition(args.id, args.transition)
+            record = repo.transition(args.id, args.transition, args.note or "")
             print(f"{record.id} -> {record.metadata['step']} ({repo.step(record).owner})")
             return
         if args.backlog_action == "capture":
@@ -84,6 +84,7 @@ def main(argv=None):
     move = actions.add_parser("move", help="apply one of the current step's transitions")
     move.add_argument("id")
     move.add_argument("transition")
+    move.add_argument("-m", "--note", help="feedback for the next owner, recorded in the item body")
     move.set_defaults(func=cmd_backlog)
 
     p = sub.add_parser("run", help="invoke the owning agent for every item at an agent-owned step")

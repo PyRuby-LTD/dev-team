@@ -247,8 +247,18 @@ class Repository:
         self.commit(f"{item_id}: captured" + (f" at {metadata['step']}" if kind != "epic" else ""))
         return record
 
-    def transition(self, item_id, name):
+    def transition(self, item_id, name, note=""):
+        """Apply a transition; a note is first recorded in the body as feedback for the next owner."""
+        from . import questions
+
         with WRITE:
+            if note.strip():
+                record = self.scan().valid.get(item_id)
+                if record is not None and record.metadata["type"] != "epic":
+                    step = self.step(record)
+                    if name in step.transitions:
+                        label = f"{name} -> {step.transitions[name]}"
+                        self.write_body(item_id, questions.add_feedback(record.body, label, note), f"feedback for {name}")
             return self._transition(item_id, name)
 
     def write_body(self, item_id, body, message):

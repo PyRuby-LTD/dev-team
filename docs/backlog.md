@@ -101,7 +101,7 @@ built on Textual and re-reads the files every two seconds.
 
 | Key | Action |
 | --- | --- |
-| `enter` | On an item waiting on you: answer its questions or choose one of its step's transitions |
+| `enter` | On an item waiting on you: answer its questions or choose one of its step's transitions. When an agent takes over next, you are offered a note for it |
 | `s` | Start or stop the agents. They are stopped when the UI opens, so nothing is spent until you say so |
 | `t` | Retry the selected item after its agent failed |
 | `y` | Show only what is waiting on you |
@@ -115,3 +115,10 @@ An agent asks the customer something by adding a numbered list under a
 `## Questions` heading in the item body. Answers typed in the UI are written
 beneath each question as `**Answer:** ...`; a question with such a line is
 answered. Questions left blank stay unanswered.
+
+## Feedback
+
+When you move an item to an agent-owned step you can add a note, in the UI or
+with `devteam backlog move <id> <transition> -m "..."`. It is appended to a
+`## Feedback` section in the item body, labelled with the transition, and every
+agent is told that the last entry there is why the item came to it.
