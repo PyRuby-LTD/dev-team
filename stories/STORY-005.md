@@ -4,7 +4,7 @@ type: story
 title: "Analyse a request with the team and create work items from it"
 parent: EPIC-001
 workflow: default
-step: analysis
+step: ready
 ---
 
 # Analyse a request with the team and create work items from it
@@ -73,10 +73,94 @@ TUI; add a prompt for each agent-owned step.
 Adding a specialist role to analysis later is two more steps and one more
 product-owner transition in the JSON.
 
+## Analysis
+
+Findings from reading the repository (the working tree has uncommitted work on
+feedback notes in `backlog.py`, `cli.py`, `questions.py`, `runner.py`, `tui.py`;
+none of it conflicts with this story).
+
+**Step names across workflows.** A step is always resolved through the record's
+own `workflow` (`Repository.step`, `workflow.load`), so the same step name in two
+workflows is already safe for state, owner and transitions: `review` in
+`analysis.json` (human) and in `default.json` (agent:reviewer) do not interfere.
+The one place that is keyed on the bare step name is the prompt:
+`runner.render` reads `prompts/<step.name>.md`. Today that is harmless for
+`review` in `analysis` because the owner is human and no prompt is read, but it
+would silently hand the wrong prompt to any agent-owned step that shares a name
+with one in another workflow (for example a future agent-owned `review`). Log
+files are per item and need no change.
+
+**Decision (not a question): prompts are looked up per workflow.**
+`render` takes the workflow name and reads `prompts/<workflow>/<step>.md`,
+falling back to `prompts/<step>.md`. The existing `prompts/*.md` stay where they
+are and keep serving `default`. Analysis prompts go in `prompts/analysis/`:
+`product-owner.md`, `architect.md`, `platform-engineer.md`, `quality-lead.md`.
+No step is renamed and no prefixing convention is needed. Note the workflow
+`analysis` and the default workflow's step `analysis` are different things; the
+lookup order above keeps `prompts/analysis.md` (the step) and `prompts/analysis/`
+(the workflow) from colliding because one is a file and the other a directory.
+
+**What else the code shows that the story does not say.**
+
+- `Repository.create` always sets `workflow=DEFAULT_WORKFLOW`. A request must be
+  created with `workflow: analysis` and `step: submitted`, so `create` needs the
+  workflow chosen by item type (a `request` default of `analysis`) or a
+  parameter. `devteam backlog capture` (`cli.py`, `choices=[...]`) must accept
+  `request` too, since the product owner creates items through it.
+- `TYPES`, `DIRECTORIES`, the type-prefix id check (`REQUEST-001`) and the
+  error text "type must be epic, story, task or bug" in `backlog.py` all need
+  `request`. `PARENTS` has no `request` entry; a request has no parent and
+  `validate_links` would raise `KeyError` if one were given, so either add
+  `"request": set()` or reject a parent in `validate_metadata`.
+- The runner already refuses a reply naming a transition the step does not have
+  (`StepFailed`, step unchanged, item added to `failed`). So "a reply naming
+  `complete` is refused" holds for specialist roles by virtue of the JSON alone;
+  it needs a test, not new code.
+- `runner.pending` skips only epics, and the TUI `rows` treats every non-epic
+  generically, so neither needs type-specific code. A request is a top-level row
+  (no parent) and sorts after epics.
+- `config/roles.toml` needs the three roles, but `Role.brief` also reads
+  `roles/<name>.md`, so three new brief files are required (`architect.md`,
+  `platform_engineer.md`, `quality_lead.md`), drawn from `team/*.md`.
+  `product_owner` already exists in both; its current brief is about judging
+  readiness only, so it needs extending with the hub behaviour (creating items,
+  listing them, when to choose `complete`).
+- The runner caps agent runs at 8 per item per session (`max_runs`). A request
+  that bounces between the product owner and specialists can reach this; it then
+  fails and the customer retries with `t` in the TUI. Assumed acceptable.
+- Questions and answers reuse `questions.py` unchanged: each role appends to the
+  same `## Questions` list, so earlier answers stay in place for later roles.
+  Existing agent prompts rely on this convention; the new prompts must repeat it.
+- The product owner creates epics before stories because a story's parent must be
+  an epic. Created items start in the `default` workflow at `captured`; nothing
+  starts them, which satisfies the "none has moved" criterion by construction.
+- There is no front-matter link from a request to what it created (`FIELDS` is
+  fixed), so the list in the body is the only record. Assumed intended.
+
+**Assumption on the request title.** "New request" asks for text only; the title
+is the first line of that text, truncated to a sensible length, and the full text
+is the body.
+
+No customer questions are needed.
+
 ## Acceptance criteria
 
+- Given `workflows/analysis.json` as proposed, then it loads without error, and
+  `default.json` is unchanged.
+- Given a `request` item with `workflow: analysis`, then `devteam backlog list`
+  and the TUI show it with no change to `runner.py` or `tui.py` beyond the "new
+  request" action and the prompt lookup below.
+- Given a step name that exists in two workflows, then the prompt rendered for
+  each is read from `prompts/<workflow>/<step>.md` when that file exists and
+  from `prompts/<step>.md` otherwise; a test shows `default`'s `review` still
+  gets `prompts/review.md` and an `analysis` step gets its own file.
+- Given `devteam backlog capture request "<title>"`, then the file is written to
+  `requests/REQUEST-001.md` at `workflow: analysis`, `step: submitted`; the
+  existing types still default to `default`/`captured`; a request given a
+  `--parent` is rejected with a message rather than an exception.
 - Given the TUI, when the customer chooses "new request" and enters text, then a
-  request file exists with that text as its body at the workflow's initial step.
+  request file exists in `requests/` with that text as its body, a title taken
+  from its first line, at `submitted`.
 - Given a request at `product-owner`, then the only moves available to that agent
   are asking the customer, passing to the architect, platform engineer or quality
   lead, or `complete`.
@@ -86,8 +170,14 @@ product-owner transition in the JSON.
 - Given any role asks questions, then they are in the request body, the request
   is at that role's questions step, and after the customer answers it returns to
   the same role with the earlier content available.
+- Given a request moved from `submitted` with `analyse`, then it is at
+  `product-owner`; and given each role's prompt file, `roles.toml` entry and
+  brief exist, then `workflow.load("analysis")` raises no "role not in
+  config/roles.toml" error.
 - Given the product owner chooses `complete`, then the items it created are
-  valid work items listed in the request body, and the request is at `review`.
+  valid work items (the backlog scan reports no errors), each at its own
+  workflow's initial step, are listed by ID in the request body, and the request
+  is at `review`.
 - Given a request at `review`, when the customer chooses `revise`, then it
   returns to the product owner; when they choose `approve`, then it is `done` and
   none of the created items has moved beyond its own initial step.
