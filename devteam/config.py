@@ -26,6 +26,7 @@ class Role:
     permission: str
     branch: bool = False
     record: bool = False
+    push: bool = False
 
     def brief(self) -> str:
         return (ROOT / "roles" / f"{self.name}.md").read_text()
@@ -45,5 +46,6 @@ def load_roles(path: Path | None = None) -> dict[str, Role]:
             permission=engine["permission"],
             branch=spec.get("branch", False),
             record=spec.get("record", False),
+            push=spec.get("push", False),
         )
     return roles

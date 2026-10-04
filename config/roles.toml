@@ -29,7 +29,8 @@ permission = "workspace-write"
 # One entry per role. Swap engine/model freely; that is the point of the file.
 # branch = true puts the checkout on branch devteam/<item id> before the role runs;
 # only one item at a time holds the checkout. record = true first commits a copy
-# of the work item to docs/work-items/ on that branch.
+# of the work item to docs/work-items/ on that branch. push = true then pushes
+# the branch to origin, since an agent's sandbox may not be able to write .git.
 [roles.product_owner]
 engine = "claude"
 model = "sonnet"
@@ -58,6 +59,7 @@ model = "sonnet"
 max_turns = 20
 branch = true
 record = true
+push = true
 
 [roles.architect]
 engine = "claude"

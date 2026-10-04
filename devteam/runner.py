@@ -120,6 +120,8 @@ class Runner:
             copy.parent.mkdir(parents=True, exist_ok=True)
             copy.write_bytes(record.path.read_bytes())
             git.commit_all(self.checkout, f"{record.id}: record the work item", str(copy))
+        if role.push:
+            git.must(self.checkout, "push", "-q", "-u", "origin", branch)
         log.parent.mkdir(parents=True, exist_ok=True)
         self.active = record.id
         self.report(f"{record.id} {step.name}: {role.name} started")
