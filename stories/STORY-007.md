@@ -4,7 +4,7 @@ type: story
 title: "Work in the checkout on a branch per item, with the backlog on its own branch"
 parent: EPIC-001
 workflow: default
-step: review
+step: accept
 ---
 
 # Work in the checkout on a branch per item, with the backlog on its own branch
