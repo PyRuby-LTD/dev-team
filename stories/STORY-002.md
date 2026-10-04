@@ -4,7 +4,7 @@ type: story
 title: "Run agent-owned steps"
 parent: EPIC-001
 workflow: default
-step: review
+step: accept
 ---
 
 # Run agent-owned steps
