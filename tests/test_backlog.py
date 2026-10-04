@@ -12,7 +12,7 @@ class BacklogAcceptance(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name) / "backlog"
         self.repo = Repository(self.root)
         self.epic = self.repo.create("epic", "An epic")
         self.story = self.repo.create("story", "A story", parent=self.epic.id)
@@ -44,7 +44,9 @@ class BacklogAcceptance(unittest.TestCase):
         self.assertEqual("captured", self.story.metadata["step"])
 
     def test_repository_backlog_is_valid(self):
-        root = Path(__file__).resolve().parents[1] / "workspace"
+        root = Path(__file__).resolve().parents[1] / "backlog"
+        if not root.exists():
+            self.skipTest("the backlog branch is not checked out")
         result = Repository(root).scan()
         self.assertEqual({}, result.errors)
         self.assertIn("STORY-001", result.valid)
@@ -124,7 +126,7 @@ class BacklogAcceptance(unittest.TestCase):
             self.assertEqual([], list(Path(external).iterdir()))
 
     def test_cli_capture_validate_and_nonzero_errors(self):
-        prefix = ["backlog", "--workspace", str(self.root)]
+        prefix = ["--product", self.temp.name, "backlog"]
         with contextlib.redirect_stdout(io.StringIO()) as output:
             main(prefix + ["capture", "bug", "CLI bug"])
             main(prefix + ["validate"])

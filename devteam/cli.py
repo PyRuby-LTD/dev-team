@@ -2,11 +2,25 @@ import argparse
 from pathlib import Path
 
 
+def locate(args):
+    """The product's checkout (None outside git) and its backlog directory."""
+    from . import git
+
+    directory = Path(args.product).resolve()
+    top = git.checkout(directory)
+    if top is None:
+        return None, directory / git.BACKLOG_DIR
+    try:
+        return top, git.ensure_backlog(top)
+    except git.GitError as exc:
+        raise SystemExit(str(exc)) from exc
+
+
 def cmd_backlog(args):
     from .backlog import InvalidRecord, Repository
     from .workflow import InvalidWorkflow
 
-    repo = Repository(args.workspace)
+    repo = Repository(locate(args)[1])
     try:
         if args.backlog_action == "move":
             record = repo.transition(args.id, args.transition)
@@ -35,26 +49,19 @@ def cmd_run(args):
     from .backlog import Repository
     from .runner import Runner
 
+    checkout, backlog = locate(args)
     try:
-        Runner(Repository(args.workspace)).run(once=args.once)
+        Runner(Repository(backlog), checkout=checkout).run(once=args.once)
     except KeyboardInterrupt:
         pass
 
 
-def cmd_clean(args):
-    from .runner import remove_worktree
-
-    if not remove_worktree(args.workspace, args.id):
-        raise SystemExit(f"no worktree for {args.id}")
-    print(f"removed worktree for {args.id}")
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="devteam")
+    parser.add_argument("--product", default=".", help="the product repository; its work items live in backlog/ (default: here)")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("backlog", help="capture and validate Markdown work items (no agents)")
-    p.add_argument("--workspace", required=True, help="root containing epics/stories/tasks/bugs")
     actions = p.add_subparsers(dest="backlog_action", required=True)
     actions.add_parser("validate").set_defaults(func=cmd_backlog)
     capture = actions.add_parser("capture")
@@ -70,14 +77,8 @@ def main(argv=None):
     move.set_defaults(func=cmd_backlog)
 
     p = sub.add_parser("run", help="invoke the owning agent for every item at an agent-owned step")
-    p.add_argument("--workspace", required=True)
-    p.add_argument("--once", action="store_true", help="exit when no agent-owned step is left, rather than waiting")
+    p.add_argument("--once", action="store_true", help="exit when no agent-owned step can run, rather than waiting")
     p.set_defaults(func=cmd_run)
-
-    p = sub.add_parser("clean", help="remove an item's git worktree")
-    p.add_argument("--workspace", required=True)
-    p.add_argument("id")
-    p.set_defaults(func=cmd_clean)
 
     args = parser.parse_args(argv)
     args.func(args)

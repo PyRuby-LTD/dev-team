@@ -7,7 +7,8 @@
     "ready":     {"owner": "human",             "transitions": {"play": "implement", "rework": "analysis"}},
     "implement": {"owner": "agent:implementer", "transitions": {"implemented": "review"}},
     "review":    {"owner": "agent:reviewer",    "transitions": {"approve": "accept", "revise": "implement"}},
-    "accept":    {"owner": "human",             "transitions": {"accept": "done", "revise": "implement"}},
+    "accept":    {"owner": "human",             "transitions": {"pr": "publish", "accept": "done", "revise": "implement"}},
+    "publish":   {"owner": "agent:publisher",   "transitions": {"published": "done"}},
     "done":      {"owner": "human",             "transitions": {}}
   }
 }

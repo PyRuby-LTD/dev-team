@@ -1,13 +1,12 @@
 import json
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 
 from devteam import engines
 from devteam.backlog import Repository
 from devteam.config import Role
-from devteam.runner import Runner, remove_worktree
+from devteam.runner import Runner
 
 WORKFLOW = {
     "initial": "captured",
@@ -23,9 +22,9 @@ WORKFLOW = {
 }
 
 
-def role(name, worktree=False):
+def role(name, branch=False):
     return Role(name, "fake", f"{name}-model", 5, ["fake-cli", "{prompt}", "{model}", "{extra_dir}", "{permission}"],
-                "write-mode", worktree)
+                "write-mode", branch)
 
 
 class FakeEngine:
@@ -138,26 +137,16 @@ class RunnerAcceptance(unittest.TestCase):
         self.assertIn("1. Which users?", self.story.path.read_text())
 
     def test_run_limit_stops_an_agent_loop(self):
-        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
-        subprocess.run(["git", "-C", str(self.root), "-c", "user.name=t", "-c", "user.email=t@t",
-                        "commit", "-q", "--allow-empty", "-m", "init"], check=True)
-        for name in ("analyse", "ready", "play"):
-            self.repo.transition(self.story.id, name) if name != "ready" else self.runner(
-                {"STORY-001": [(0, "TRANSITION: ready")]}).run(once=True)
+        self.roles = {name: role(name) for name in self.roles}
+        self.repo.transition(self.story.id, "analyse")
+        self.runner({"STORY-001": [(0, "TRANSITION: ready")]}).run(once=True)
+        self.repo.transition(self.story.id, "play")
         loop = [(0, "TRANSITION: implemented"), (0, "TRANSITION: revise")] * 5
         self.runner({"STORY-001": loop}, max_runs=4).run(once=True)
         self.assertEqual(4, len(self.engine.calls))
         self.assertIn("already ran 4", self.messages[-1])
-        worktree = self.root / "worktrees" / "STORY-001"
-        self.assertEqual({worktree}, {call[3] for call in self.engine.calls})
-        self.assertIn("devteam/STORY-001", self.engine.calls[0][2])
-        branch = subprocess.run(["git", "-C", str(worktree), "rev-parse", "--abbrev-ref", "HEAD"],
-                                capture_output=True, text=True).stdout.strip()
-        self.assertEqual("devteam/STORY-001", branch)
-        self.assertTrue(remove_worktree(self.root, "STORY-001"))
-        self.assertFalse(worktree.exists())
 
-    def test_worktree_role_outside_git_fails_without_invoking(self):
+    def test_branch_role_outside_git_fails_without_invoking(self):
         self.repo.transition(self.story.id, "analyse")
         runner = self.runner({"STORY-001": [(0, "TRANSITION: ready")]})
         runner.run(once=True)

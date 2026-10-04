@@ -1,4 +1,4 @@
-Review the change on branch {{branch}} in {{worktree}} against the acceptance
+Review the change on branch {{branch}} in {{checkout}} against the acceptance
 criteria in the work item. Read the diff with `git diff {{base}}...{{branch}}`.
 Judge the code, not the `## Implementation` notes. Do not change the code.
 

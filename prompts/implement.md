@@ -1,4 +1,4 @@
-Implement this work item in the repository at {{worktree}}. You are on branch
+Implement this work item in the repository at {{checkout}}. You are on branch
 {{branch}}; commit your work there.
 
 Work against the acceptance criteria in the item. If the item has a `## Review`

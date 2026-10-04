@@ -117,8 +117,7 @@ class ItemSteps(unittest.TestCase):
         self.assertEqual(after, self.story.path.read_bytes())
 
     def test_cli_move_and_validate_show_step_and_owner(self):
-        root = Path(self.temp.name) / "cli"
-        prefix = ["backlog", "--workspace", str(root)]
+        prefix = ["--product", str(Path(self.temp.name) / "cli"), "backlog"]
         with contextlib.redirect_stdout(io.StringIO()) as output:
             main(prefix + ["capture", "bug", "CLI bug"])
             main(prefix + ["move", "BUG-001", "analyse"])

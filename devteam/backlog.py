@@ -6,6 +6,7 @@ import re
 
 import yaml
 
+from . import git
 from . import workflow as workflows
 
 
@@ -169,6 +170,14 @@ class Repository:
             self._workflows[name] = workflows.load(name, self.workflow_dir, self.roles)
         return self._workflows[name]
 
+    def commit(self, message):
+        # Only a backlog that is its own git working tree is versioned by the harness.
+        if (self.root / ".git").exists():
+            try:
+                git.commit_all(self.root, message)
+            except git.GitError as exc:
+                raise InvalidRecord(f"could not commit the backlog: {exc}") from exc
+
     def step(self, record):
         """The workflow step a record is at; raises if either is undefined."""
         definition = self.workflow(record.metadata["workflow"])
@@ -226,6 +235,7 @@ class Repository:
         record.path.parent.mkdir(parents=True, exist_ok=True)
         with record.path.open("xb") as fh:
             fh.write(record.render().encode("utf-8"))
+        self.commit(f"{item_id}: captured" + (f" at {metadata['step']}" if kind != "epic" else ""))
         return record
 
     def transition(self, item_id, name):
@@ -253,4 +263,5 @@ class Repository:
         temporary = record.path.with_name(record.path.name + ".tmp")
         temporary.write_bytes(text.encode("utf-8"))
         os.replace(temporary, record.path)
+        self.commit(f"{item_id}: {name} -> {target}")
         return updated

@@ -3,7 +3,7 @@
 
 [engines.claude]
 # {prompt} {model} {cwd} {brief} {extra_dir} {permission} {max_turns} are
-# substituted per invocation. {extra_dir} is the workspace holding the work items.
+# substituted per invocation. {extra_dir} is the backlog directory holding the work items.
 command = [
   "claude", "-p", "{prompt}",
   "--model", "{model}",
@@ -27,7 +27,9 @@ command = [
 permission = "workspace-write"
 
 # One entry per role. Swap engine/model freely; that is the point of the file.
-# worktree = true runs the role in a git worktree on branch devteam/<item id>.
+# branch = true puts the checkout on branch devteam/<item id> before the role runs;
+# only one item at a time holds the checkout. record = true first commits a copy
+# of the work item to docs/work-items/ on that branch.
 [roles.product_owner]
 engine = "claude"
 model = "sonnet"
@@ -42,10 +44,17 @@ max_turns = 30
 engine = "codex"
 model = "gpt-6.1-sol"
 max_turns = 60
-worktree = true
+branch = true
 
 [roles.reviewer]
 engine = "claude"
 model = "sonnet"
 max_turns = 30
-worktree = true
+branch = true
+
+[roles.publisher]
+engine = "claude"
+model = "sonnet"
+max_turns = 20
+branch = true
+record = true

@@ -1,7 +1,7 @@
 # Markdown work items
 
-Work items live beneath a chosen root in `epics/`, `stories/`, `tasks/` or
-`bugs/`. Other Markdown files are narrative, not items. Each item file starts
+Work items live in `backlog/` at the root of the product repository, in
+`epics/`, `stories/`, `tasks/` or `bugs/`. Other Markdown files are narrative, not items. Each item file starts
 with `---`, a YAML mapping and a closing `---` line, followed by a free-form
 Markdown body.
 
@@ -59,21 +59,40 @@ An item whose `workflow` or `step` is not defined fails validation. Capture
 puts a new item at its workflow's `initial` step. `move` applies one of the
 current step's transitions and rewrites only the `step` line of the file.
 
+## Where the backlog lives
+
+`backlog/` is a git worktree of the `devteam-backlog` branch, which shares no
+history with the code. The first `devteam` command run in a repository creates
+the branch and the worktree, or attaches to an existing local or `origin`
+branch, and lists `backlog/` in `.git/info/exclude` so the code branches do not
+see it. Every capture and transition is committed there, so the branch history
+is the audit trail and item steps do not move when the code checkout switches
+branch. Agent transcripts under `backlog/log/` are ignored. Push the branch
+with `git -C backlog push -u origin devteam-backlog`.
+
+Outside a git repository, `backlog/` is a plain directory and nothing is
+committed.
+
+When an item is published, a copy of its file is committed on the item's code
+branch as `docs/work-items/<id>.md`, so the record reaches the main branch when
+the pull request is merged.
+
 ## Usage
 
-Python 3.11+ and the pinned dependency in `requirements.txt` are required:
+Python 3.11+ and the pinned dependency in `requirements.txt` are required. Run
+from the product repository, or pass `--product DIR` before the command:
 
 ```sh
 python3 -m pip install -r requirements.txt
-python3 -m devteam backlog --workspace /tmp/example capture epic 'Example'
-python3 -m devteam backlog --workspace /tmp/example capture story 'Feature' --parent EPIC-001
-python3 -m devteam backlog --workspace /tmp/example validate
-python3 -m devteam backlog --workspace /tmp/example move STORY-001 analyse
+python3 -m devteam backlog capture epic 'Example'
+python3 -m devteam backlog capture story 'Feature' --parent EPIC-001
+python3 -m devteam backlog validate
+python3 -m devteam backlog move STORY-001 analyse
+python3 -m devteam run --once
 python3 -m unittest discover -s tests -v
 ```
 
 Use `--file` to supply the body and `--id` to choose an ID. `validate` lists
-each item with its step and that step's owner, and exits 1 if any file has errors.
-
-`devteam run --workspace W` invokes the owning agent for every item at an
-agent-owned step; see the README.
+each item with its step and that step's owner, and exits 1 if any file has
+errors. `run` invokes the owning agent for every item at an agent-owned step;
+see the README.

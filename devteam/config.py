@@ -24,7 +24,8 @@ class Role:
     max_turns: int
     command: list[str]
     permission: str
-    worktree: bool
+    branch: bool = False
+    record: bool = False
 
     def brief(self) -> str:
         return (ROOT / "roles" / f"{self.name}.md").read_text()
@@ -42,6 +43,7 @@ def load_roles(path: Path | None = None) -> dict[str, Role]:
             max_turns=spec.get("max_turns", 30),
             command=engine["command"],
             permission=engine["permission"],
-            worktree=spec.get("worktree", False),
+            branch=spec.get("branch", False),
+            record=spec.get("record", False),
         )
     return roles
