@@ -158,13 +158,20 @@ class RunnerAcceptance(unittest.TestCase):
 
 
 class EngineInvocation(unittest.TestCase):
+    def test_brief_leads_the_prompt_when_the_engine_has_no_placeholder_for_it(self):
+        without = Role("analyst", "x", "m", 5, ["cli", "{prompt}"], "w")
+        with_flag = Role("analyst", "x", "m", 5, ["cli", "{prompt}", "--system", "{brief}"], "w")
+        brief = without.brief()
+        self.assertEqual(["cli", brief + "\n\ndo it"], engines.build_argv(without, "do it", Path("."), Path(".")))
+        self.assertEqual(["cli", "do it", "--system", brief], engines.build_argv(with_flag, "do it", Path("."), Path(".")))
+
     def test_real_engine_wrapper_logs_and_returns_reply(self):
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "run.log"
             echo = Role("analyst", "sh", "m1", 5, ["sh", "-c", "echo \"$0 {model} {permission}\"; echo oops >&2; exit 4",
                                                     "{prompt}"], "write-mode", False)
             code, reply = engines.run(echo, "hello", Path(directory), Path(directory), log)
-            self.assertEqual((4, "hello m1 write-mode\n"), (code, reply))
+            self.assertEqual((4, echo.brief() + "\n\nhello m1 write-mode\n"), (code, reply))
             self.assertIn("oops", log.read_text())
             missing = Role("analyst", "none", "m1", 5, ["definitely-not-a-command-xyz"], "w", False)
             self.assertEqual((127, ""), engines.run(missing, "p", Path(directory), Path(directory), log))

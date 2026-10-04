@@ -6,10 +6,14 @@ from .config import Role
 
 
 def build_argv(role: Role, prompt: str, cwd: Path, extra_dir: Path) -> list[str]:
+    brief = role.brief()
+    # An engine with no system-prompt flag still needs the brief, so it leads the prompt.
+    if not any("{brief}" in arg for arg in role.command):
+        prompt = brief + "\n\n" + prompt
     values = {
         "prompt": prompt,
         "model": role.model,
-        "brief": role.brief(),
+        "brief": brief,
         "cwd": str(cwd),
         "extra_dir": str(extra_dir),
         "permission": role.permission,

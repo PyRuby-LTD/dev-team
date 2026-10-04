@@ -138,6 +138,9 @@ class Runner:
         current = self.repository.scan().valid.get(record.id)
         if current is None or current.metadata != record.metadata:
             raise StepFailed("the agent changed or broke the item's front matter")
+        # Agents often cannot write .git from their sandbox, so the runner commits their work.
+        if role.branch and not git.clean(self.checkout):
+            git.commit_all(self.checkout, f"{record.id}: {step.name} by {role.name}")
         return match.group(1), self.repository.transition(record.id, match.group(1))
 
     def run_item(self, record, step):

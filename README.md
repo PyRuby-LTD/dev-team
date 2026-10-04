@@ -112,7 +112,9 @@ review/revise loop cannot continue unattended without limit.
 
 Roles marked `branch = true` change code, so the runner first puts your
 checkout on `devteam/<item id>`, created from the branch you were on. You see
-the work happen in the repository you have open.
+the work happen in the repository you have open. When the agent finishes, the
+runner commits whatever it changed to that branch; agents are not expected to
+commit, since their sandboxes often cannot write `.git`.
 
 One item holds the checkout at a time: until it reaches a terminal step, any
 other item that needs a code-changing role waits, while steps such as analysis
