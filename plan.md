@@ -42,3 +42,5 @@ out of `ready`; the order below is a recommendation, not a commitment.
 - STORY-007: code-changing roles work in the checkout on `devteam/<item id>`,
   one item at a time; the backlog is on its own branch at `backlog/`; `pr` at
   `accept` hands the item to the publisher.
+- STORY-003: `devteam tui` lists items under their epics with step and owner,
+  and opens an item to read. It is read-only until STORY-004.
