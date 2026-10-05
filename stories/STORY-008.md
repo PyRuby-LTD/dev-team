@@ -4,7 +4,7 @@ type: story
 title: Stream agent output live to log and listener
 parent: EPIC-001
 workflow: default
-step: implement
+step: test
 ---
 ## Goal
 
@@ -75,70 +75,30 @@ Log viewer subcommand, partial-message token streaming, concurrent agents.
 
 ## Implementation
 
-Stopped as instructed because the installed-version Codex stdout/stderr confirmation (review finding 2) cannot be completed in this environment. No implementation or test code was changed. Review finding 1 (multiline listener output) and the UTF-8 decoding defect reported under Tests remain unresolved. Completion requires a successful probe with service access, or a customer waiver of the channel-confirmation criterion.
+Implemented review findings 1 and 3 and the decoding defect reported under Tests.
 
-Retried installed Codex 0.159.3 with temporary writable state under `/tmp`, a permission-restricted copy of the existing authentication file, closed stdin, and a 45-second timeout. The process exited before the timeout. Temporary state and authentication copy were removed automatically. stdout and stderr were captured separately: progress/errors appeared on stderr, stdout was empty, and no final agent message was produced. Its channel remains unconfirmed.
+- `devteam/engines.py` delivers each rendered line separately to `on_line`. Callback exceptions are swallowed per line so later lines from the same event still reach the listener; renderer exceptions still leave the raw log and reply intact.
+- `devteam/render.py` collapses whitespace in tool names and short arguments, including multiline commands, before applying the existing 200-character truncation. Assistant text remains split and truncated per displayed line.
+- Process pipes now use UTF-8 with `errors="replace"`, so invalid bytes cannot kill a reader and discard subsequent result events. Invalid bytes appear as replacement characters in the unrendered transcript.
+- Added a real-process unit test for multiline assistant text and tool commands, truncation, raw-log preservation, and a failing listener followed by successful callbacks. Added a renderer assertion for a multiline command.
 
-Probe command and actual result:
-
-```text
-codex exec --ephemeral --ignore-user-config --ignore-rules --sandbox read-only --skip-git-repo-check --cd /tmp 'Reply with exactly STREAM_SPLIT_OK. Do not use tools.'
-exit: 1
-stdout: ''
-```
-
-Actual stderr excerpts (repeated connection/reconnection messages omitted):
-
-```text
-WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir "/tmp" (codex_home: AbsolutePathBuf("/tmp/story-008-codex-v8xrficx"))
-Reading additional input from stdin...
-2026-10-05T16:41:00.819579Z ERROR codex_models_manager::manager: failed to refresh available models: Connection failed: error sending request
-OpenAI Codex v0.159.3
---------
-workdir: /tmp
-model: gpt-6.1-sol
-provider: openai
-approval: never
-sandbox: read-only
-reasoning effort: none
-reasoning summaries: none
-session id: 01a10cf0-9bd7-7b90-abfc-e144cc20214a
---------
-user
-Reply with exactly STREAM_SPLIT_OK. Do not use tools.
-2026-10-05T16:41:03.889652Z ERROR rmcp::transport::worker: worker quit with fatal: Transport channel closed, when Client(HttpRequest(HttpRequest("http/request failed: error sending request for url (https://chatgpt.com/backend-api/ps/mcp)")))
-warning: Falling back from WebSockets to HTTPS transport. workspace routing discovery failed
-ERROR: workspace routing discovery failed
-ERROR: workspace routing discovery failed
-```
+Review finding 2 is resolved by the customer's latest Feedback: the installed Codex version's final message is on stdout and progress is on stderr, confirmed from the runner's own logs. No Codex probe was run. Review finding 4's ordering assertion is already present in the current `tests/test_streaming.py`; no tester tests were changed.
 
 Checks run directly, with actual output:
 
 ```text
 $ UV_CACHE_DIR=/tmp/story-008-uv-cache uv run python -m unittest tests.test_engines tests.test_runner tests.test_streaming.StreamingThroughRun.test_output_that_is_not_utf8_does_not_truncate_the_reply
-.................F
-======================================================================
-FAIL: test_output_that_is_not_utf8_does_not_truncate_the_reply (tests.test_streaming.StreamingThroughRun.test_output_that_is_not_utf8_does_not_truncate_the_reply)
+...................
 ----------------------------------------------------------------------
-Traceback (most recent call last):
-  File "/home/tarttelin/projects/pyruby/dev-team/tests/test_streaming.py", line 75, in test_output_that_is_not_utf8_does_not_truncate_the_reply
-    self.assertEqual("answering", self.step())
-    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
-AssertionError: 'answering' != 'analysis'
-- answering
-+ analysis
+Ran 19 tests in 1.120s
 
-
-----------------------------------------------------------------------
-Ran 18 tests in 0.876s
-
-FAILED (failures=1)
+OK
 
 $ git diff --check
 (no output; exit 0)
 ```
 
-The full suite remains for the tester/harness, as requested. No commits were made.
+No failures in these checks. The full suite is left to the tester/harness as requested. No commits were made; changes remain in the working tree.
 
 ## Tests
 
