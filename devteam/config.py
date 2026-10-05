@@ -5,17 +5,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def workspace() -> Path:
-    """Where this team's output for the current product goes. See config/workspace."""
-    conf = ROOT / "config" / "workspace"
-    for line in conf.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#"):
-            path = Path(line)
-            return path if path.is_absolute() else (ROOT / path).resolve()
-    raise SystemExit(f"no workspace path set in {conf}")
-
-
 @dataclass
 class Role:
     name: str

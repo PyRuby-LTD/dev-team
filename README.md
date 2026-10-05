@@ -1,37 +1,29 @@
 # dev-team
 
-**A product delivery team, defined as roles.** Planning, analysis,
-implementation, validation and the path to production - held as charters, the
-skills that convene each role, and a pipeline that takes work items to a
-reviewed change.
+**A product delivery team, defined as roles and a workflow.** You describe what
+you want; the roles question you, turn it into work items, implement them and
+review them, and you decide what is played and what is merged.
 
-This repository is the team. It is not about any particular product. Point it
-at one and it produces that product's artifacts in a workspace outside itself.
+This repository is the team. It is not about any particular product.
 
 ```
-team/                 the roster - one charter per role, the source of truth
-.claude/skills/       how to convene a role for an interview, in the main thread
-.claude/agents/       the two roles that work without you: challenger, coherence
-devteam/              the runner: reads each work item's step and invokes its owner
+devteam/              the runner and terminal UI: reads each work item's step and invokes its owner
 workflows/            the steps, their owners and valid transitions, as JSON
-roles/ prompts/       role briefs, and one prompt per agent-owned step
-config/workspace      where the current product's output goes
+roles/                one brief per agent role
+prompts/              one prompt per agent-owned step
 config/roles.toml     which engine and model each role uses
-tools/workspace       point the team at a different product
-examples/             a completed engagement, kept as a worked example
+docs/                 the work item format, and records of finished items
 ```
 
-**Discovery** - five roles interview you: delivery manager, product owner,
-architect, platform engineer, quality lead. They produce the problem, the
-quality attributes, the architecture and its decisions, the platform, and a
-first slice of stories with checkable acceptance criteria. Convene one with its
-slash command: `/product-owner`, `/architect`, and so on.
+Work items are Markdown files whose front matter names a workflow and the
+item's current step. A workflow is JSON: each step has one owner, a human or an
+agent role, and named transitions to other steps. The runner invokes the owning
+agent for agent-owned steps by shelling out to coding agent CLIs, and waits on
+human-owned ones.
 
-**Delivery** - work items are Markdown files whose front matter names a workflow
-and the item's current step. A workflow is JSON: each step has one owner, a
-human or an agent role, and named transitions to other steps. The runner
-invokes the owning agent for agent-owned steps by shelling out to coding agent
-CLIs, and waits on human-owned ones. The rest of this file describes that half.
+Work starts as a request, which the product owner analyses with you and the
+other roles (`workflows/analysis.json`) and turns into epics, stories, tasks and
+bugs. Each of those then follows `workflows/default.json`.
 
 Nothing is promoted automatically - `play` is a transition only you can make.
 
