@@ -4,7 +4,7 @@ type: story
 title: "Launch the team from any product directory"
 parent: EPIC-002
 workflow: default
-step: captured
+step: analysis
 ---
 
 # Launch the team from any product directory
