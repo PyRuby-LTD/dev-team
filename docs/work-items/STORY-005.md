@@ -4,7 +4,7 @@ type: story
 title: "Analyse a request with the team and create work items from it"
 parent: EPIC-001
 workflow: default
-step: publish
+step: done
 ---
 
 # Analyse a request with the team and create work items from it
@@ -292,3 +292,11 @@ Observations, none blocking:
 - The `[human]` criterion (live run with a customer) is outstanding by nature.
 
 The change satisfies the criteria.
+
+## Local merge — 2026-10-05
+
+The customer requested that all implemented work and backlog records be merged
+into main. STORY-005 code was fast-forwarded into main at 4d6420f. The earlier
+review and customer approval remain recorded above. With no origin configured,
+the pending PR publication was replaced by this explicit local merge; no pull
+request was opened or claimed. The item is now done by local customer acceptance.
