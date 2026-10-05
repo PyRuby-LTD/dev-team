@@ -4,7 +4,7 @@ type: story
 title: Stream agent output live to log and listener
 parent: EPIC-001
 workflow: default
-step: ready
+step: implement
 ---
 ## Goal
 
