@@ -4,7 +4,7 @@ type: story
 title: Stream agent output live to log and listener
 parent: EPIC-001
 workflow: default
-step: implement
+step: test
 ---
 ## Goal
 
@@ -72,3 +72,45 @@ Gaps tightened below: the existing criteria are mostly checkable, but "listener"
 ## Out of scope
 
 Log viewer subcommand, partial-message token streaming, concurrent agents.
+
+## Implementation
+
+Implemented live stdout/stderr draining with two reader threads. Each raw line is written and flushed before rendering or calling the listener; log and listener delivery are serialized. Replies still use stdout only, and process-start failures still return `(127, "")`.
+
+Added `Role.stream` and a renderer/reply-extractor lookup in `devteam/render.py`, with unknown streams falling back to text. Claude uses `--output-format stream-json --verbose`; result events supply the reply, assistant text is the fallback, and a stream without either returns a non-zero code. Renderers suppress event noise, show assistant/tool text, truncate display lines to 200 characters, and tolerate malformed data. Renderer and listener exceptions cannot alter the reply or exit code.
+
+Added optional `Runner.on_line`; the engine receives the keyword only when it is set. Existing five-argument fake engines and runner transition/failure handling are retained. No TUI pane was added, as specified in the analysis.
+
+Added inline stream fixtures and unit tests covering result extraction, fallback, malformed data, non-zero exits, raw logging, unknown streams, display failures, and listener forwarding. A real Python child process waits for acknowledgements from the callback on both stdout and stderr, proving that the log is flushed and the listener receives each line before process exit.
+
+Checks run directly:
+
+```text
+$ UV_CACHE_DIR=/tmp/story-008-uv-cache uv run python -m unittest tests.test_engines tests.test_runner
+.................
+----------------------------------------------------------------------
+Ran 17 tests in 0.694s
+
+OK
+
+$ git diff --check
+(no output; exit 0)
+```
+
+Installed Codex probe:
+
+```text
+$ codex --version
+WARNING: proceeding, even though we could not create PATH aliases: Read-only file system (os error 30)
+codex-cli 0.159.3
+```
+
+Ran `codex exec --ephemeral --ignore-user-config --ignore-rules --sandbox read-only --skip-git-repo-check --cd /tmp 'Reply with exactly STREAM_SPLIT_OK. Do not use tools.'`, capturing stdout and stderr separately. A second attempt also supplied writable `/tmp` paths through the `sqlite_home` and `log_dir` configuration overrides. Both exited 1; stdout was empty and stderr was:
+
+```text
+WARNING: proceeding, even though we could not create PATH aliases: Read-only file system (os error 30)
+Reading additional input from stdin...
+Error: failed to initialize in-process app-server client: Read-only file system (os error 30)
+```
+
+The installed-version final-message/progress split remains unconfirmed because the CLI cannot initialize in this execution environment. No claim of successful verification is made for that criterion. The full regression suite is left to the tester/harness as requested.
