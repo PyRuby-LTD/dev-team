@@ -135,3 +135,18 @@ Black-box tests in `tests/test_streaming.py` run `python -m devteam --product <t
 Run one on its own: `uv run python -m devteam check tests.test_streaming.StreamingThroughRun.test_non_zero_exit_code_is_kept_and_fails_the_step`
 
 Not covered end to end: the Codex stdout/stderr split (the implementer could not confirm it on the installed version), rendering of lines, and truncation; the renderer is only reachable through `on_line`, which only unit tests in `tests/test_engines.py` exercise. Whole suite: 88 tests pass.
+
+## Test run
+
+Run by the harness, 2026-10-05 16:30 UTC. Full output: `/home/tarttelin/projects/pyruby/dev-team/backlog/log/STORY-008/verify-20261005T162938542801.log`
+
+Passed: `the project check`
+
+```text
+uv run python -m unittest discover -s tests
+........................................................................................
+----------------------------------------------------------------------
+Ran 88 tests in 26.871s
+
+OK
+```
