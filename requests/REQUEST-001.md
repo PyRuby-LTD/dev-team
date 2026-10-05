@@ -4,7 +4,7 @@ type: request
 title: As a customer using dev-team tui, I want to be able to see what an agent is
   curr
 workflow: analysis
-step: product-owner
+step: product-owner-questions
 ---
 As a customer using dev-team tui, I want to be able to see what an agent is currently doing, given an agent is working on a work-item. I want to be able to toggle this view so I can choose to watch the actions of one agent at a time, or not watch at all. I'm thinking it's basically like a tail -f of system out in a smaller pane, possibly the lower half of the right pane, auto-scrolling.
 
@@ -112,3 +112,19 @@ Same two stories as proposed, with a refinement: story 1 should carry the claude
 - No dependency changes are needed; `subprocess` and Textual's RichLog are enough.
 
 No customer questions at this stage.
+
+## Product owner findings (second pass)
+
+The architect's input is accepted as written; no further specialist input is needed. The request is understood and ready to turn into work items.
+
+Decisions taken: two stories under EPIC-001 (the TUI and workflow work already lives there), exactly as the architect refined them.
+
+1. Story "Stream agent output live to log and listener": `engines.run` moves to Popen with line-by-line reading, flushing to the raw log and an optional `on_line` callback; the claude engine switches to `stream-json --verbose` with the reply taken from the final result event (fallback to assistant text, empty reply plus non-zero code if no result); codex streams stdout and stderr; a per-engine `stream` key in `roles.toml` selects a never-raising renderer; callback or renderer errors never change the exit code or reply; tests use recorded streams (success, no result, malformed line, non-zero exit) and a fake engine proving the callback fires before exit.
+2. Story "Live agent output pane in the TUI": auto-scrolling RichLog in the lower half of `#detail`, toggle key (proposed `l`) listed in the footer, no layout space when hidden, header with item id, step and role, cleared when the active agent changes, `max_lines` 2000, runner `on_output(item_id, line)` plus start/finish signalling, tests in tests/test_tui.py with a fake engine.
+
+Blocker (second occurrence): the sandbox again refused approval for `python3 -m devteam --product . backlog capture ...` (and for writing body files outside the repo). No work items exist, so `## Created work items` is empty and I cannot responsibly choose `complete`.
+
+## Questions
+
+1. The `backlog capture` command needs approval in this environment and has been refused twice. Can you approve it (or allow `python3 -m devteam --product . backlog capture` and `backlog validate`) so the two stories above can be created? Nothing else is needed from you.
+**Answer:** 
