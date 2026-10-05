@@ -128,3 +128,7 @@ Blocker (second occurrence): the sandbox again refused approval for `python3 -m 
 
 1. The `backlog capture` command needs approval in this environment and has been refused twice. Can you approve it (or allow `python3 -m devteam --product . backlog capture` and `backlog validate`) so the two stories above can be created? Nothing else is needed from you.
 **Answer:** 
+
+## Feedback
+
+- **answered -> product-owner:** Try again, the permissions should be granted now
