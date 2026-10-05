@@ -4,7 +4,7 @@ type: story
 title: Stream agent output live to log and listener
 parent: EPIC-001
 workflow: default
-step: implement
+step: test
 ---
 ## Goal
 
@@ -75,11 +75,11 @@ Log viewer subcommand, partial-message token streaming, concurrent agents.
 
 ## Implementation
 
-Stopped on review finding 2, following the instruction to stop if an acceptance criterion is impossible. No implementation or test code was changed in this revision. Findings 1 (multiline listener output) and 3 (strict pipe decoding) remain unresolved.
+Stopped on review finding 2 as instructed: the installed-version Codex final-message stdout/stderr confirmation cannot be completed in this environment. No implementation or test code was changed. Review finding 1 (multiline listener output) and the reported UTF-8 decoding defect remain unresolved. Completion needs a successful installed-version probe in an environment with service access, or an explicit customer waiver of that criterion.
 
-Retried the installed Codex probe with a temporary writable `CODEX_HOME` under `/tmp`, containing a permission-restricted copy of the existing authentication file. The temporary state and authentication copy were removed after the probe. This resolved the earlier read-only initialization failure, but network/model requests failed. The installed version starts and sends progress/errors to stderr; it never produces a final agent message, so the required installed-version final-message stdout/stderr confirmation remains impossible in this execution environment. It needs a successful probe in an environment with service access, or an explicit customer waiver, before implementation can proceed.
+Retried Codex 0.159.3 using temporary writable state under `/tmp`, with a permission-restricted copy of the existing authentication file. Captured stdout and stderr separately, closed stdin, and applied a 55-second timeout. The process exited before the timeout. Temporary state and the authentication copy were removed.
 
-Probe command (invoked with temporary state, stdin closed, and stdout/stderr captured separately):
+Probe command and actual result:
 
 ```text
 codex exec --ephemeral --ignore-user-config --ignore-rules --sandbox read-only --skip-git-repo-check --cd /tmp 'Reply with exactly STREAM_SPLIT_OK. Do not use tools.'
@@ -90,9 +90,9 @@ stdout: ''
 Actual stderr excerpts (repeated connection/reconnection messages omitted):
 
 ```text
-WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir "/tmp" (codex_home: AbsolutePathBuf("/tmp/story-008-codex-ot90mixp"))
+WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir "/tmp" (codex_home: AbsolutePathBuf("/tmp/story-008-codex-zmfx88jj"))
 Reading additional input from stdin...
-2026-10-05T16:31:50.478096Z ERROR codex_models_manager::manager: failed to refresh available models: Connection failed: error sending request
+2026-10-05T16:35:55.033590Z ERROR codex_models_manager::manager: failed to refresh available models: Connection failed: error sending request
 OpenAI Codex v0.159.3
 --------
 workdir: /tmp
@@ -102,32 +102,52 @@ approval: never
 sandbox: read-only
 reasoning effort: none
 reasoning summaries: none
-session id: 01a10ce8-373c-7971-84bf-3c2f761af271
+session id: 01a10ceb-f1d4-7ed1-a0bb-1738d9b5f361
 --------
 user
 Reply with exactly STREAM_SPLIT_OK. Do not use tools.
+2026-10-05T16:35:58.118944Z ERROR rmcp::transport::worker: worker quit with fatal: Transport channel closed, when Client(HttpRequest(HttpRequest("http/request failed: error sending request for url (https://chatgpt.com/backend-api/ps/mcp)")))
 warning: Falling back from WebSockets to HTTPS transport. workspace routing discovery failed
 ERROR: workspace routing discovery failed
 ERROR: workspace routing discovery failed
 ```
 
-[Official non-interactive documentation](https://learn.chatgpt.com/docs/non-interactive-mode) describes progress on stderr and the final message on stdout. That documentation does not satisfy the explicit criterion to confirm the split by running the installed version successfully.
+Progress/errors were observed on stderr; no final agent message was produced, so its channel remains unconfirmed.
 
-Existing unit tests run directly, with actual output:
+Checks run directly, with actual output:
 
 ```text
 $ UV_CACHE_DIR=/tmp/story-008-uv-cache uv run python -m unittest tests.test_engines tests.test_runner
 .................
 ----------------------------------------------------------------------
-Ran 17 tests in 0.737s
+Ran 17 tests in 0.596s
 
 OK
+
+$ UV_CACHE_DIR=/tmp/story-008-uv-cache uv run python -m unittest tests.test_streaming.StreamingThroughRun.test_output_that_is_not_utf8_does_not_truncate_the_reply
+F
+======================================================================
+FAIL: test_output_that_is_not_utf8_does_not_truncate_the_reply (tests.test_streaming.StreamingThroughRun.test_output_that_is_not_utf8_does_not_truncate_the_reply)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/tarttelin/projects/pyruby/dev-team/tests/test_streaming.py", line 75, in test_output_that_is_not_utf8_does_not_truncate_the_reply
+    self.assertEqual("answering", self.step())
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'answering' != 'analysis'
+- answering
++ analysis
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.519s
+
+FAILED (failures=1)
 
 $ git diff --check
 (no output; exit 0)
 ```
 
-The full suite remains for the tester/harness, as requested.
+The full suite remains for the tester/harness, as requested. No commits were made.
 
 ## Tests
 
