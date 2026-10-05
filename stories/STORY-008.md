@@ -4,7 +4,7 @@ type: story
 title: Stream agent output live to log and listener
 parent: EPIC-001
 workflow: default
-step: implement
+step: test
 ---
 ## Goal
 
@@ -75,21 +75,51 @@ Log viewer subcommand, partial-message token streaming, concurrent agents.
 
 ## Implementation
 
-Implemented live stdout/stderr draining with two reader threads. Each raw line is written and flushed before rendering or calling the listener; log and listener delivery are serialized. Replies still use stdout only, and process-start failures still return `(127, "")`.
+Stopped on review finding 2, following the instruction to stop if an acceptance criterion is impossible. No implementation or test code was changed in this revision. Findings 1 (multiline listener output) and 3 (strict pipe decoding) remain unresolved.
 
-Added `Role.stream` and a renderer/reply-extractor lookup in `devteam/render.py`, with unknown streams falling back to text. Claude uses `--output-format stream-json --verbose`; result events supply the reply, assistant text is the fallback, and a stream without either returns a non-zero code. Renderers suppress event noise, show assistant/tool text, truncate display lines to 200 characters, and tolerate malformed data. Renderer and listener exceptions cannot alter the reply or exit code.
+Retried the installed Codex probe with a temporary writable `CODEX_HOME` under `/tmp`, containing a permission-restricted copy of the existing authentication file. The temporary state and authentication copy were removed after the probe. This resolved the earlier read-only initialization failure, but network/model requests failed. The installed version starts and sends progress/errors to stderr; it never produces a final agent message, so the required installed-version final-message stdout/stderr confirmation remains impossible in this execution environment. It needs a successful probe in an environment with service access, or an explicit customer waiver, before implementation can proceed.
 
-Added optional `Runner.on_line`; the engine receives the keyword only when it is set. Existing five-argument fake engines and runner transition/failure handling are retained. No TUI pane was added, as specified in the analysis.
+Probe command (invoked with temporary state, stdin closed, and stdout/stderr captured separately):
 
-Added inline stream fixtures and unit tests covering result extraction, fallback, malformed data, non-zero exits, raw logging, unknown streams, display failures, and listener forwarding. A real Python child process waits for acknowledgements from the callback on both stdout and stderr, proving that the log is flushed and the listener receives each line before process exit.
+```text
+codex exec --ephemeral --ignore-user-config --ignore-rules --sandbox read-only --skip-git-repo-check --cd /tmp 'Reply with exactly STREAM_SPLIT_OK. Do not use tools.'
+exit: 1
+stdout: ''
+```
 
-Checks run directly:
+Actual stderr excerpts (repeated connection/reconnection messages omitted):
+
+```text
+WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir "/tmp" (codex_home: AbsolutePathBuf("/tmp/story-008-codex-ot90mixp"))
+Reading additional input from stdin...
+2026-10-05T16:31:50.478096Z ERROR codex_models_manager::manager: failed to refresh available models: Connection failed: error sending request
+OpenAI Codex v0.159.3
+--------
+workdir: /tmp
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: none
+reasoning summaries: none
+session id: 01a10ce8-373c-7971-84bf-3c2f761af271
+--------
+user
+Reply with exactly STREAM_SPLIT_OK. Do not use tools.
+warning: Falling back from WebSockets to HTTPS transport. workspace routing discovery failed
+ERROR: workspace routing discovery failed
+ERROR: workspace routing discovery failed
+```
+
+[Official non-interactive documentation](https://learn.chatgpt.com/docs/non-interactive-mode) describes progress on stderr and the final message on stdout. That documentation does not satisfy the explicit criterion to confirm the split by running the installed version successfully.
+
+Existing unit tests run directly, with actual output:
 
 ```text
 $ UV_CACHE_DIR=/tmp/story-008-uv-cache uv run python -m unittest tests.test_engines tests.test_runner
 .................
 ----------------------------------------------------------------------
-Ran 17 tests in 0.694s
+Ran 17 tests in 0.737s
 
 OK
 
@@ -97,23 +127,7 @@ $ git diff --check
 (no output; exit 0)
 ```
 
-Installed Codex probe:
-
-```text
-$ codex --version
-WARNING: proceeding, even though we could not create PATH aliases: Read-only file system (os error 30)
-codex-cli 0.159.3
-```
-
-Ran `codex exec --ephemeral --ignore-user-config --ignore-rules --sandbox read-only --skip-git-repo-check --cd /tmp 'Reply with exactly STREAM_SPLIT_OK. Do not use tools.'`, capturing stdout and stderr separately. A second attempt also supplied writable `/tmp` paths through the `sqlite_home` and `log_dir` configuration overrides. Both exited 1; stdout was empty and stderr was:
-
-```text
-WARNING: proceeding, even though we could not create PATH aliases: Read-only file system (os error 30)
-Reading additional input from stdin...
-Error: failed to initialize in-process app-server client: Read-only file system (os error 30)
-```
-
-The installed-version final-message/progress split remains unconfirmed because the CLI cannot initialize in this execution environment. No claim of successful verification is made for that criterion. The full regression suite is left to the tester/harness as requested.
+The full suite remains for the tester/harness, as requested.
 
 ## Tests
 
