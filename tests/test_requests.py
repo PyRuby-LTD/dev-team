@@ -1,6 +1,7 @@
 """Request analysis acceptance checks, using the configured workflow and fake agents."""
 import contextlib
 import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -104,6 +105,48 @@ class Requests(unittest.TestCase):
                 self.assertEqual(before, request.path.read_bytes())
                 self.run_reply('TRANSITION: return')
                 self.assertEqual('product-owner', self.current().metadata['step'])
+
+    def test_runner_disambiguates_agent_steps_with_the_same_name(self):
+        root = Path(self.temp.name)
+        workflows = root / 'workflows'
+        workflows.mkdir()
+        for name in ('default', 'analysis'):
+            definition = json.loads((ROOT / 'workflows' / f'{name}.json').read_text())
+            if name == 'analysis':
+                # A future agent-owned step may share a name with default's analysis.
+                definition['initial'] = 'analysis'
+                definition['steps']['analysis'] = {
+                    'owner': 'agent:product_owner', 'transitions': {'complete': 'review'},
+                }
+            (workflows / f'{name}.json').write_text(json.dumps(definition))
+        repo = Repository(root / 'mixed-backlog', workflows)
+        request = repo.create('request', 'Idea')
+        epic = repo.create('epic', 'Epic')
+        story = repo.create('story', 'Story', parent=epic.id)
+        repo.transition(story.id, 'analyse')
+        prompts = root / 'prompts'
+        (prompts / 'analysis').mkdir(parents=True)
+        (prompts / 'analysis.md').write_text('Default analysis prompt\n')
+        (prompts / 'analysis/analysis.md').write_text('Request analysis prompt\n')
+        calls = []
+
+        def engine(role, prompt, cwd, extra_dir, log):
+            calls.append(role.name)
+            expected, transition = {
+                'product_owner': ('Request analysis prompt\n', 'complete'),
+                'analyst': ('Default analysis prompt\n', 'ready'),
+            }[role.name]
+            self.assertTrue(prompt.startswith(expected))
+            log.write_text('fake transcript')
+            return 0, f'TRANSITION: {transition}'
+
+        with patch('devteam.runner.ROOT', root):
+            runner = Runner(repo, self.roles, engine, report=lambda message: None)
+            runner.run(once=True)
+        self.assertEqual({}, runner.failed)
+        self.assertCountEqual(['product_owner', 'analyst'], calls)
+        self.assertEqual('review', repo.scan().valid[request.id].metadata['step'])
+        self.assertEqual('ready', repo.scan().valid[story.id].metadata['step'])
 
     def test_every_roles_questions_preserve_answers_and_return_to_same_role(self):
         for number, name in enumerate(('product-owner', 'architect', 'platform-engineer', 'quality-lead')):
