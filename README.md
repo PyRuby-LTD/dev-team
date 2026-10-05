@@ -39,7 +39,8 @@ Nothing is promoted automatically - `play` is a transition only you can make.
 
 ## Requirements
 
-`python3` (3.11+), `git`, and the CLIs named in `config/roles.toml` - `claude`
+[`uv`](https://docs.astral.sh/uv/) (it supplies Python 3.13+ and the pinned
+dependencies from `uv.lock`), `git`, and the CLIs named in `config/roles.toml` - `claude`
 and `codex` by default, both signed in with your own subscription.
 
 ## Use
@@ -47,14 +48,14 @@ and `codex` by default, both signed in with your own subscription.
 Run from the root of the product repository, or pass `--product DIR`:
 
 ```bash
-python3 -m pip install -r requirements.txt
-python3 -m devteam backlog capture request "An idea for the product" --file idea.md
-python3 -m devteam backlog capture story "CSV export drops the final row" --parent EPIC-001
-python3 -m devteam tui                           # see items, answer questions, move them, run agents
-python3 -m devteam backlog validate              # the same list, printed once
-python3 -m devteam backlog move STORY-008 analyse
-python3 -m devteam run --once                    # run agent-owned steps until none can run
-python3 -m unittest discover -s tests -v
+uv sync
+uv run python -m devteam backlog capture request "An idea for the product" --file idea.md
+uv run python -m devteam backlog capture story "CSV export drops the final row" --parent EPIC-001
+uv run python -m devteam tui                           # see items, answer questions, move them, run agents
+uv run python -m devteam backlog validate              # the same list, printed once
+uv run python -m devteam backlog move STORY-008 analyse
+uv run python -m devteam run --once                    # run agent-owned steps until none can run
+uv run python -m unittest discover -s tests -v
 ```
 
 `tui` is the main way in: it shows every item, lets you answer an agent's

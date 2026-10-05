@@ -93,18 +93,18 @@ the pull request is merged.
 
 ## Usage
 
-Python 3.11+ and the pinned dependency in `requirements.txt` are required. Run
+`uv` is required; `uv sync` installs Python and the pinned dependencies. Run
 from the product repository, or pass `--product DIR` before the command:
 
 ```sh
-python3 -m pip install -r requirements.txt
-python3 -m devteam backlog capture epic 'Example'
-python3 -m devteam backlog capture request 'A new idea' --file idea.md
-python3 -m devteam backlog capture story 'Feature' --parent EPIC-001
-python3 -m devteam backlog validate
-python3 -m devteam backlog move STORY-001 analyse
-python3 -m devteam run --once
-python3 -m unittest discover -s tests -v
+uv sync
+uv run python -m devteam backlog capture epic 'Example'
+uv run python -m devteam backlog capture request 'A new idea' --file idea.md
+uv run python -m devteam backlog capture story 'Feature' --parent EPIC-001
+uv run python -m devteam backlog validate
+uv run python -m devteam backlog move STORY-001 analyse
+uv run python -m devteam run --once
+uv run python -m unittest discover -s tests -v
 ```
 
 Use `--file` to supply the body and `--id` to choose an ID. `list` and `validate` list

@@ -10,6 +10,8 @@ command = [
   "--append-system-prompt", "{brief}",
   "--add-dir", "{extra_dir}",
   "--permission-mode", "{permission}",
+  # Shell commands these roles may run unattended; file edits are covered by {permission}.
+  "--allowedTools", "Bash(uv run python -m devteam *) Bash(uv run python -m unittest *) Bash(git diff *) Bash(git log *) Bash(git status *)",
   "--max-turns", "{max_turns}",
   "--output-format", "text",
 ]

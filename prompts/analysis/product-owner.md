@@ -16,7 +16,7 @@ the Questions section. State reasonable assumptions instead of asking needless
 questions. Do not change the request's front matter.
 
 Before choosing `complete`, create the necessary epics, stories, tasks and bugs
-through the existing capture code. Use `python3 -m devteam --product <product>
+through the existing capture code. Use `uv run python -m devteam --product <product>
 backlog capture <type> "<title>" --file <body-file>`; the product is the repository
 you are running in, and its backlog must be the directory containing this
 request. If the module is unavailable from the product, locate the team harness
