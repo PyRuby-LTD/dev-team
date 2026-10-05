@@ -4,7 +4,7 @@ type: story
 title: "Analyse a request with the team and create work items from it"
 parent: EPIC-001
 workflow: default
-step: accept
+step: publish
 ---
 
 # Analyse a request with the team and create work items from it
