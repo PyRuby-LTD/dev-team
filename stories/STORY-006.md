@@ -36,3 +36,7 @@ credentials are prerequisites to document, not things to bundle.
 - [human] Given a fresh checkout on another computer and the documented
   prerequisites, when the customer follows the setup, then it works without
   home-directory resources or source edits.
+
+## Feedback
+
+- **analyse -> analysis:** I use 'uv' for managing python. Include in the README.md instructions for creating an alias 'dev-team' in .bashrc that runs the dev-team tui in $PWD
