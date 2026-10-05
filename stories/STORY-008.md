@@ -4,7 +4,7 @@ type: story
 title: Stream agent output live to log and listener
 parent: EPIC-001
 workflow: default
-step: test
+step: verify
 ---
 ## Goal
 
@@ -114,3 +114,24 @@ Error: failed to initialize in-process app-server client: Read-only file system 
 ```
 
 The installed-version final-message/progress split remains unconfirmed because the CLI cannot initialize in this execution environment. No claim of successful verification is made for that criterion. The full regression suite is left to the tester/harness as requested.
+
+## Tests
+
+Black-box tests in `tests/test_streaming.py` run `python -m devteam --product <tmp> run --once` against a stub `claude` executable (`tests/stubs/claude`, copied onto PATH) that replays recorded streams from `tests/fixtures/streams/`. The listener (`on_line`) is not reachable from the CLI, so its criteria are covered only by the implementer's unit tests in `tests/test_engines.py`.
+
+| Criterion | Test |
+| --- | --- |
+| Lines appended and flushed to the log while the agent runs | `test_first_line_is_in_the_log_while_the_agent_is_still_running` (the stub exits 99 unless its first line is in the log before it finishes) |
+| Return contract, 127 on a missing binary | `test_missing_binary_fails_the_step_with_a_logged_message` |
+| Non-zero exit kept; failure handling unchanged | `test_non_zero_exit_code_is_kept_and_fails_the_step` |
+| Claude uses `stream-json --verbose`, no partial messages | `test_claude_is_invoked_with_stream_json_and_no_partial_messages` |
+| Reply is the `result` event | `test_result_event_is_the_reply_that_drives_the_transition` |
+| Fallback to assistant text | `test_assistant_text_is_the_reply_when_there_is_no_result_event` |
+| Neither: empty reply, non-zero code | `test_stream_without_result_or_text_fails_the_step` |
+| Malformed line tolerated and shown raw | `test_malformed_line_is_logged_verbatim_and_does_not_break_the_reply` |
+| Log holds the raw stream, stderr included | `test_log_holds_the_raw_stream_including_stderr` |
+| `stream` key in roles.toml selects the claude-json reply handling | the result and fallback tests above, driven by the real `config/roles.toml` |
+
+Run one on its own: `uv run python -m devteam check tests.test_streaming.StreamingThroughRun.test_non_zero_exit_code_is_kept_and_fails_the_step`
+
+Not covered end to end: the Codex stdout/stderr split (the implementer could not confirm it on the installed version), rendering of lines, and truncation; the renderer is only reachable through `on_line`, which only unit tests in `tests/test_engines.py` exercise. Whole suite: 88 tests pass.
