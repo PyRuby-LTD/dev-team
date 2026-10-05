@@ -11,7 +11,7 @@ command = [
   "--add-dir", "{extra_dir}",
   "--permission-mode", "{permission}",
   # Shell commands these roles may run unattended; file edits are covered by {permission}.
-  "--allowedTools", "Bash(uv run python -m devteam *) Bash(uv run python -m unittest *) Bash(git diff *) Bash(git log *) Bash(git status *)",
+  "--allowedTools", "Bash(uv run python -m devteam *) Bash(git diff *) Bash(git log *) Bash(git status *)",
   "--max-turns", "{max_turns}",
   "--output-format", "text",
 ]
@@ -27,6 +27,13 @@ command = [
   "--skip-git-repo-check",
 ]
 permission = "workspace-write"
+
+# The project's check: what `devteam check` and a workflow step owned by "check"
+# run in the product repository. Agents call `devteam check`, never make itself.
+[check]
+command = ["make", "regression"]
+one = "TEST={name}"   # appended to run a single test
+timeout = 1800        # seconds; a run that exceeds it has failed
 
 # One entry per role. Swap engine/model freely; that is the point of the file.
 # branch = true puts the checkout on branch devteam/<item id> before the role runs;
@@ -55,10 +62,10 @@ model = "gpt-6.1-sol"
 max_turns = 60
 branch = true
 
-# Needs to start the system under test, so it runs on the engine with a shell sandbox.
+# Runs outside a sandbox so `devteam check` can start the system under test.
 [roles.tester]
-engine = "codex"
-model = "gpt-6.1-sol"
+engine = "claude"
+model = "sonnet"
 max_turns = 60
 branch = true
 

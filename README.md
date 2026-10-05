@@ -47,7 +47,7 @@ uv run python -m devteam tui                           # see items, answer quest
 uv run python -m devteam backlog validate              # the same list, printed once
 uv run python -m devteam backlog move STORY-008 analyse
 uv run python -m devteam run --once                    # run agent-owned steps until none can run
-uv run python -m unittest discover -s tests -v
+uv run python -m devteam check                   # run this repository's own suite
 ```
 
 `tui` is the main way in: it shows every item, lets you answer an agent's
@@ -78,7 +78,8 @@ beside the code; the first command creates it. See
 | answering | you | `answered` (back to analysis) |
 | ready | you | `play`, `rework` |
 | implement | implementer, on the item's branch | `implemented` (to test) |
-| test | tester, on the item's branch | `tested` (to review), `defect` (back to implement) |
+| test | tester, on the item's branch | `written` (to verify), `defect` (back to implement) |
+| verify | the harness runs `make regression` | `passed` (to review), `failed` (back to test) |
 | review | reviewer, on the item's branch | `approve`, `revise` |
 | accept | you | `pr` (to publish), `accept` (done, no pull request), `revise` |
 | publish | publisher, on the item's branch | `published` |
@@ -124,6 +125,19 @@ uncommitted changes; it waits and says so.
 At `accept`, look at the result in place. `pr` makes the runner push the branch to
 `origin` and hands the item to the publisher, which opens a pull request against
 the base branch with `gh`. Merging is yours to do.
+
+## The project check
+
+Every product repository has a `Makefile` in its root with one target that
+proves the system works: `make regression`, which also accepts `TEST=<name>` to
+run a single test. It is named in `[check]` in `config/roles.toml`.
+
+Agents never call `make`. They run `uv run python -m devteam check [<test>]`,
+which runs the target, prints a short result and keeps the full output under
+`backlog/log/check/`. A workflow step owned by `check` is run by the harness
+itself: the exit code chooses `passed` or `failed`, and the result is written
+into the item under `## Test run`. That run, not any agent's account, is what
+the reviewer is given.
 
 ## Choosing models per role
 

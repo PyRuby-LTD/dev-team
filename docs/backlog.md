@@ -49,9 +49,10 @@ A workflow is a JSON file in `workflows/`, named by the item's `workflow` field:
 }
 ```
 
-Each step has exactly one owner, `human` or `agent:<role>` where the role is
-defined in `config/roles.toml`, and its transitions as name -> target step. A
-step with no transitions is terminal. A definition with a missing or malformed
+Each step has exactly one owner: `human`, `agent:<role>` where the role is
+defined in `config/roles.toml`, or `check`, which the harness runs itself and
+which has exactly the transitions `passed` and `failed`. Each step also has its
+transitions as name -> target step. A step with no transitions is terminal. A definition with a missing or malformed
 owner, an unknown role, a transition to an undefined step or a duplicate step
 is rejected with a message naming the step.
 

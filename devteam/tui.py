@@ -53,7 +53,9 @@ class Row:
 def owner_label(step):
     if step.terminal:
         return "finished"
-    return "YOU" if step.role is None else step.role
+    if step.check:
+        return "checks"
+    return "YOU" if step.human else step.role
 
 
 def rows(repository, runner=None):
@@ -73,7 +75,7 @@ def rows(repository, runner=None):
             row.step, row.step_order = step.name, list(steps).index(step.name)
             row.transitions = tuple((name, target, owner_label(steps[target])) for name, target in step.transitions.items())
             if not step.terminal:
-                row.needs_you = step.role is None
+                row.needs_you = step.human
                 row.waiting_on = owner_label(step)
             if row.needs_you:
                 row.unanswered = sum(not question.answered for question in questions.parse(record.body))
@@ -187,7 +189,7 @@ class Actions(ModalScreen):
         if row.unanswered:
             options.append(Option(f"Answer {row.unanswered} question{'s' if row.unanswered != 1 else ''}", id="answer"))
         for name, target, owner in row.transitions:
-            who = "it is finished" if owner == "finished" else ("back to you" if owner == "YOU" else f"the {owner} takes over")
+            who = {"finished": "it is finished", "YOU": "back to you", "checks": "the checks run"}.get(owner, f"the {owner} takes over")
             options.append(Option(Text.assemble((name, "bold"), f"  ->  {target}  ", (who, "dim")), id=f"move:{name}"))
         with Vertical(classes="dialog"):
             yield Label(Text.assemble((row.label, "bold"), "  ", row.title, f"\nNow at {row.step}."))
@@ -478,7 +480,7 @@ class Backlog(App):
             self.push_screen(Answers(row), lambda answers: self.answered(row, answers))
         elif choice:
             name, target, owner = next(move for move in row.transitions if move[0] == choice.removeprefix("move:"))
-            if owner in ("YOU", "finished"):
+            if owner in ("YOU", "finished", "checks"):
                 self.move(row, name, "")
             else:
                 self.push_screen(Note(row, name, target, owner),

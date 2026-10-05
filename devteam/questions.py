@@ -75,3 +75,20 @@ def add_feedback(body, label, text):
             end -= 1
         lines[end:end] = ([""] if end == start + 1 else []) + entry
     return newline.join(lines) + newline
+
+
+def replace_section(body, heading, content):
+    """Put content under a level-two heading, replacing what was there or adding it at the end."""
+    newline = "\r\n" if "\r\n" in body else "\n"
+    lines = body.splitlines()
+    title = re.compile(r"##\s+" + re.escape(heading) + r"\s*$", re.IGNORECASE)
+    start = next((number for number, line in enumerate(lines) if title.match(line)), None)
+    block = [f"## {heading}", ""] + content.strip("\n").splitlines()
+    if start is None:
+        while lines and not lines[-1].strip():
+            lines.pop()
+        lines += [""] + block
+    else:
+        end = next((number for number in range(start + 1, len(lines)) if HEADING.match(lines[number])), len(lines))
+        lines[start:end] = block + ([""] if end < len(lines) else [])
+    return newline.join(lines) + newline

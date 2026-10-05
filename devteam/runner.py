@@ -3,7 +3,8 @@ import re
 import time
 from datetime import datetime, timezone
 
-from . import engines, git
+from . import check as checks
+from . import engines, git, questions
 from .backlog import InvalidRecord
 from .config import ROOT, load_roles
 from .workflow import InvalidWorkflow
@@ -46,13 +47,15 @@ def render(step, values, workflow="default"):
 
 
 class Runner:
-    def __init__(self, repository, roles=None, engine=engines.run, report=print, max_runs=16, checkout=None):
+    def __init__(self, repository, roles=None, engine=engines.run, report=print, max_runs=16, checkout=None,
+                 check=checks.run):
         self.repository = repository
         self.roles = load_roles() if roles is None else roles
         self.engine = engine
         self.report = report
         self.max_runs = max_runs
         self.checkout = checkout
+        self.check = check
         self.failed = {}
         self.waiting = {}
         self.active = None
@@ -64,7 +67,7 @@ class Runner:
             if record.metadata["type"] == "epic" or record.id in self.failed:
                 continue
             step = self.repository.step(record)
-            if step.role:
+            if step.role or step.check:
                 found.append((record, step))
         return found
 
@@ -111,10 +114,7 @@ class Runner:
             if base is None:
                 raise StepFailed(f"no base branch is recorded for {branch}")
             values.update(checkout=str(self.checkout), branch=branch, base=base)
-        # A revise loop between two agents would otherwise run unattended without limit.
-        if self.runs.get(record.id, 0) >= self.max_runs:
-            raise StepFailed(f"already ran {self.max_runs} agent steps this session")
-        self.runs[record.id] = self.runs.get(record.id, 0) + 1
+        self.count_run(record)
         if role.record:
             copy = self.checkout / RECORDS / f"{record.id}.md"
             copy.parent.mkdir(parents=True, exist_ok=True)
@@ -145,13 +145,41 @@ class Runner:
             git.commit_all(self.checkout, f"{record.id}: {step.name} by {role.name}")
         return match.group(1), self.repository.transition(record.id, match.group(1))
 
+    def count_run(self, record):
+        # A revise loop between two agents would otherwise run unattended without limit.
+        if self.runs.get(record.id, 0) >= self.max_runs:
+            raise StepFailed(f"already ran {self.max_runs} steps this session")
+        self.runs[record.id] = self.runs.get(record.id, 0) + 1
+
+    def verify(self, record, step, log):
+        """Run the project's check on the item's branch; its exit code chooses the transition."""
+        self.take_checkout(record)
+        self.count_run(record)
+        self.active = record.id
+        self.report(f"{record.id} {step.name}: check started")
+        try:
+            code, output = self.check(self.checkout, log=log)
+        finally:
+            self.active = None
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        result = f"Run by the harness, {stamp}. Full output: `{log}`\n\n" + checks.summary(code, output, "the project check")
+        current = self.repository.scan().valid.get(record.id)
+        if current is None:
+            raise StepFailed("the item is missing or invalid after the check")
+        self.repository.write_body(record.id, questions.replace_section(current.body, "Test run", result), "test run")
+        name = "passed" if code == 0 else "failed"
+        return name, self.repository.transition(record.id, name)
+
     def run_item(self, record, step):
-        role = self.roles[step.role]
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
         log = self.repository.root / "log" / record.id / f"{step.name}-{stamp}.log"
-        label = f"{record.id} {step.name} ({role.name} via {role.engine}/{role.model})"
+        if step.check:
+            label = f"{record.id} {step.name} (check)"
+        else:
+            role = self.roles[step.role]
+            label = f"{record.id} {step.name} ({role.name} via {role.engine}/{role.model})"
         try:
-            name, updated = self.invoke(record, step, log)
+            name, updated = self.verify(record, step, log) if step.check else self.invoke(record, step, log)
         except Waiting as reason:
             if self.waiting.get(record.id) != str(reason):
                 self.waiting[record.id] = str(reason)

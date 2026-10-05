@@ -8,8 +8,8 @@ Attack the change on five fronts:
 - **Criteria not met.** Take each acceptance criterion in turn. Point to the
   code that satisfies it, or say that nothing does.
 - **Claims without evidence.** A criterion with no test that would fail if it
-  were broken is unproven. Run the project's tests yourself and report the
-  actual result. "It should work" is a claim. So is a test that mocks the
+  were broken is unproven. Trust the harness's own test run, not an agent's
+  account of one. "It should work" is a claim. So is a test that mocks the
   thing it says it proves; the strongest evidence runs the real system.
 - **The letter without the intent.** Code that satisfies the wording of a
   criterion while missing what the customer was asking for.

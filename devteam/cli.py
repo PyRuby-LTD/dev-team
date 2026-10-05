@@ -66,6 +66,21 @@ def cmd_tui(args):
     tui.run(Repository(backlog), Runner(Repository(backlog), checkout=checkout))
 
 
+def cmd_check(args):
+    from datetime import datetime, timezone
+    from . import check
+
+    checkout, backlog = locate(args)
+    directory = checkout or Path(args.product).resolve()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+    log = backlog / "log" / "check" / f"{stamp}.log"
+    code, output = check.run(directory, args.test, log)
+    # Agents read this, so a pass stays short and a failure shows only its end.
+    print(check.tail(output, 8 if code == 0 else check.TAIL_LINES))
+    print(f"\ncheck {'passed' if code == 0 else f'FAILED (exit {code})'}; full output: {log}")
+    raise SystemExit(code)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="devteam")
     parser.add_argument("--product", default=".", help="the product repository; its work items live in backlog/ (default: here)")
@@ -94,6 +109,10 @@ def main(argv=None):
 
     p = sub.add_parser("tui", help="see every work item, answer questions and move items along")
     p.set_defaults(func=cmd_tui)
+
+    p = sub.add_parser("check", help="run the project's check (its Makefile target), or one named test")
+    p.add_argument("test", nargs="?", help="a single test to run, as the project's Makefile understands TEST=")
+    p.set_defaults(func=cmd_check)
 
     args = parser.parse_args(argv)
     args.func(args)

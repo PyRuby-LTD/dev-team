@@ -6,6 +6,8 @@ from pathlib import Path
 
 from .config import ROOT, load_roles
 
+CHECK = "check"
+CHECK_OUTCOMES = {"passed", "failed"}
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 
 
@@ -21,7 +23,15 @@ class Step:
 
     @property
     def role(self):
-        return None if self.owner == "human" else self.owner.removeprefix("agent:")
+        return self.owner.removeprefix("agent:") if self.owner.startswith("agent:") else None
+
+    @property
+    def human(self):
+        return self.owner == "human"
+
+    @property
+    def check(self):
+        return self.owner == CHECK
 
     @property
     def terminal(self):
@@ -53,15 +63,17 @@ def build(name, data, roles):
         if not isinstance(spec, dict) or set(spec) != {"owner", "transitions"}:
             raise InvalidWorkflow(f"step {step_name!r} must have exactly 'owner' and 'transitions'")
         owner, transitions = spec["owner"], spec["transitions"]
-        if not isinstance(owner, str) or (owner != "human" and not owner.startswith("agent:")):
-            raise InvalidWorkflow(f"step {step_name!r}: owner must be 'human' or 'agent:<role>'")
-        if owner != "human" and owner.removeprefix("agent:") not in roles:
+        if not isinstance(owner, str) or (owner not in ("human", CHECK) and not owner.startswith("agent:")):
+            raise InvalidWorkflow(f"step {step_name!r}: owner must be 'human', 'agent:<role>' or 'check'")
+        if owner.startswith("agent:") and owner.removeprefix("agent:") not in roles:
             raise InvalidWorkflow(f"step {step_name!r}: role {owner.removeprefix('agent:')!r} is not in config/roles.toml")
         if not isinstance(transitions, dict):
             raise InvalidWorkflow(f"step {step_name!r}: transitions must be an object of name -> step")
         for transition, target in transitions.items():
             if target not in data["steps"]:
                 raise InvalidWorkflow(f"step {step_name!r}: transition {transition!r} targets undefined step {target!r}")
+        if owner == CHECK and set(transitions) != CHECK_OUTCOMES:
+            raise InvalidWorkflow(f"step {step_name!r}: a check step has exactly the transitions 'passed' and 'failed'")
         steps[step_name] = Step(step_name, owner, dict(transitions))
     if data.get("initial") not in steps:
         raise InvalidWorkflow(f"initial step {data.get('initial')!r} is not defined")

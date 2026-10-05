@@ -28,12 +28,16 @@ class WorkflowDefinition(unittest.TestCase):
         workflow = load("default")
         self.assertEqual("captured", workflow.initial)
         for step in workflow.steps.values():
-            self.assertTrue(step.owner == "human" or step.role)
+            self.assertTrue(step.human or step.check or step.role)
             self.assertLessEqual(set(step.transitions.values()), set(workflow.steps))
         self.assertEqual("analyst", workflow.steps["analysis"].role)
         # Implementation cannot reach review without passing the tester.
         self.assertEqual({"test"}, set(workflow.steps["implement"].transitions.values()))
-        self.assertEqual({"tested": "review", "defect": "implement"}, workflow.steps["test"].transitions)
+        self.assertEqual({"written": "verify", "defect": "implement"}, workflow.steps["test"].transitions)
+        # Only the harness's own run of the suite lets an item reach review.
+        self.assertTrue(workflow.steps["verify"].check)
+        self.assertEqual({"passed": "review", "failed": "test"}, workflow.steps["verify"].transitions)
+        self.assertEqual(["verify"], [n for n, s in workflow.steps.items() if "review" in s.transitions.values()])
         self.assertEqual("tester", workflow.steps["test"].role)
         # Analysis cannot reach the customer's play decision without passing the challenger.
         self.assertEqual({"answering", "challenge"}, set(workflow.steps["analysis"].transitions.values()))
@@ -56,6 +60,7 @@ class WorkflowDefinition(unittest.TestCase):
             "unknown role": (change(lambda d: d["steps"]["analysis"].update(owner="agent:wizard")), "'wizard'"),
             "unknown initial": (change(lambda d: d.update(initial="start")), "'start'"),
             "no steps": ({"initial": "a", "steps": {}}, "steps"),
+            "check with other outcomes": (change(lambda d: d["steps"]["analysis"].update(owner="check")), "'passed' and 'failed'"),
         }
         for name, (data, expected) in cases.items():
             with self.subTest(case=name), self.assertRaises(InvalidWorkflow) as raised:

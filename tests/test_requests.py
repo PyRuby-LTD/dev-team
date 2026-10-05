@@ -206,7 +206,7 @@ class Requests(unittest.TestCase):
             fresh = self.repo.scan().valid[item.id]
             self.assertEqual(self.repo.workflow(fresh.metadata['workflow']).initial, fresh.metadata['step'])
         story = created[1]
-        for transition in ('analyse', 'analysed', 'sound', 'play', 'implemented', 'tested'):
+        for transition in ('analyse', 'analysed', 'sound', 'play', 'implemented', 'written', 'passed'):
             self.repo.transition(story.id, transition)
         # The same step name has different ownership in the two workflows.
         request = self.current()

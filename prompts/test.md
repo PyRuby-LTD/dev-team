@@ -1,16 +1,21 @@
 Add integration tests for this work item to the regression suite in the
 repository at {{checkout}}. You are on branch {{branch}}. Leave your changes in
 the working tree: the runner commits them to that branch when you finish, so do
-not run `git commit` yourself. Change tests, fixtures, canned data and stubs
-only, not the code under test.
+not run `git commit` yourself. Change tests, fixtures, canned data, stubs and
+the Makefile's test target only, not the code under test.
 
 Give each acceptance criterion in the item at least one test that exercises the
-running system. Then run the whole suite.
+running system. Run a single test with `uv run python -m devteam check <test>`
+and the whole suite with `uv run python -m devteam check`.
 
-Record under a `## Tests` heading in the item body, replacing any earlier one:
-which test covers each criterion, how to run the suite, and its actual output.
+If the item has a `## Test run` section showing a failure, the harness ran the
+suite after your last attempt and it failed. Work out whether the tests or the
+code are wrong.
 
-Choose `tested` when every criterion is covered and the whole suite passes.
-Choose `defect` when a test shows the implementation does not meet a criterion
-or breaks existing behaviour: name the failing test, its output and what it
-expected.
+Record under a `## Tests` heading in the item body, replacing any earlier one,
+which test covers each criterion and how to run one test on its own.
+
+Choose `written` when every criterion is covered and the whole suite passes for
+you; the harness then runs it again. Choose `defect` when a test shows the code
+does not meet a criterion or breaks existing behaviour: name the failing test,
+its output and what it expected, and leave the test in place.
