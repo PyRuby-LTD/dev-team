@@ -46,7 +46,7 @@ def render(step, values, workflow="default"):
 
 
 class Runner:
-    def __init__(self, repository, roles=None, engine=engines.run, report=print, max_runs=8, checkout=None):
+    def __init__(self, repository, roles=None, engine=engines.run, report=print, max_runs=16, checkout=None):
         self.repository = repository
         self.roles = load_roles() if roles is None else roles
         self.engine = engine

@@ -77,13 +77,16 @@ beside the code; the first command creates it. See
 | challenge | challenger | `sound` (to ready), `rework` (back to analysis) |
 | answering | you | `answered` (back to analysis) |
 | ready | you | `play`, `rework` |
-| implement | implementer, on the item's branch | `implemented` |
+| implement | implementer, on the item's branch | `implemented` (to test) |
+| test | tester, on the item's branch | `tested` (to review), `defect` (back to implement) |
 | review | reviewer, on the item's branch | `approve`, `revise` |
 | accept | you | `pr` (to publish), `accept` (done, no pull request), `revise` |
 | publish | publisher, on the item's branch | `published` |
 | done | - | |
 
-The challenger attacks the analyst's work before you are asked to play it, and
+The implementer writes unit tests only where the logic is hard to get right;
+the tester builds the regression suite, driving the running system against
+canned data with as few mocks as possible. The challenger attacks the analyst's work before you are asked to play it, and
 runs on a stronger model than the analyst. Change an owner or a transition by
 editing the JSON. The reviewer should be a
 different engine from the implementer; that independence is most of the value.
@@ -101,7 +104,7 @@ against the step's transitions and moves the item.
 A nonzero exit, a missing or unknown transition, or changed front matter leaves
 the item where it is; the failure is printed with the path of the transcript
 under `backlog/log/<item id>/`, and the item is not retried until the runner is
-restarted. An item is run at most eight times per runner session, so a
+restarted. An item is run at most sixteen times per runner session, so a
 review/revise loop cannot continue unattended without limit.
 
 ## Branches

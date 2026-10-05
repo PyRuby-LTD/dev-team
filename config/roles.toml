@@ -55,6 +55,13 @@ model = "gpt-6.1-sol"
 max_turns = 60
 branch = true
 
+# Needs to start the system under test, so it runs on the engine with a shell sandbox.
+[roles.tester]
+engine = "codex"
+model = "gpt-6.1-sol"
+max_turns = 60
+branch = true
+
 [roles.reviewer]
 engine = "claude"
 model = "sonnet"

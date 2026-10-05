@@ -3,7 +3,8 @@ Implement this work item in the repository at {{checkout}}. You are on branch
 that branch when you finish, so do not run `git commit` yourself.
 
 Work against the acceptance criteria in the item. If the item has a `## Review`
-section, address its findings. Run the project's tests and checks.
+section, address its findings; if its `## Tests` section reports a defect, fix
+the code rather than the test. Run the project's tests and checks.
 
 Record what you changed and the actual output of the checks under an
 `## Implementation` heading in the item body, replacing any earlier one.

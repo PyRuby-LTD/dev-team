@@ -9,7 +9,8 @@ Attack the change on five fronts:
   code that satisfies it, or say that nothing does.
 - **Claims without evidence.** A criterion with no test that would fail if it
   were broken is unproven. Run the project's tests yourself and report the
-  actual result. "It should work" is a claim.
+  actual result. "It should work" is a claim. So is a test that mocks the
+  thing it says it proves; the strongest evidence runs the real system.
 - **The letter without the intent.** Code that satisfies the wording of a
   criterion while missing what the customer was asking for.
 - **Change that serves nothing.** Trace each part of the diff back to a

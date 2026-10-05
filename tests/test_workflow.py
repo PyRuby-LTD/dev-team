@@ -31,6 +31,10 @@ class WorkflowDefinition(unittest.TestCase):
             self.assertTrue(step.owner == "human" or step.role)
             self.assertLessEqual(set(step.transitions.values()), set(workflow.steps))
         self.assertEqual("analyst", workflow.steps["analysis"].role)
+        # Implementation cannot reach review without passing the tester.
+        self.assertEqual({"test"}, set(workflow.steps["implement"].transitions.values()))
+        self.assertEqual({"tested": "review", "defect": "implement"}, workflow.steps["test"].transitions)
+        self.assertEqual("tester", workflow.steps["test"].role)
         # Analysis cannot reach the customer's play decision without passing the challenger.
         self.assertEqual({"answering", "challenge"}, set(workflow.steps["analysis"].transitions.values()))
         self.assertEqual("challenger", workflow.steps["challenge"].role)
