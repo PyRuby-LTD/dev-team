@@ -356,6 +356,7 @@ class Backlog(App):
         self.data = []
         self.selected = None
         self.shown = None
+        self.restoring = False
         self.signature = None
 
     def compose(self):
@@ -436,7 +437,12 @@ class Backlog(App):
         else:
             self.selected = target.data.key
             self.show(target.data)
-            self.call_after_refresh(tree.move_cursor, target)
+            self.restoring = True
+            self.call_after_refresh(self.restore_cursor, target)
+
+    def restore_cursor(self, node):
+        self.item_tree.move_cursor(node)
+        self.restoring = False
 
     def show(self, row):
         if row == self.shown:
@@ -446,6 +452,9 @@ class Backlog(App):
         self.body_view.update(row.body if row and not row.errors else "")
 
     def on_tree_node_highlighted(self, event):
+        # Rebuilding the tree highlights its first node; that must not replace the user's selection.
+        if self.restoring or event.node is not self.item_tree.cursor_node:
+            return
         if isinstance(event.node.data, Row):
             self.selected = event.node.data.key
             self.show(event.node.data)
