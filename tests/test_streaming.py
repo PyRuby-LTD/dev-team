@@ -64,11 +64,16 @@ class StreamingThroughRun(unittest.TestCase):
         self.assertIn("analysis (analyst via claude/sonnet): questions -> answering", result.stdout)
 
     def test_log_holds_the_raw_stream_including_stderr(self):
-        self.run_agent("success.jsonl", stderr="stderr.txt")
-        body = self.log()
+        self.run_agent("success.jsonl", stderr="stderr.txt", await_log=True)
         recorded = (STREAMS / "success.jsonl").read_text()
-        self.assertIn(recorded, body.replace("warning: something on stderr\n", ""))
-        self.assertIn("warning: something on stderr\n", body)
+        body = self.log()
+        self.assertTrue(body.startswith("# analyst via claude"))
+        self.assertTrue(body.endswith((STREAMS / "stderr.txt").read_text() + recorded))
+
+    def test_output_that_is_not_utf8_does_not_truncate_the_reply(self):
+        self.run_agent("invalid_utf8.jsonl")
+        self.assertEqual("answering", self.step())
+        self.assertIn("TRANSITION: questions", self.log())
 
     def test_first_line_is_in_the_log_while_the_agent_is_still_running(self):
         self.run_agent("success.jsonl", await_log=True)
