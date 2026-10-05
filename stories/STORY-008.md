@@ -4,7 +4,7 @@ type: story
 title: Stream agent output live to log and listener
 parent: EPIC-001
 workflow: default
-step: test
+step: implement
 ---
 ## Goal
 
@@ -143,12 +143,15 @@ Black-box tests in `tests/test_streaming.py` run `python -m devteam --product <t
 | Fallback to assistant text | `test_assistant_text_is_the_reply_when_there_is_no_result_event` |
 | Neither: empty reply, non-zero code | `test_stream_without_result_or_text_fails_the_step` |
 | Malformed line tolerated and shown raw | `test_malformed_line_is_logged_verbatim_and_does_not_break_the_reply` |
-| Log holds the raw stream, stderr included | `test_log_holds_the_raw_stream_including_stderr` |
+| Log holds header then the raw stream, stderr first and in order (review finding 4) | `test_log_holds_the_raw_stream_including_stderr` |
+| Non-UTF-8 output does not truncate the reply (review finding 3) | `test_output_that_is_not_utf8_does_not_truncate_the_reply` |
 | `stream` key in roles.toml selects the claude-json reply handling | the result and fallback tests above, driven by the real `config/roles.toml` |
 
 Run one on its own: `uv run python -m devteam check tests.test_streaming.StreamingThroughRun.test_non_zero_exit_code_is_kept_and_fails_the_step`
 
-Not covered end to end: the Codex stdout/stderr split (the implementer could not confirm it on the installed version), rendering of lines, and truncation; the renderer is only reachable through `on_line`, which only unit tests in `tests/test_engines.py` exercise. Whole suite: 88 tests pass.
+Not covered end to end: the Codex stdout/stderr split (unconfirmed, review finding 2), rendering and truncation, and multi-line listener output (review finding 1); the renderer is only reachable through `on_line`, which only unit tests in `tests/test_engines.py` exercise.
+
+Defect: `test_output_that_is_not_utf8_does_not_truncate_the_reply` fails. The recorded stream `tests/fixtures/streams/invalid_utf8.jsonl` has the bytes `\xe9 \xff` in an assistant text block, then a valid result event ending `TRANSITION: questions`. Expected the step to move to `answering`; it stays at `analysis`. Cause: `engines.run` opens the pipes with `text=True` and strict decoding, so the stdout reader thread dies on `UnicodeDecodeError`, the reply is lost and nothing is logged. Fix by decoding with `errors="replace"`. The other 88 tests pass.
 
 ## Review
 
