@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+"""Stand-in for the claude CLI: replays a recorded stream chosen by the test through the environment."""
+import json
+import os
+import pathlib
+import sys
+import time
+
+pathlib.Path(os.environ["STUB_ARGV"]).write_text(json.dumps(sys.argv[1:]))
+if os.environ.get("STUB_STDERR"):
+    sys.stderr.write(pathlib.Path(os.environ["STUB_STDERR"]).read_text())
+    sys.stderr.flush()
+lines = pathlib.Path(os.environ["STUB_STDOUT"]).read_text().splitlines(keepends=True)
+await_log = os.environ.get("STUB_AWAIT_LOG")
+for number, line in enumerate(lines):
+    sys.stdout.write(line)
+    sys.stdout.flush()
+    if await_log and number == 0:
+        # The first line must reach the run's log while this process is still alive.
+        deadline = time.monotonic() + 10
+        while not any(line in p.read_text() for p in pathlib.Path(await_log).glob("*/*.log")):
+            if time.monotonic() > deadline:
+                sys.exit(99)
+            time.sleep(0.02)
+sys.exit(int(os.environ.get("STUB_CODE", "0")))
