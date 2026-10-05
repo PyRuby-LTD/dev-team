@@ -157,15 +157,17 @@ Verdict: revise. Findings 1 and 2 block approval.
 
 ## Test run
 
-Run by the harness, 2026-10-05 16:30 UTC. Full output: `/home/tarttelin/projects/pyruby/dev-team/backlog/log/STORY-008/verify-20261005T162938542801.log`
+Run by the harness, 2026-10-05 17:01 UTC. Full output: `/home/tarttelin/projects/pyruby/dev-team/backlog/log/STORY-008/verify-20261005T170038488550.log`
 
 Passed: `the project check`
 
 ```text
 uv run python -m unittest discover -s tests
-........................................................................................
+..........................................................................Executing <Task pending name='message pump Actions()' coro=<MessagePump._process_messages() running at /home/tarttelin/projects/pyruby/dev-team/.venv/lib/python3.13/site-packages/textual/message_pump.py:571> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/base_events.py:459> created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py:410> took 0.119 seconds
+.....Executing <Task pending name="message pump Screen(id='_default')" coro=<MessagePump._process_messages() running at /home/tarttelin/projects/pyruby/dev-team/.venv/lib/python3.13/site-packages/textual/message_pump.py:571> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/base_events.py:459> created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py:410> took 0.103 seconds
+..............
 ----------------------------------------------------------------------
-Ran 88 tests in 26.871s
+Ran 93 tests in 31.459s
 
 OK
 ```
