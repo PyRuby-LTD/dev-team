@@ -4,7 +4,7 @@ type: story
 title: "Analyse a request with the team and create work items from it"
 parent: EPIC-001
 workflow: default
-step: implement
+step: review
 ---
 
 # Analyse a request with the team and create work items from it
@@ -189,3 +189,87 @@ No customer questions are needed.
 ## Feedback
 
 - **rework -> analysis:** The step names here overlap with the default workflow steps, i.e. "review". The review step on analysis is owned by a human, but on the default workflow it's owned by an agent. There needs to be a way of disambiguating these workflows.
+
+## Implementation
+
+The branch already contained the specified request implementation: request
+capture and validation, the analysis workflow, the specialist roles and briefs,
+workflow-scoped prompts with legacy fallback, and the TUI new-request dialog.
+Verified those against the acceptance criteria. `workflows/default.json` is
+unchanged (`git diff main -- workflows/default.json` produced no output).
+
+Added a runner integration regression in `tests/test_requests.py` for the latest
+Feedback finding. A request and a story share an agent-owned step name in two
+fixture workflows. The test verifies that the runner invokes each workflow's
+own role, selects the scoped request prompt and legacy default prompt, and
+applies each workflow's transition independently. Existing tests cover human
+analysis review versus agent default review, capture defaults, specialist
+transition rejection, all roles' question loops, created items, review moves,
+and the new-request dialog. No production changes were needed in this pass.
+
+Checks and actual output:
+
+- `python3 -m unittest discover -s tests -v`: did not finish. Interrupted
+  with exit 130 after stalling during teardown following:
+  ```text
+  test_new_request_preserves_text_and_derives_title (test_requests.NewRequestUI.test_new_request_preserves_text_and_derives_title) ... ok
+  ```
+  A second full run behaved the same. A bounded full run using the same command
+  timed out with exit 124, as did the `.venv/bin/python` full run. A standalone
+  request-module run timed out with exit 124 after the same `ok` line. A
+  faulthandler diagnostic exited 1 with `Timeout (0:00:15)!`; its traceback
+  placed the stall in `unittest.async_case._tearDownAsyncioRunner`,
+  `asyncio.runners.close`, and the event loop's selector. The full suite has
+  no completed success summary.
+- `timeout 60s python3 -m unittest discover -s tests -p test_tui.py -v`:
+  exit 124, with its final output:
+  ```text
+  test_agent_owned_and_finished_items_offer_nothing (test_tui.Acting.test_agent_owned_and_finished_items_offer_nothing) ... ok
+  ```
+- `python3 -m unittest discover -s tests -p test_requests.py -k Requests -v`:
+  exit 0; all eight request tests, including the new regression, reported `ok`.
+  ```text
+  Ran 8 tests in 0.232s
+
+  OK
+  ```
+- `python3 -m unittest discover -s tests -p test_runner.py -v`: exit 0.
+  ```text
+  Ran 10 tests in 0.262s
+
+  OK
+  ```
+- `python3 -m unittest discover -s tests -p test_workflow.py -v`: exit 0.
+  ```text
+  Ran 8 tests in 0.075s
+
+  OK
+  ```
+- `python3 -m unittest discover -s tests -v -k BacklogAcceptance -k CheckoutAcceptance -k Requests -k RunnerAcceptance -k EngineInvocation -k WorkflowDefinition -k ItemSteps -k QuestionParsing -k Feedback -k ViewModel`:
+  exit 0. This runs the noninteractive acceptance checks without the stalled
+  UI screen tests.
+  ```text
+  Ran 54 tests in 3.360s
+
+  OK
+  ```
+- `python3 -m devteam backlog validate`: exit 0, no errors; output:
+  ```text
+  EPIC-001   -            -                  Workflow-driven work items
+  EPIC-002   -            -                  Portable launch
+  EPIC-003   -            -                  GitHub and CI delivery
+  EPIC-004   -            -                  Staging, user testing and release
+  EPIC-005   -            -                  Sprint zero and product specialists
+  STORY-001  done         -                  Define the workflow in JSON and track each item's step
+  STORY-002  done         -                  Run agent-owned steps
+  STORY-003  done         -                  See work items and their steps in a terminal UI
+  STORY-004  done         -                  Act on human-owned steps in the terminal UI
+  STORY-005  implement    agent:implementer  Analyse a request with the team and create work items from it
+  STORY-006  captured     human              Launch the team from any product directory
+  STORY-007  done         -                  Work in the checkout on a branch per item, with the backlog on its own branch
+  ```
+- `git diff --check`: exit 0, no output.
+
+The human one-paragraph idea acceptance criterion has not been exercised with
+a customer or live agents; the automated analysis checks use fake agents.
+Changes are left in the working tree; no commits were made.
