@@ -4,7 +4,7 @@ type: request
 title: As a customer using dev-team tui, I want to be able to see what an agent is
   curr
 workflow: analysis
-step: product-owner
+step: review
 ---
 As a customer using dev-team tui, I want to be able to see what an agent is currently doing, given an agent is working on a work-item. I want to be able to toggle this view so I can choose to watch the actions of one agent at a time, or not watch at all. I'm thinking it's basically like a tail -f of system out in a smaller pane, possibly the lower half of the right pane, auto-scrolling.
 
@@ -124,10 +124,17 @@ Decisions taken: two stories under EPIC-001 (the TUI and workflow work already l
 
 Blocker (second occurrence): the sandbox again refused approval for `python3 -m devteam --product . backlog capture ...` (and for writing body files outside the repo). No work items exist, so `## Created work items` is empty and I cannot responsibly choose `complete`.
 
+## Created work items
+
+- STORY-008 (parent EPIC-001): Stream agent output live to log and listener. Engine streaming, claude stream-json, per-engine renderer, raw log.
+- STORY-009 (parent EPIC-001): Live agent output pane in the TUI. Toggleable auto-scrolling pane in the lower half of the right pane. Depends on STORY-008.
+
+Both are at their initial step (captured) and `backlog validate` passes.
+
 ## Questions
 
 1. The `backlog capture` command needs approval in this environment and has been refused twice. Can you approve it (or allow `python3 -m devteam --product . backlog capture` and `backlog validate`) so the two stories above can be created? Nothing else is needed from you.
-**Answer:** 
+**Answer:** Permissions granted; capture succeeded on the third attempt (see Created work items).
 
 ## Feedback
 
