@@ -4,7 +4,7 @@ type: story
 title: Stream agent output live to log and listener
 parent: EPIC-001
 workflow: default
-step: implement
+step: test
 ---
 ## Goal
 
@@ -75,9 +75,9 @@ Log viewer subcommand, partial-message token streaming, concurrent agents.
 
 ## Implementation
 
-Stopped because the installed-version Codex stdout/stderr confirmation remains impossible in this environment (review finding 2). The customer explicitly instructs stopping when a criterion is impossible. No implementation or test code was changed; this section replaces the earlier implementation record. The multiline listener finding and UTF-8 decoding defect remain unresolved. Completion requires service access for a successful installed-version probe, or an explicit customer waiver of that criterion.
+Stopped as instructed because the installed-version Codex stdout/stderr confirmation (review finding 2) cannot be completed in this environment. No implementation or test code was changed. Review finding 1 (multiline listener output) and the UTF-8 decoding defect reported under Tests remain unresolved. Completion requires a successful probe with service access, or a customer waiver of the channel-confirmation criterion.
 
-Retried installed Codex 0.159.3 with temporary writable state under `/tmp`, a permission-restricted copy of the existing authentication file, closed stdin, and a 45-second timeout. The process exited before the timeout. Temporary state and authentication copy were removed automatically. The probe captured the channels separately: progress/errors appeared on stderr, stdout was empty, and no final agent message was produced. Its channel remains unconfirmed.
+Retried installed Codex 0.159.3 with temporary writable state under `/tmp`, a permission-restricted copy of the existing authentication file, closed stdin, and a 45-second timeout. The process exited before the timeout. Temporary state and authentication copy were removed automatically. stdout and stderr were captured separately: progress/errors appeared on stderr, stdout was empty, and no final agent message was produced. Its channel remains unconfirmed.
 
 Probe command and actual result:
 
@@ -90,9 +90,9 @@ stdout: ''
 Actual stderr excerpts (repeated connection/reconnection messages omitted):
 
 ```text
-WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir "/tmp" (codex_home: AbsolutePathBuf("/tmp/story-008-codex-ust9wxz1"))
+WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir "/tmp" (codex_home: AbsolutePathBuf("/tmp/story-008-codex-v8xrficx"))
 Reading additional input from stdin...
-2026-10-05T16:38:25.103450Z ERROR codex_models_manager::manager: failed to refresh available models: Connection failed: error sending request
+2026-10-05T16:41:00.819579Z ERROR codex_models_manager::manager: failed to refresh available models: Connection failed: error sending request
 OpenAI Codex v0.159.3
 --------
 workdir: /tmp
@@ -102,11 +102,11 @@ approval: never
 sandbox: read-only
 reasoning effort: none
 reasoning summaries: none
-session id: 01a10cee-3c58-7050-a4b5-cf0e3c123996
+session id: 01a10cf0-9bd7-7b90-abfc-e144cc20214a
 --------
 user
 Reply with exactly STREAM_SPLIT_OK. Do not use tools.
-2026-10-05T16:38:28.244367Z ERROR rmcp::transport::worker: worker quit with fatal: Transport channel closed, when Client(HttpRequest(HttpRequest("http/request failed: error sending request for url (https://chatgpt.com/backend-api/ps/mcp)")))
+2026-10-05T16:41:03.889652Z ERROR rmcp::transport::worker: worker quit with fatal: Transport channel closed, when Client(HttpRequest(HttpRequest("http/request failed: error sending request for url (https://chatgpt.com/backend-api/ps/mcp)")))
 warning: Falling back from WebSockets to HTTPS transport. workspace routing discovery failed
 ERROR: workspace routing discovery failed
 ERROR: workspace routing discovery failed
@@ -130,7 +130,7 @@ AssertionError: 'answering' != 'analysis'
 
 
 ----------------------------------------------------------------------
-Ran 18 tests in 1.131s
+Ran 18 tests in 0.876s
 
 FAILED (failures=1)
 
