@@ -31,10 +31,11 @@ def claude_json(line: str) -> str | None:
             if block.get("type") == "text" and isinstance(block.get("text"), str):
                 rendered.extend(text(part) for part in block["text"].splitlines())
             elif block.get("type") == "tool_use":
-                name = block.get("name", "")
+                name = " ".join(str(block.get("name", "")).split())
                 args = block.get("input")
                 arg = next((args[key] for key in ("file_path", "path", "command", "pattern", "url", "description")
                             if key in args), "") if isinstance(args, dict) else ""
+                arg = " ".join(str(arg).split())
                 rendered.append(text(f"tool: {name} {arg}".rstrip()))
         return "\n".join(rendered) or None
     except Exception:

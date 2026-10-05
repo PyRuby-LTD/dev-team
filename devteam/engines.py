@@ -37,7 +37,8 @@ def run(role: Role, prompt: str, cwd: Path, extra_dir: Path, log: Path,
         transcript.write(header)
         transcript.flush()
         try:
-            proc = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            proc = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    text=True, encoding="utf-8", errors="replace")
         except OSError as exc:
             transcript.write(f"could not start {argv[0]}: {exc}\n")
             return 127, ""
@@ -54,10 +55,13 @@ def run(role: Role, prompt: str, cwd: Path, extra_dir: Path, log: Path,
                         if on_line is not None:
                             try:
                                 rendered = renderer(line)
-                                if rendered:
-                                    on_line(rendered)
                             except Exception:
-                                pass
+                                continue
+                            for part in (rendered or "").splitlines():
+                                try:
+                                    on_line(part)
+                                except Exception:
+                                    pass
 
         readers = [Thread(target=drain, args=(proc.stdout, True)),
                    Thread(target=drain, args=(proc.stderr, False))]

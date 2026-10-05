@@ -64,6 +64,24 @@ class Streams(unittest.TestCase):
         with patch.dict(render.STREAMS, {'claude-json': (broken, render.claude_reply)}):
             self.assertEqual((0, 'Done.\nTRANSITION: ready'), self.invoke(SUCCESS, on_line=lambda line: None))
 
+    def test_multiline_text_and_command_reach_listener_as_individual_lines(self):
+        assistant = json.dumps({'type': 'assistant', 'message': {'content': [
+            {'type': 'text', 'text': 'First line.\n' + 'x' * 300 + '\nLast line.'},
+            {'type': 'tool_use', 'name': 'Bash', 'input': {
+                'command': 'cat <<EOF\n\t' + 'y' * 300 + '\nEOF'}},
+        ]}}) + '\n'
+        received = []
+
+        def listener(line):
+            received.append(line)
+            if line == 'First line.':
+                raise ValueError('listener failed on the first rendered line')
+
+        self.assertEqual((0, 'Done.\nTRANSITION: ready'), self.invoke(assistant + RESULT, on_line=listener))
+        self.assertEqual(['First line.', 'x' * 197 + '...', 'Last line.',
+                          ('tool: Bash cat <<EOF ' + 'y' * 300)[:197] + '...'], received)
+        self.assertEqual(assistant + RESULT, self.log.read_text().split('\n\n', 1)[1])
+
     def test_both_pipes_reach_log_and_listener_before_exit(self):
         script = self.root / 'agent.py'
         script.write_text('''import pathlib, sys, time
@@ -129,6 +147,9 @@ class Rendering(unittest.TestCase):
             self.assertEqual(('tool: Tool ' + expected).rstrip(), render.claude_json(line))
         line = json.dumps({'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': 'x' * 300}]}})
         self.assertEqual('x' * 197 + '...', render.claude_json(line))
+        line = json.dumps({'type': 'assistant', 'message': {'content': [
+            {'type': 'tool_use', 'name': 'Bash', 'input': {'command': 'echo one\n\techo two'}}]}})
+        self.assertEqual('tool: Bash echo one echo two', render.claude_json(line))
 
     def test_reply_ignores_wrong_types(self):
         stream = '\n'.join(('[]', 'invalid', '{"type":"result","result":42}',
