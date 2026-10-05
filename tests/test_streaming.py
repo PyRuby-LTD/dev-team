@@ -107,5 +107,43 @@ class StreamingThroughRun(unittest.TestCase):
         self.assertIn("could not start claude", self.log())
 
 
+class CodexStreamingThroughRun(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.product = Path(self.temp.name) / "product"
+        self.bin = Path(self.temp.name) / "bin"
+        self.bin.mkdir()
+        shutil.copy(STUBS / "codex", self.bin / "codex")
+        (self.bin / "codex").chmod(0o755)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.product)], check=True)
+        (self.product / "README.md").write_text("product\n")
+        git = ["git", "-C", str(self.product), "-c", "user.name=t", "-c", "user.email=t@example.com"]
+        subprocess.run([*git, "add", "-A"], check=True)
+        subprocess.run([*git, "commit", "-q", "-m", "init"], check=True)
+        self.devteam("backlog", "capture", "epic", "Epic", "--id", "EPIC-001")
+        self.devteam("backlog", "capture", "story", "Story", "--id", "STORY-001", "--parent", "EPIC-001")
+        for transition in ("analyse", "analysed", "sound", "play"):
+            self.devteam("backlog", "move", "STORY-001", transition)
+
+    def devteam(self, *args, env=None):
+        return subprocess.run([sys.executable, "-m", "devteam", "--product", str(self.product), *args],
+                              cwd=ROOT, env={**os.environ, **(env or {})}, capture_output=True, text=True,
+                              timeout=60, check=env is None)
+
+    def test_codex_reply_is_stdout_and_progress_on_stderr_is_logged(self):
+        # Only git and the stub are on PATH, so the tester step that follows cannot start a real claude.
+        (self.bin / "git").symlink_to(shutil.which("git"))
+        (self.bin / "python3").symlink_to(os.path.realpath(sys.executable))
+        env = {"PATH": str(self.bin), "STUB_ARGV": str(Path(self.temp.name) / "argv.json")}
+        result = self.devteam("run", "--once", env=env)
+        self.assertIn("implemented -> test", result.stdout)
+        logs = list(self.product.glob("**/log/STORY-001/implement-*.log"))
+        self.assertEqual(1, len(logs))
+        body = logs[0].read_text()
+        self.assertIn("TRANSITION: implemented", body)
+        self.assertIn("progress: editing files", body)
+
+
 if __name__ == "__main__":
     unittest.main()
