@@ -4,7 +4,7 @@ type: story
 title: Stream agent output live to log and listener
 parent: EPIC-001
 workflow: default
-step: test
+step: implement
 ---
 ## Goal
 
@@ -162,7 +162,7 @@ Run one on its own: `uv run python -m devteam check tests.test_streaming.Streami
 
 Not covered end to end: the Codex stdout/stderr split (unconfirmed, review finding 2), rendering and truncation, and multi-line listener output (review finding 1); the renderer is only reachable through `on_line`, which only unit tests in `tests/test_engines.py` exercise.
 
-Defect: `test_output_that_is_not_utf8_does_not_truncate_the_reply` fails. The recorded stream `tests/fixtures/streams/invalid_utf8.jsonl` has the bytes `\xe9 \xff` in an assistant text block, then a valid result event ending `TRANSITION: questions`. Expected the step to move to `answering`; it stays at `analysis`. Cause: `engines.run` opens the pipes with `text=True` and strict decoding, so the stdout reader thread dies on `UnicodeDecodeError`, the reply is lost and nothing is logged. Fix by decoding with `errors="replace"`. The other 88 tests pass.
+Defect: `test_output_that_is_not_utf8_does_not_truncate_the_reply` fails. The recorded stream `tests/fixtures/streams/invalid_utf8.jsonl` has the bytes `\xe9 \xff` in an assistant text block, then a valid result event ending `TRANSITION: questions`. Expected the step to move to `answering`; it stays at `analysis`. Cause: `engines.run` opens the pipes with `text=True` and strict decoding, so the stdout reader thread dies on `UnicodeDecodeError`, the reply is lost and nothing is logged. Fix by decoding with `errors="replace"` (for example `encoding="utf-8", errors="replace"` at `devteam/engines.py:40`). Confirmed again on the latest run: 89 tests, this is the only failure.
 
 ## Review
 
