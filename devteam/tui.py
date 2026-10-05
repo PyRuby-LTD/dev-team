@@ -176,7 +176,7 @@ def card(row):
 
 
 class Actions(ModalScreen):
-    """What the customer can do with an item at a human-owned step: answer, or one of its transitions."""
+    """What the customer can do with an item: answer, move it, or step in on a step that is not theirs."""
     BINDINGS = [("escape", "dismiss(None)", "Cancel")]
 
     def __init__(self, row):
@@ -188,11 +188,17 @@ class Actions(ModalScreen):
         options = []
         if row.unanswered:
             options.append(Option(f"Answer {row.unanswered} question{'s' if row.unanswered != 1 else ''}", id="answer"))
+        if not row.needs_you and row.waiting_on != "checks":
+            options.append(Option(f"Leave a note for the {row.waiting_on}", id="note"))
         for name, target, owner in row.transitions:
             who = {"finished": "it is finished", "YOU": "back to you", "checks": "the checks run"}.get(owner, f"the {owner} takes over")
-            options.append(Option(Text.assemble((name, "bold"), f"  ->  {target}  ", (who, "dim")), id=f"move:{name}"))
+            label = Text.assemble(("" if row.needs_you else "override ", YOU), (name, "bold"), f"  ->  {target}  ", (who, "dim"))
+            options.append(Option(label, id=f"move:{name}"))
         with Vertical(classes="dialog"):
             yield Label(Text.assemble((row.label, "bold"), "  ", row.title, f"\nNow at {row.step}."))
+            if not row.needs_you:
+                yield Label(Text(f"This step belongs to the {row.waiting_on}. You can leave a note for its next run, "
+                                 "or override it by choosing the outcome yourself.", YOU))
             if row.unanswered and row.transitions:
                 yield Label(Text("Unanswered questions remain; moving on now leaves them blank.", YOU))
             yield OptionList(*options)
@@ -236,7 +242,7 @@ class Answers(ModalScreen):
 
 
 class Note(ModalScreen):
-    """Optional feedback for the agent that takes over after a transition."""
+    """Feedback for an agent: with a transition that hands it the item, or on its own (name is None)."""
     BINDINGS = [("escape", "dismiss(None)", "Cancel"), ("ctrl+s", "move", "Move")]
 
     def __init__(self, row, name, target, owner):
@@ -246,13 +252,19 @@ class Note(ModalScreen):
     def compose(self):
         with Vertical(classes="dialog wide"):
             yield Label(Text.assemble((self.row.label, "bold"), "  ", self.row.title))
-            yield Label(Text.assemble((self.move_name, "bold"), f"  ->  {self.target}; the {self.next_owner} takes over."))
-            yield Label(Text(f"Anything the {self.next_owner} should know or change? (optional)", "bold"), classes="question")
+            moving = self.move_name is not None
+            if moving:
+                yield Label(Text.assemble((self.move_name, "bold"), f"  ->  {self.target}; the {self.next_owner} takes over."))
+            else:
+                yield Label(Text(f"The item stays at {self.row.step}; the {self.next_owner} reads your note on its next run."))
+            question = f"Anything the {self.next_owner} should know or change?" + (" (optional)" if moving else "")
+            yield Label(Text(question, "bold"), classes="question")
             yield TextArea(id="note", soft_wrap=True)
             with Horizontal(classes="buttons"):
-                yield Button("Move (ctrl+s)", variant="primary", id="move")
+                yield Button("Move (ctrl+s)" if moving else "Save note (ctrl+s)", variant="primary", id="move")
                 yield Button("Cancel (esc)", id="cancel")
-            yield Label(Text("Your note is added to the item under Feedback. Leave it blank to just move.", "dim"))
+            hint = "Your note is added to the item under Feedback." + (" Leave it blank to just move." if moving else "")
+            yield Label(Text(hint, "dim"))
 
     def on_mount(self):
         self.query_one(TextArea).focus()
@@ -469,15 +481,19 @@ class Backlog(App):
         row = event.node.data
         if not isinstance(row, Row) or not row.is_item:
             return
-        if not row.needs_you:
-            who = f"with the {row.waiting_on}" if row.waiting_on else "finished"
-            self.notify(f"{row.label} is {who}; there is nothing for you to do.")
+        if not row.waiting_on:
+            self.notify(f"{row.label} is finished; there is nothing for you to do.")
+            return
+        if row.running:
+            self.notify(f"The {row.waiting_on} is working on {row.label} now. Wait for it to finish, or stop the agents first.")
             return
         self.push_screen(Actions(row), lambda choice: self.chosen(row, choice))
 
     def chosen(self, row, choice):
         if choice == "answer":
             self.push_screen(Answers(row), lambda answers: self.answered(row, answers))
+        elif choice == "note":
+            self.push_screen(Note(row, None, None, row.waiting_on), lambda note: self.noted(row, note))
         elif choice:
             name, target, owner = next(move for move in row.transitions if move[0] == choice.removeprefix("move:"))
             if owner in ("YOU", "finished", "checks"):
@@ -485,6 +501,17 @@ class Backlog(App):
             else:
                 self.push_screen(Note(row, name, target, owner),
                                  lambda note: None if note is None else self.move(row, name, note))
+
+    def noted(self, row, note):
+        if not note or not note.strip():
+            return
+        current = self.repository.scan().valid.get(row.key)
+        if current is None or current.body != row.body:
+            self.notify(f"{row.label} changed while you were writing; nothing was saved.", severity="error")
+            return
+        body = questions.add_feedback(row.body, f"note at {row.step}", note)
+        if self.attempt(lambda: self.repository.write_body(row.key, body, "note")):
+            self.notify(f"Note saved for the {row.waiting_on}." + (" Press t to run it again." if row.failure else ""))
 
     def move(self, row, name, note):
         current = self.repository.scan().valid.get(row.key)

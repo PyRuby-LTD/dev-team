@@ -118,7 +118,7 @@ built on Textual and re-reads the files every two seconds.
 | Key | Action |
 | --- | --- |
 | `n` | New request: enter text, then ctrl+s to capture it or esc to cancel. The first nonblank line becomes the title (up to 80 characters); the full text becomes the body |
-| `enter` | On an item waiting on you: answer its questions or choose one of its step's transitions. When an agent takes over next, you are offered a note for it |
+| `enter` | On an item waiting on you: answer its questions or choose one of its step's transitions. When an agent takes over next, you are offered a note for it. On an item that is with an agent: leave a note for its next run, or override the step by choosing its outcome yourself |
 | `s` | Start or stop the agents. They are stopped when the UI opens, so nothing is spent until you say so |
 | `t` | Retry the selected item after its agent failed |
 | `y` | Show only what is waiting on you |

@@ -282,19 +282,50 @@ class Acting(Fixture):
             self.assertNotIn("## Feedback", self.repo.scan().valid["STORY-001"].body)
             self.assertIn("  BUG-001    analysis", " ".join(n.label.plain for n in self.nodes(app.query_one("#items"))))
 
-    async def test_agent_owned_and_finished_items_offer_nothing(self):
+    async def select(self, app, pilot, key):
+        tree = app.query_one("#items")
+        tree.move_cursor(next(n for n in self.nodes(tree) if n.data.key == key))
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+
+    async def test_finished_items_and_epics_offer_nothing(self):
         app = tui.Backlog(self.repo, self.runner)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
-            tree = app.query_one("#items")
-            for key in ("STORY-002", "STORY-003", "EPIC-002"):
-                node = next(n for n in self.nodes(tree) if n.data.key == key)
-                tree.move_cursor(node)
-                await pilot.pause()
-                await pilot.press("enter")
-                await pilot.pause()
+            for key in ("STORY-003", "EPIC-002"):
+                await self.select(app, pilot, key)
                 self.assertEqual(1, len(app.screen_stack), key)
-        self.assertEqual(("analysis", "done"), (self.step(self.agent), self.step(self.finished)))
+        self.assertEqual("done", self.step(self.finished))
+
+    async def test_customer_can_leave_a_note_on_an_agent_owned_step(self):
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await self.select(app, pilot, "STORY-002")
+            self.assertEqual(["Leave a note for the analyst", "override ready", "override back", "override questions"],
+                             self.options(app))
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, tui.Note)
+            await pilot.press(*"Use", "space", *"stdout", "ctrl+s")
+            await pilot.pause()
+            self.assertEqual(1, len(app.screen_stack))
+        self.assertEqual("analysis", self.step(self.agent))
+        self.assertTrue(self.repo.scan().valid["STORY-002"].body.endswith(
+            "## Feedback\n\n- **note at analysis:** Use stdout\n"))
+        self.assertEqual([], self.calls)
+
+    async def test_customer_can_override_an_agent_owned_step(self):
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await self.select(app, pilot, "STORY-002")
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            self.assertEqual(1, len(app.screen_stack))
+        self.assertEqual("done", self.step(self.agent))
+        self.assertEqual([], self.calls)
 
     def nodes(self, tree):
         found, pending = [], list(tree.root.children)
