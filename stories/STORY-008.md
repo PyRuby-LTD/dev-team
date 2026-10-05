@@ -4,7 +4,7 @@ type: story
 title: Stream agent output live to log and listener
 parent: EPIC-001
 workflow: default
-step: review
+step: implement
 ---
 ## Goal
 
@@ -135,6 +135,33 @@ Black-box tests in `tests/test_streaming.py` run `python -m devteam --product <t
 Run one on its own: `uv run python -m devteam check tests.test_streaming.StreamingThroughRun.test_non_zero_exit_code_is_kept_and_fails_the_step`
 
 Not covered end to end: the Codex stdout/stderr split (the implementer could not confirm it on the installed version), rendering of lines, and truncation; the renderer is only reachable through `on_line`, which only unit tests in `tests/test_engines.py` exercise. Whole suite: 88 tests pass.
+
+## Review
+
+Findings, most damaging first.
+
+1. Rendered output is not one line per `on_line` call. Trigger: an assistant text block of several lines, or a `tool_use` whose `command` contains newlines (any multi-line Bash command or heredoc). `claude_json` joins the parts with a newline and returns one string, so `on_line` gets a multi-line string, and an embedded newline in the short arg is passed through untouched. Truncation is applied per part, not to the whole string. The story is "a listener line by line" and the analysis defines `on_line` as taking "one rendered line". A line-oriented consumer, such as a TUI pane appending one row per call, will mis-render. Fix: collapse whitespace in the short arg, and have `run` call `on_line` once per rendered line, or have the renderer return a list. Add a test with a multi-line command and a multi-line text block.
+
+2. Codex criterion is not met. The criterion requires confirming which of stdout and stderr carries codex's final message and progress on the installed version, and recording it. The implementer reports that `codex` could not initialise in their environment and that nothing was confirmed. It is honestly reported, but it is still unmet. Codex reply handling stays stdout-only on an unverified assumption. If the final message goes to stderr, the reply will be empty. Fix: probe in an environment where codex starts, and record the result in the commit message or the item. If that is impossible, the customer has to waive the criterion.
+
+3. Minor robustness: a `UnicodeDecodeError` in a reader thread (`text=True`, strict decoding) kills that thread silently. The reply is truncated and the pipe is closed on the child with no logged error. Previously the call raised. Consider `errors="replace"`.
+
+4. Minor test weakness: `test_log_holds_the_raw_stream_including_stderr` in `tests/test_streaming.py` strips the stderr text before comparing, so it does not check ordering. The exact-match comparison in `tests/test_engines.py` covers ordering, and only for the separate-pipe case.
+
+Criteria found satisfied, with evidence:
+- Line-by-line flushed log: the `engines.run` drain loop writes and flushes per line. `test_both_pipes_reach_log_and_listener_before_exit` and the stub's `STUB_AWAIT_LOG` test prove it against real processes.
+- Optional `on_line` in `run`: called while the process is running, proven by the same ack test.
+- `Runner.on_line` passed only when set: `runner.py` builds `options` conditionally. `test_runner_passes_registered_listener` covers the set case, and the existing five-argument fakes pass.
+- Return contract: 127 with a logged message is covered by `test_missing_binary_fails_the_step_with_a_logged_message`. The exit code is kept, as `test_non_zero_exit_code_is_kept_and_fails_the_step` shows. The reply is stdout only.
+- Claude engine args: `roles.toml` has `stream-json --verbose` and no partial messages, and a test asserts it. The result, assistant-text fallback and empty-with-non-zero-code behaviours are all tested.
+- `stream` key: loaded by `Role.stream` and looked up in the `STREAMS` table with a `text` fallback. There is no engine-name comparison, and a test uses the engine name `arbitrary-name`.
+- Renderer never raises, drops user and system events, truncates to 200 characters and shows bad lines verbatim: the `Rendering` tests cover these. Multi-line behaviour is the exception, see finding 1.
+- Exceptions in the callback or renderer are swallowed: `test_display_failures_do_not_change_reply`.
+- The raw log holds the header, then the lines in arrival order.
+- Recorded-stream tests need no installed claude or codex.
+- Whole suite: the harness run passed, 88 tests.
+
+Verdict: revise. Findings 1 and 2 block approval.
 
 ## Test run
 
