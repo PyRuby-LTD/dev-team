@@ -31,6 +31,10 @@ class WorkflowDefinition(unittest.TestCase):
             self.assertTrue(step.owner == "human" or step.role)
             self.assertLessEqual(set(step.transitions.values()), set(workflow.steps))
         self.assertEqual("analyst", workflow.steps["analysis"].role)
+        # Analysis cannot reach the customer's play decision without passing the challenger.
+        self.assertEqual({"answering", "challenge"}, set(workflow.steps["analysis"].transitions.values()))
+        self.assertEqual("challenger", workflow.steps["challenge"].role)
+        self.assertEqual({"sound": "ready", "rework": "analysis"}, workflow.steps["challenge"].transitions)
         self.assertIsNone(workflow.steps["ready"].role)
         self.assertTrue(workflow.steps["done"].terminal)
 

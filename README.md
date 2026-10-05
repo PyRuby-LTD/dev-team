@@ -73,7 +73,8 @@ beside the code; the first command creates it. See
 | Step | Owner | Transitions |
 |---|---|---|
 | captured | you | `analyse` |
-| analysis | analyst | `questions` (to answering), `ready` |
+| analysis | analyst | `questions` (to answering), `analysed` (to challenge) |
+| challenge | challenger | `sound` (to ready), `rework` (back to analysis) |
 | answering | you | `answered` (back to analysis) |
 | ready | you | `play`, `rework` |
 | implement | implementer, on the item's branch | `implemented` |
@@ -82,7 +83,9 @@ beside the code; the first command creates it. See
 | publish | publisher, on the item's branch | `published` |
 | done | - | |
 
-Change an owner or a transition by editing the JSON. The reviewer should be a
+The challenger attacks the analyst's work before you are asked to play it, and
+runs on a stronger model than the analyst. Change an owner or a transition by
+editing the JSON. The reviewer should be a
 different engine from the implementer; that independence is most of the value.
 
 ## How an agent step runs

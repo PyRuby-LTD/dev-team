@@ -43,6 +43,12 @@ engine = "claude"
 model = "sonnet"
 max_turns = 30
 
+# Deliberately a stronger model than the analyst whose work it attacks.
+[roles.challenger]
+engine = "claude"
+model = "opus"
+max_turns = 30
+
 [roles.implementer]
 engine = "codex"
 model = "gpt-6.1-sol"

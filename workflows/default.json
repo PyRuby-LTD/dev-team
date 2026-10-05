@@ -2,7 +2,8 @@
   "initial": "captured",
   "steps": {
     "captured":  {"owner": "human",             "transitions": {"analyse": "analysis"}},
-    "analysis":  {"owner": "agent:analyst",     "transitions": {"questions": "answering", "ready": "ready"}},
+    "analysis":  {"owner": "agent:analyst",     "transitions": {"questions": "answering", "analysed": "challenge"}},
+    "challenge": {"owner": "agent:challenger",  "transitions": {"sound": "ready", "rework": "analysis"}},
     "answering": {"owner": "human",             "transitions": {"answered": "analysis"}},
     "ready":     {"owner": "human",             "transitions": {"play": "implement", "rework": "analysis"}},
     "implement": {"owner": "agent:implementer", "transitions": {"implemented": "review"}},

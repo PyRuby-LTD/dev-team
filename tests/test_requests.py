@@ -134,7 +134,8 @@ class Requests(unittest.TestCase):
             calls.append(role.name)
             expected, transition = {
                 'product_owner': ('Request analysis prompt\n', 'complete'),
-                'analyst': ('Default analysis prompt\n', 'ready'),
+                'analyst': ('Default analysis prompt\n', 'analysed'),
+                'challenger': ('', 'sound'),
             }[role.name]
             self.assertTrue(prompt.startswith(expected))
             log.write_text('fake transcript')
@@ -144,7 +145,7 @@ class Requests(unittest.TestCase):
             runner = Runner(repo, self.roles, engine, report=lambda message: None)
             runner.run(once=True)
         self.assertEqual({}, runner.failed)
-        self.assertCountEqual(['product_owner', 'analyst'], calls)
+        self.assertCountEqual(['product_owner', 'analyst', 'challenger'], calls)
         self.assertEqual('review', repo.scan().valid[request.id].metadata['step'])
         self.assertEqual('ready', repo.scan().valid[story.id].metadata['step'])
 
@@ -205,7 +206,7 @@ class Requests(unittest.TestCase):
             fresh = self.repo.scan().valid[item.id]
             self.assertEqual(self.repo.workflow(fresh.metadata['workflow']).initial, fresh.metadata['step'])
         story = created[1]
-        for transition in ('analyse', 'ready', 'play', 'implemented'):
+        for transition in ('analyse', 'analysed', 'sound', 'play', 'implemented'):
             self.repo.transition(story.id, transition)
         # The same step name has different ownership in the two workflows.
         request = self.current()

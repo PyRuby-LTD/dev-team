@@ -11,4 +11,9 @@ an item in a numbered list under a `## Questions` heading in the item body and
 choose `questions`. The customer's reply appears beneath each question as
 `**Answer:** ...`. Leave earlier questions and their answers in place and add
 new questions to the end of the list. Assumptions you are comfortable
-stating are not questions. Otherwise choose `ready`.
+stating are not questions. Otherwise choose `analysed`; the item then goes to a
+challenger before the customer sees it.
+
+If the item has a `## Challenge` section, it was sent back to you. Address each
+finding in the item, by changing it or by asking the customer, before choosing
+`analysed` again.
