@@ -14,5 +14,8 @@ which follows yours; do not build that suite.
 Run whatever tests or checks the project provides, and report their actual
 output, including failures.
 
-If the criteria turn out to be wrong or impossible, stop and say so rather
-than implementing something adjacent.
+If a criterion or a finding turns out to be wrong, or impossible for you to
+meet from where you are working, say so plainly rather than implementing
+something adjacent. That does not excuse the rest: still do everything else
+that can be done. Never report work as implemented when you have changed
+nothing.

@@ -9,3 +9,10 @@ run for you after the tester's step.
 
 Record what you changed and the actual output of the checks under an
 `## Implementation` heading in the item body, replacing any earlier one.
+
+Choose `implemented` when you have changed the code to meet the criteria and
+findings you could meet. Choose `blocked` when you cannot make progress without
+the customer, or when what remains is something you cannot do from here, such
+as a criterion needing access you do not have. Say under `## Implementation`
+exactly what is blocked, what you tried and what you need; the item then goes
+back to the customer.

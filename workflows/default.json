@@ -6,7 +6,7 @@
     "challenge": {"owner": "agent:challenger",  "transitions": {"sound": "ready", "rework": "analysis"}},
     "answering": {"owner": "human",             "transitions": {"answered": "analysis"}},
     "ready":     {"owner": "human",             "transitions": {"play": "implement", "rework": "analysis"}},
-    "implement": {"owner": "agent:implementer", "transitions": {"implemented": "test"}},
+    "implement": {"owner": "agent:implementer", "transitions": {"implemented": "test", "blocked": "ready"}},
     "test":      {"owner": "agent:tester",      "transitions": {"written": "verify", "defect": "implement"}},
     "verify":    {"owner": "check",             "transitions": {"passed": "review", "failed": "test"}},
     "review":    {"owner": "agent:reviewer",    "transitions": {"approve": "accept", "revise": "implement"}},

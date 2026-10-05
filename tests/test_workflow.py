@@ -31,8 +31,8 @@ class WorkflowDefinition(unittest.TestCase):
             self.assertTrue(step.human or step.check or step.role)
             self.assertLessEqual(set(step.transitions.values()), set(workflow.steps))
         self.assertEqual("analyst", workflow.steps["analysis"].role)
-        # Implementation cannot reach review without passing the tester.
-        self.assertEqual({"test"}, set(workflow.steps["implement"].transitions.values()))
+        # Implementation cannot reach review without passing the tester; a stuck implementer has a way out.
+        self.assertEqual({"implemented": "test", "blocked": "ready"}, workflow.steps["implement"].transitions)
         self.assertEqual({"written": "verify", "defect": "implement"}, workflow.steps["test"].transitions)
         # Only the harness's own run of the suite lets an item reach review.
         self.assertTrue(workflow.steps["verify"].check)
