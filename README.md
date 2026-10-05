@@ -77,7 +77,7 @@ beside the code; the first command creates it. See
 | challenge | challenger | `sound` (to ready), `rework` (back to analysis) |
 | answering | you | `answered` (back to analysis) |
 | ready | you | `play`, `rework` |
-| implement | implementer, on the item's branch | `implemented` (to test) |
+| implement | implementer, on the item's branch | `implemented` (to test), `blocked` (back to you at ready) |
 | test | tester, on the item's branch | `written` (to verify), `defect` (back to implement) |
 | verify | the harness runs `make regression` | `passed` (to review), `failed` (back to test) |
 | review | reviewer, on the item's branch | `approve`, `revise` |
