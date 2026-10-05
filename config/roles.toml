@@ -13,9 +13,10 @@ command = [
   # Shell commands these roles may run unattended; file edits are covered by {permission}.
   "--allowedTools", "Bash(uv run python -m devteam *) Bash(git diff *) Bash(git log *) Bash(git status *)",
   "--max-turns", "{max_turns}",
-  "--output-format", "text",
+  "--output-format", "stream-json", "--verbose",
 ]
 permission = "acceptEdits"
+stream = "claude-json"
 
 [engines.codex]
 command = [
@@ -27,6 +28,7 @@ command = [
   "--skip-git-repo-check",
 ]
 permission = "workspace-write"
+stream = "text"
 
 # The project's check: what `devteam check` and a workflow step owned by "check"
 # run in the product repository. Agents call `devteam check`, never make itself.

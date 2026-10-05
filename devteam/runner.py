@@ -51,6 +51,7 @@ class Runner:
                  check=checks.run):
         self.repository = repository
         self.roles = load_roles() if roles is None else roles
+        self.on_line = None
         self.engine = engine
         self.report = report
         self.max_runs = max_runs
@@ -126,7 +127,9 @@ class Runner:
         self.active = record.id
         self.report(f"{record.id} {step.name}: {role.name} started")
         try:
-            code, reply = self.engine(role, render(step, values, record.metadata["workflow"]), self.checkout or root, root, log)
+            options = {"on_line": self.on_line} if self.on_line is not None else {}
+            code, reply = self.engine(role, render(step, values, record.metadata["workflow"]),
+                                      self.checkout or root, root, log, **options)
         finally:
             self.active = None
         if code != 0:
