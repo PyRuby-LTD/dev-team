@@ -21,6 +21,8 @@ backlog capture <type> "<title>" --file <body-file>`; the product is the reposit
 you are running in, and its backlog must be the directory containing this
 request. If the module is unavailable from the product, locate the team harness
 and run its module there with `--product` pointing to the product repository.
+Write each body file inside the repository, since you cannot write outside it,
+and delete it once the item is captured.
 Create epics first, stories with `--parent EPIC-...`, tasks with a story or bug
 parent, and bugs with an optional epic, story or task parent. Include concrete
 acceptance criteria reflecting the answers and specialist findings in each

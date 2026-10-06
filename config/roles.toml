@@ -45,7 +45,7 @@ timeout = 1800        # seconds; a run that exceeds it has failed
 [roles.product_owner]
 engine = "claude"
 model = "sonnet"
-max_turns = 12
+max_turns = 30
 
 [roles.analyst]
 engine = "claude"
