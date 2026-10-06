@@ -32,6 +32,15 @@ Work items I intend to capture once that is resolved, under EPIC-003:
 3. Story: Return a rejected PR's comments to implement. Acceptance: moving to `rejected` reads the PR's reviews and comments with `gh`, writes them under `## Pull request feedback` (replacing any earlier section) and moves the item to `implement`; `prompts/implement.md` tells the implementer to address that section; a failed `gh` call leaves the item at `rejected` with the error shown.
 4. Story: Re-publish updates the existing PR. Acceptance: when a PR already exists for the branch, the publisher pushes and updates it, recording the same URL, and does not run `gh pr create` again; `gh` calls the publisher needs are allow-listed in `config/roles.toml`.
 
+## Created work items
+
+- STORY-010 (parent EPIC-003): Hold a published item for the customer's PR decision. `publish` moves to a human-owned step offering `merged` and `rejected` instead of `done`.
+- STORY-011 (parent EPIC-003): Bring local main in line with origin when a PR is merged. Fetch and fast-forward the base branch on `merged`.
+- STORY-012 (parent EPIC-003): Return a rejected PR's comments to implement. Read the PR's reviews and comments with `gh` into the item on `rejected`.
+- STORY-013 (parent EPIC-003): Re-publish updates the existing PR. Push to the open PR and record the same URL without creating a second one.
+
+These were captured on 2026-10-06 by a product-owner run that reached its turn limit before recording them. All four are at their initial step (captured); reuse these IDs and do not capture them again.
+
 ## Questions
 
 1. The capture command is not runnable from this session (see the blocker above). Can you either make `uv run python -m devteam --product <repo> backlog capture ...` runnable for this role, or capture the four items above yourself? I will then list their IDs and complete the request.
