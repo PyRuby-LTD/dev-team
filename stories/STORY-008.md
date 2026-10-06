@@ -4,7 +4,7 @@ type: story
 title: Stream agent output live to log and listener
 parent: EPIC-001
 workflow: default
-step: publish
+step: done
 ---
 ## Goal
 
@@ -172,3 +172,7 @@ OK
 ## Feedback
 
 - **note at implement:** The Codex stdout/stderr split is confirmed from the runner's own logs: the final message is on stdout and progress on stderr. Do not probe Codex. Fix review findings 1 and 3.
+
+## Pull request
+
+https://github.com/PyRuby-LTD/dev-team/pull/1
