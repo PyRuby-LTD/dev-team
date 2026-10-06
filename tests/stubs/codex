@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+"""Stand-in for the codex CLI: final message on stdout, progress on stderr, as the installed version prints them."""
+import json
+import os
+import pathlib
+import sys
+
+pathlib.Path(os.environ["STUB_ARGV"]).write_text(json.dumps(sys.argv[1:]))
+sys.stdout.write("Done.\nTRANSITION: implemented\n")
+sys.stdout.flush()
+sys.stderr.write("progress: editing files\n")
+sys.stderr.flush()

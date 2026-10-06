@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""Stand-in for the claude CLI: replays a recorded stream chosen by the test through the environment."""
+import json
+import os
+import pathlib
+import sys
+import time
+
+pathlib.Path(os.environ["STUB_ARGV"]).write_text(json.dumps(sys.argv[1:]))
+stderr_text = pathlib.Path(os.environ["STUB_STDERR"]).read_text() if os.environ.get("STUB_STDERR") else ""
+if stderr_text:
+    sys.stderr.write(stderr_text)
+    sys.stderr.flush()
+lines = pathlib.Path(os.environ["STUB_STDOUT"]).read_bytes().splitlines(keepends=True)
+await_log = os.environ.get("STUB_AWAIT_LOG")
+
+
+def logged(text):
+    return any(text in p.read_text(errors="replace") for p in pathlib.Path(await_log).glob("*/*.log"))
+
+
+def wait_for_log(text, code):
+    deadline = time.monotonic() + 10
+    while not logged(text):
+        if time.monotonic() > deadline:
+            sys.exit(code)
+        time.sleep(0.02)
+
+
+if await_log and stderr_text:
+    # Stderr must be in the log before stdout starts, so the log order is deterministic.
+    wait_for_log(stderr_text, 98)
+for number, line in enumerate(lines):
+    sys.stdout.buffer.write(line)
+    sys.stdout.buffer.flush()
+    if await_log and number == 0:
+        # The first line must reach the run's log while this process is still alive.
+        wait_for_log(line.decode(errors="replace"), 99)
+sys.exit(int(os.environ.get("STUB_CODE", "0")))
