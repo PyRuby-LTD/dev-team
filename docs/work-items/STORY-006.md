@@ -662,183 +662,54 @@ needs all four.
 
 ## Implementation
 
-Implemented the launcher, agent command, product quick-start and documentation.
-Changes are left in the working tree; no commit was made.
+Addressed both PR comments from 2026-10-07 requesting that completed stories
+remain immutable. Restored `docs/work-items/STORY-008.md` through
+`STORY-013.md` byte for byte from `67c120d`, the revision before STORY-006.
+This removes the added update notices and restores the original criteria,
+commands, findings and recorded results. The launcher implementation and
+current usage documentation were already present; no runtime code change was
+needed for this revision. Changes remain uncommitted in the working tree.
 
-- Added a single validated harness command derived from `config.ROOT`, with
-  `--project` and unconditional `-P`. Prompts, the tester brief and the Claude
-  allow-list substitute it. `run`, `tui` and `init` validate the path before
-  doing work; other commands do not require it.
-- Added `help` with top-level commands and backlog actions, preserving the
-  required subcommand and nonzero exit for a bare invocation.
-- Added `initialise.py` and `init`: repository/branch/configured GitHub origin
-  validation before writes, missing CLI warnings, a failing placeholder
-  Makefile, and backlog setup. Only an unborn current branch or a single root
-  Makefile commit gets the quick-start push behavior. Existing codebases get
-  no code commit or push. Commit/push failures propagate Git's message and
-  state-based reruns complete setup. Other staged files remain staged.
-- Added executable `install.sh`: checks every prerequisite, refuses unsupported
-  checkout paths, appends the quoted alias to `.bashrc` once, and warns without
-  replacing an existing alias. Only temporary homes were used in verification.
-- Updated README and backlog documentation with setup, prerequisites, product
-  environment selection and usage. Updated harness invocation references in
-  archived work items too, because the criterion's grep includes all `docs/`;
-  each archive identifies this update, preserving recorded check output.
-- Added nine unit tests for URL/target/path parsing and quick-start state
-  transitions using real Git repositories. Updated three existing request
-  assertions to compare rendered prompts with the resolved harness placeholder.
-  No acceptance automation suite was added.
+The acceptance criterion requiring no bare harness commands anywhere under
+`docs/` conflicts with the customer's later instruction to preserve completed
+stories. The PR feedback takes precedence: historical commands remain in the
+archives. The existing command-reference test already excludes
+`docs/work-items`, so no test changes or new acceptance suite were needed.
 
-Checks and actual results:
+Checks and actual output for this revision:
 
-1. The initial ordinary `uv run` failed before executing Python (exit 2):
+- Direct unit tests:
 
-   ```text
-   error: failed to open file `/home/tarttelin/.cache/uv/sdists-v9/.git`: Read-only file system (os error 30)
-   ```
+  ```sh
+  UV_CACHE_DIR=/tmp/devteam-uv-cache uv run python -m unittest tests.test_initialise tests.test_launcher.AgentsReachTheHarness.test_no_checked_in_file_shows_the_bare_command tests.test_launcher.Guards
+  ```
 
-   Subsequent commands used `UV_CACHE_DIR=/tmp/devteam-uv-cache`.
+  Exit 0:
 
-2. Foreign-product shadowing subprocess check, with a temporary Git repository
-   containing `yaml.py` that exits with `shadowed`:
+  ```text
+  .............
+  ----------------------------------------------------------------------
+  Ran 13 tests in 0.705s
 
-   ```text
-   flags=['-P']: exit=0; stdout=''; stderr=''
-   flags=[]: exit=1; stdout=''; stderr='shadowed\n'
-   ```
+  OK
+  ```
 
-3. Initial targeted run of initialisation, engines, runner and checkout tests:
+- Compared each restored file's bytes with `git show 67c120d:<path>`.
+  Exit 0, actual output:
 
-   ```text
-   Ran 40 tests in 4.649s
+  ```text
+  All 6 previously completed stories are byte-identical to 67c120d.
+  ```
 
-   OK
-   ```
+- `git diff 67c120d --name-only -- docs/work-items
+  ':!docs/work-items/STORY-006.md'`: exit 0, no output. No previously completed
+  story differs from the pre-story revision.
+- `bash -n install.sh`: exit 0, no output.
+- `git diff --check`: exit 0, no output.
 
-4. Additional request/publish/republish/check tests initially failed (exit 1):
-
-   ```text
-   AssertionError: False is not true
-   ```
-
-   Two failures were caused by raw-template `startswith` comparisons after
-   introducing substitution; one caused three subsequent subtest errors:
-
-   ```text
-   IndexError: list index out of range
-   Ran 28 tests in 7.057s
-
-   FAILED (failures=2, errors=3)
-   ```
-
-   Updated those assertions to expect the resolved placeholder. The combined
-   rerun including the request UI class stalled after progress dots and was
-   interrupted (exit 130); it produced no final test verdict.
-
-5. Final direct unit-test command (excluding the UI class):
-
-   ```sh
-   UV_CACHE_DIR=/tmp/devteam-uv-cache timeout 30s uv run python -m unittest tests.test_initialise tests.test_engines tests.test_runner tests.test_checkout tests.test_requests.Requests tests.test_publish tests.test_republish tests.test_check
-   ```
-
-   Exit 0, actual final output:
-
-   ```text
-   Ran 68 tests in 11.397s
-
-   OK
-   ```
-
-6. A minimal `asyncio.run` / `asyncio.to_thread` diagnostic reproduced the
-   sandbox async executor shutdown problem already recorded by STORY-010:
-   `timeout 5s` exited 124. Actual output:
-
-   ```text
-   async worker completed
-   ```
-
-   The following `async shutdown completed` print was never reached. No
-   application or test code was changed to bypass this environment problem.
-   There is no full-suite or TUI pass claim; the full suite remains for the
-   tester/runner as requested.
-
-7. Foreign-product CLI smoke check using the documented prefix: `help` exited
-   0 and printed descriptions for all six commands, `--product`, and all four
-   backlog actions. Bare invocation exited 2:
-
-   ```text
-   devteam: error: the following arguments are required: cmd
-   ```
-
-   With a configured HTTPS GitHub origin redirected to a temporary local bare
-   repository, first `init` exited 0:
-
-   ```text
-   Committed Makefile on main
-   Pushed main to origin
-   Backlog is set up at /tmp/tmp7xixz5sd/product/backlog
-   ```
-
-   Second `init` exited 0:
-
-   ```text
-   Product is already set up on main
-   Backlog is set up at /tmp/tmp7xixz5sd/product/backlog
-   ```
-
-   Placeholder `make regression` exited 2, as intended:
-
-   ```text
-   regression unimplemented: wire up the product's checks
-   make: *** [Makefile:5: regression] Error 1
-   ```
-
-   The tester argv contained:
-
-   ```text
-   Bash(uv run --project /home/tarttelin/projects/pyruby/dev-team python -P -m devteam *)
-   ```
-
-   Each of default/test, default/review, analysis/product-owner and the tester
-   brief reported `contains harness command: True`.
-
-8. Installer manual checks with temporary HOME: first run exited 0 and printed
-   `Added dev-team alias to ~/.bashrc. Open a new shell or source ~/.bashrc.`
-   Both runs warned that git `user.name` and `user.email` were not configured
-   in that temporary home. Second run exited 0 with:
-
-   ```text
-   WARNING: dev-team alias already exists in ~/.bashrc; left unchanged
-   ```
-
-   `.bashrc` was byte-identical on rerun and the only home file created. The
-   alias was:
-
-   ```sh
-   alias dev-team='uv run --project "/home/tarttelin/projects/pyruby/dev-team" python -P -m devteam'
-   ```
-
-   Copies in paths containing a space, `*` and `(` each exited 1 with the
-   harness-path error and wrote no alias. A stub PATH without prerequisites
-   exited 1, created no home files, and reported all missing commands:
-
-   ```text
-   Missing required prerequisite: uv
-   Missing required prerequisite: git
-   WARNING: claude is missing from PATH
-   WARNING: codex is missing from PATH
-   WARNING: gh is missing from PATH
-   ```
-
-9. `bash -n install.sh`, Python compilation of the changed configuration/CLI
-   and initialisation modules, and `git diff --check` exited 0 with no output.
-   The old bare-command grep over README/prompts/roles/config/docs, retired
-   workspace grep excluding backlog/docs, home-resource grep over devteam,
-   and pip/python3 grep over README all returned no matches (exit 1).
-
-The fresh-computer walkthrough and live Claude allow-list behavior are human
-criteria and have not been exercised here. No implementation work requires
-additional customer input.
+No check failed in this revision. The full suite is left to the tester/runner
+as instructed. The fresh-computer walkthrough and live Claude allow-list
+behavior remain human checks, not claimed as exercised here.
 
 ## Tests
 
@@ -860,13 +731,14 @@ The README/`docs/backlog.md` wording criteria are covered only for the bare-comm
 
 ## Review
 
-No blocking findings. Every criterion has code behind it and, apart from the documentation prose and the `[human]` criterion, a test that runs the real system (the harness's run: 216 tests, OK).
+No blocking findings. Judged from the diff (`main...devteam/STORY-006`) and the harness's test run (216 tests, OK), not from the Implementation notes.
 
 Minor points, none needing a revise:
 
-1. `has_regression` (`devteam/initialise.py`) is a line heuristic. It treats `regression::` (a double-colon rule) and targets defined through includes or pattern rules as absent, so it can print the "no regression target" warning for a Makefile that works. It only warns, so it is cosmetic.
-2. `init` acts on the repository top, not the current subdirectory. Running it from a subdirectory sets up the whole repository. This is reasonable, but the README does not say so.
-3. `git config --get remote.origin.url` fails if `origin` has several URLs. That is treated as "no GitHub origin", which is a safe refusal.
+1. `has_regression` (`devteam/initialise.py`) is a line heuristic: `regression::` rules, pattern rules and targets from `include` read as absent, so a working Makefile can get a spurious "no regression target" warning. It only warns.
+2. `init` acts on the repository top, not the subdirectory it is run from. Reasonable, but the README does not say so.
+3. An `origin` with several URLs makes `git config --get` fail and is refused as "no GitHub origin". A safe refusal.
+4. The criterion "`git grep -n 'uv run python -m devteam' -- prompts roles config docs` returns nothing" is not literally true: 35 lines remain under `docs/work-items`. That is correct given the customer's PR comment that played stories are immutable. The diff changes no earlier `docs/work-items/*` file, and the same grep with `:!docs/work-items` over prompts, roles, config, docs and README is empty.
 
 Criteria satisfied, with evidence:
 
@@ -881,25 +753,38 @@ Criteria satisfied, with evidence:
 
 Not proven, and rightly left to the `[human]` criterion: that `claude` honours an allow-list pattern containing a path, and the fresh-computer walkthrough.
 
-The rewrite of the archived `docs/work-items/*` is not in the story as such. It follows from the criterion that greps all of `docs/`, and each archive is marked as updated, so I accept it.
+The earlier archive rewrite has been reverted, as the customer's PR feedback required.
 
 ## Test run
 
-Run by the harness, 2026-10-07 20:46 UTC. Full output: `/home/tarttelin/projects/pyruby/dev-team/backlog/log/STORY-006/verify-20261007T204422450761.log`
+Run by the harness, 2026-10-07 21:11 UTC. Full output: `/home/tarttelin/projects/pyruby/dev-team/backlog/log/STORY-006/verify-20261007T211001982417.log`
 
 Passed: `the project check`
 
 ```text
 uv run python -m unittest discover -s tests
-.................................................................................................................................................................................Executing <Task pending name='message pump Note()' coro=<MessagePump._process_messages() running at /home/tarttelin/projects/pyruby/dev-team/.venv/lib/python3.13/site-packages/textual/message_pump.py:571> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/base_events.py:459> created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py:410> took 0.106 seconds
-.....Executing <Task pending name='screen_update' coro=<Timer._run_timer() running at /home/tarttelin/projects/pyruby/dev-team/.venv/lib/python3.13/site-packages/textual/timer.py:146> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/base_events.py:459> created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py:410> took 0.105 seconds
-.....Executing <Task pending name="message pump Screen(id='_default')" coro=<MessagePump._process_messages() running at /home/tarttelin/projects/pyruby/dev-team/.venv/lib/python3.13/site-packages/textual/message_pump.py:571> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/base_events.py:459> created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py:410> took 0.111 seconds
-Executing <Task pending name="message pump Screen(id='_default')" coro=<MessagePump._process_messages() running at /home/tarttelin/projects/pyruby/dev-team/.venv/lib/python3.13/site-packages/textual/message_pump.py:571> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/base_events.py:459> created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py:410> took 0.119 seconds
-.......Executing <Task pending name='screen_update' coro=<Timer._run_timer() running at /home/tarttelin/projects/pyruby/dev-team/.venv/lib/python3.13/site-packages/textual/timer.py:146> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/base_events.py:459> created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py:410> took 0.139 seconds
-.......Executing <Task pending name='message pump Header()' coro=<MessagePump._process_messages() running at /home/tarttelin/projects/pyruby/dev-team/.venv/lib/python3.13/site-packages/textual/message_pump.py:566> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/base_events.py:459> created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py:410> took 0.151 seconds
+.................................................................................................................................................................................Executing <Task pending name='message pump Note()' coro=<MessagePump._process_messages() running at /home/tarttelin/projects/pyruby/dev-team/.venv/lib/python3.13/site-packages/textual/message_pump.py:571> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/base_events.py:459> created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py:410> took 0.116 seconds
+.....Executing <Task pending name='screen_update' coro=<Timer._run_timer() running at /home/tarttelin/projects/pyruby/dev-team/.venv/lib/python3.13/site-packages/textual/timer.py:146> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/base_events.py:459> created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py:410> took 0.111 seconds
+..Executing <Task pending name='screen_update' coro=<Timer._run_timer() running at /home/tarttelin/projects/pyruby/dev-team/.venv/lib/python3.13/site-packages/textual/timer.py:146> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/base_events.py:459> created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py:410> took 0.134 seconds
+...Executing <Task pending name="message pump Screen(id='_default')" coro=<MessagePump._process_messages() running at /home/tarttelin/projects/pyruby/dev-team/.venv/lib/python3.13/site-packages/textual/message_pump.py:571> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/base_events.py:459> created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py:410> took 0.211 seconds
+.Executing <Task pending name="run_test Backlog(title='devteam', classes={'-dark-mode'}, pseudo_classes={'dark', 'focus'})" coro=<App.run_test.<locals>.run_app() running at /home/tarttelin/projects/pyruby/dev-team/.venv/lib/python3.13/site-packages/textual/app.py:2191> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/base_events.py:459> created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py:410> took 0.149 seconds
+......Executing <Task pending name='screen_update' coro=<Timer._run_timer() running at /home/tarttelin/projects/pyruby/dev-team/.venv/lib/python3.13/site-packages/textual/timer.py:146> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/base_events.py:459> created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py:410> took 0.129 seconds
+.......Executing <Task pending name="message pump Vertical(id='right')" coro=<MessagePump._process_messages() running at /home/tarttelin/projects/pyruby/dev-team/.venv/lib/python3.13/site-packages/textual/message_pump.py:566> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/base_events.py:459> created at /home/tarttelin/.local/share/uv/python/cpython-3.13.7-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py:410> took 0.160 seconds
 ...............
 ----------------------------------------------------------------------
-Ran 216 tests in 99.520s
+Ran 216 tests in 92.694s
 
 OK
 ```
+
+## Pull request
+
+https://github.com/PyRuby-LTD/dev-team/pull/7
+
+## Pull request feedback
+
+**Review (COMMENTED)** by tarttelin (2026-10-07T21:06:37Z):
+> Revert changes to previously completed stories
+
+**Conversation comment** by tarttelin (2026-10-07T21:04:52Z):
+> Stories that have already been played should never have their text updated by a later story. They should be an immutable record of the journey. It's fine if what they implemented has been superseded, but it's not fine to change the story text to reflect that subsequent change.
