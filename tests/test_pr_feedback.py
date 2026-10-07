@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -144,3 +145,104 @@ class PullRequestFeedback(unittest.TestCase):
         self.assertIn("There are no comments", self.record().body)
         step = self.repo.step(self.record())
         self.assertIn("## Pull request feedback", runner.render(step, {}))
+
+
+class RejectedThroughTheCommandLine(unittest.TestCase):
+    """STORY-012: `devteam backlog move ... rejected` then `devteam run --once`, with only the stub gh."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+        self.product = self.directory / "product"
+        self.product.mkdir()
+        self.bin = self.directory / "bin"
+        self.bin.mkdir()
+        shutil.copy(ROOT / "tests/stubs/gh", self.bin / "gh")
+        (self.bin / "gh").chmod(0o755)
+        (self.bin / "python3").symlink_to(sys.executable)
+        self.argv = self.directory / "gh-argv.jsonl"
+        self.fixtures = self.directory / "fixtures"
+        shutil.copytree(ROOT / "tests/fixtures/gh", self.fixtures)
+        self.devteam("backlog", "capture", "epic", "Epic", "--id", "EPIC-001")
+        self.devteam("backlog", "capture", "story", "Story", "--id", "STORY-001", "--parent", "EPIC-001")
+        for name in ("analyse", "analysed", "sound", "play", "implemented", "written", "passed",
+                     "approve", "pr", "published"):
+            self.devteam("backlog", "move", "STORY-001", name)
+
+    def devteam(self, *args, path=None, env=None):
+        environment = {**os.environ, "PATH": path or f"{self.bin}{os.pathsep}{os.environ['PATH']}",
+                       "GH_STUB_ARGV": str(self.argv), "GH_STUB_FIXTURES": str(self.fixtures), **(env or {})}
+        return subprocess.run([sys.executable, "-m", "devteam", "--product", str(self.product), *args],
+                              cwd=ROOT, env=environment, capture_output=True, text=True, timeout=60, check=True)
+
+    @property
+    def item(self):
+        return next((self.product / "backlog").rglob("STORY-001.md"))
+
+    def step(self):
+        listing = self.devteam("backlog", "list").stdout
+        return next(line.split()[1] for line in listing.splitlines() if line.startswith("STORY-001"))
+
+    def add_section(self):
+        self.item.write_text(self.item.read_text() + "\n## Pull request\n\nhttps://github.com/acme/product/pull/7\n")
+
+    def calls(self):
+        return [json.loads(line) for line in self.argv.read_text().splitlines()] if self.argv.exists() else []
+
+    def test_rejection_returns_the_pr_comments_to_implement_and_keeps_the_note(self):
+        self.add_section()
+        self.devteam("backlog", "move", "STORY-001", "rejected", "-m", "Customer says no")
+        result = self.devteam("run", "--once")
+        self.assertIn("STORY-001 rejected (harness: rejected): completed -> implement", result.stdout)
+        self.assertEqual("implement", self.step())
+        self.assertEqual([["api", f"repos/acme/product/{suffix}", "--paginate"] for suffix in
+                          ("pulls/7/reviews", "pulls/7/comments", "issues/7/comments")], self.calls())
+        body = self.item.read_text()
+        self.assertEqual(1, body.count("\n## Pull request feedback\n"))
+        self.assertIn("**Review (COMMENTED)** by alice (2026-03-01T10:00:00Z):\n> Please rename the flag.", body)
+        self.assertEqual(1, body.count("**Review ("), "the empty-body review has no entry")
+        self.assertIn("**Inline comment** by bob on workflows/default.json line 16 (2026-03-01T11:00:00Z):", body)
+        self.assertIn("> Use the rejected harness here.", body)
+        self.assertIn("**Conversation comment** by carol (2026-03-01T12:00:00Z):", body)
+        self.assertEqual(1, body.count("\n## Feedback\n"))
+        self.assertRegex(body, r"(?s)\n## Feedback\n(?:(?!\n## ).)*Customer says no")
+
+    def test_rejection_with_gh_failing_leaves_the_item_at_rejected(self):
+        self.add_section()
+        self.devteam("backlog", "move", "STORY-001", "rejected")
+        before = self.item.read_bytes()
+        result = self.devteam("run", "--once", env={"GH_STUB_FAIL": "inline"})
+        self.assertIn("FAILED", result.stdout + result.stderr)
+        self.assertIn("stub gh: authentication failed", result.stdout + result.stderr)
+        self.assertEqual("rejected", self.step())
+        self.assertEqual(before, self.item.read_bytes())
+
+    def test_rejection_without_gh_on_the_path_leaves_the_item_at_rejected(self):
+        self.add_section()
+        self.devteam("backlog", "move", "STORY-001", "rejected")
+        (self.bin / "gh").unlink()
+        before = self.item.read_bytes()
+        (self.bin / "git").symlink_to(shutil.which("git"))
+        result = self.devteam("run", "--once", path=str(self.bin))
+        self.assertIn("FAILED", result.stdout + result.stderr)
+        self.assertIn("'gh'", result.stdout + result.stderr)
+        self.assertEqual("rejected", self.step())
+        self.assertEqual(before, self.item.read_bytes())
+
+    def test_rejection_without_a_pr_url_makes_no_gh_call(self):
+        self.devteam("backlog", "move", "STORY-001", "rejected")
+        result = self.devteam("run", "--once")
+        self.assertIn("FAILED", result.stdout + result.stderr)
+        self.assertIn("PR URL is missing", result.stdout + result.stderr)
+        self.assertEqual("rejected", self.step())
+        self.assertEqual([], self.calls())
+
+    def test_rejection_of_a_pr_without_comments_says_so(self):
+        for kind in ("reviews", "inline", "conversation"):
+            (self.fixtures / f"{kind}.json").write_text("[]")
+        self.add_section()
+        self.devteam("backlog", "move", "STORY-001", "rejected")
+        self.devteam("run", "--once")
+        self.assertEqual("implement", self.step())
+        self.assertIn("There are no comments", self.item.read_text())
