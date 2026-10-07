@@ -6,10 +6,6 @@ parent: EPIC-003
 workflow: default
 step: publish
 ---
-
-Harness invocation examples updated for STORY-006; findings and recorded check
-output below describe the original work. Replace `<checkout>` with the harness path.
-
 As the customer, I want a rejected PR's review comments passed back to implement, so that the implementer can address them without `gh` access.
 
 ## Original acceptance criteria (superseded by "Acceptance criteria (current)" below)
@@ -91,7 +87,7 @@ This is the authoritative list; it replaces the original one above. Each criteri
 11. If the item has no `## Pull request` section, or it holds no github.com PR URL, the step fails as in criterion 7 with a message saying the PR URL is missing, and the stub records no `gh` call.
 12. A PR with no comments produces a `## Pull request feedback` section that states there are none, and the item moves to `implement`.
 13. `prompts/implement.md` names `## Pull request feedback` exactly, and says the section holds the whole history of the PR with dates, that comments the code already meets need no further change, and that the latest `## Feedback` note takes precedence. A test asserts the rendered implement prompt contains the heading.
-14. `HARNESS_ACTIONS` keys in `devteam/runner.py` are still exactly `merged` and `rejected`, `workflows/default.json` is unchanged, and `merged` is not modified. The existing suite (`uv run --project <checkout> python -P -m devteam check`) passes.
+14. `HARNESS_ACTIONS` keys in `devteam/runner.py` are still exactly `merged` and `rejected`, `workflows/default.json` is unchanged, and `merged` is not modified. The existing suite (`uv run python -m devteam check`) passes.
 15. The tests use only the stub `gh` under `tests/stubs/`; none calls the real `gh` or the network. The stub's canned JSON lives in tracked files under `tests/fixtures/gh/`, one per endpoint, with the field names listed under "What would change". A baseline set (two `COMMENTED` reviews one with an empty body, an inline comment on `workflows/default.json` line 16, one conversation comment) has a test asserting both review states, the file and line, and the conversation comment appear, with the empty-body review producing no entry. Synthetic cases (second page, outdated, file-level, null user, pending review, hostile text) are separate fixtures or inline data. Baseline fixtures are described in a comment as modelled on real `gh` output, not captured. After the work, `git status --porcelain` in the repository root is empty apart from intended changes (no stray `gh_api_*` files).
 16. `README.md` states that the `rejected` step reads the PR's comments with `gh`, needs it authenticated, and on failure leaves the item at `rejected`.
 
@@ -168,7 +164,7 @@ Ran 34 tests in 10.269s
 OK
 ```
 
-- Project check: `uv run --project <checkout> python -P -m devteam check tests.test_pr_feedback` exited 0:
+- Project check: `uv run python -m devteam check tests.test_pr_feedback` exited 0:
 
 ```text
 uv run python -m unittest tests.test_pr_feedback
@@ -185,7 +181,7 @@ check passed; full output: /home/tarttelin/projects/pyruby/dev-team/backlog/log/
 
 ## Tests
 
-Run one test: `uv run --project <checkout> python -P -m devteam check tests.test_pr_feedback.<Class>.<test>`; the whole module: `uv run --project <checkout> python -P -m devteam check tests.test_pr_feedback`. All use the stub `tests/stubs/gh` and the fixtures in `tests/fixtures/gh/`; no real `gh` or network.
+Run one test: `uv run python -m devteam check tests.test_pr_feedback.<Class>.<test>`; the whole module: `uv run python -m devteam check tests.test_pr_feedback`. All use the stub `tests/stubs/gh` and the fixtures in `tests/fixtures/gh/`; no real `gh` or network.
 
 Command-line tests (`RejectedThroughTheCommandLine`, driving `devteam backlog move` and `devteam run --once` as subprocesses):
 

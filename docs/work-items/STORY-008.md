@@ -6,10 +6,6 @@ parent: EPIC-001
 workflow: default
 step: publish
 ---
-
-Harness invocation examples updated for STORY-006; findings and recorded check
-output below describe the original work. Replace `<checkout>` with the harness path.
-
 ## Goal
 
 While an agent runs, its output reaches the raw log file and a listener line by line, so it can be watched live.
@@ -122,7 +118,7 @@ Black-box tests in `tests/test_streaming.py` run `python -m devteam --product <t
 | Non-UTF-8 output does not truncate the reply (review finding 3) | `test_output_that_is_not_utf8_does_not_truncate_the_reply` |
 | `stream` key in roles.toml selects the claude-json reply handling | the result and fallback tests above, driven by the real `config/roles.toml` |
 
-Run one on its own: `uv run --project <checkout> python -P -m devteam check tests.test_streaming.StreamingThroughRun.test_non_zero_exit_code_is_kept_and_fails_the_step`
+Run one on its own: `uv run python -m devteam check tests.test_streaming.StreamingThroughRun.test_non_zero_exit_code_is_kept_and_fails_the_step`
 
 | Codex: stdout is the reply, stderr progress is logged, `text` stream | `tests.test_streaming.CodexStreamingThroughRun.test_codex_reply_is_stdout_and_progress_on_stderr_is_logged` (stub `tests/stubs/codex` prints the final message on stdout, then progress on stderr; the step only transitions if the reply excludes stderr) |
 
@@ -130,7 +126,7 @@ The Codex test runs the implement step in a throwaway git repository with only g
 
 Not covered end to end: rendering, truncation and multi-line listener output. The listener (`on_line`) is not reachable from the CLI, so these are covered only by the implementer's unit tests in `tests/test_engines.py`.
 
-Whole suite: 93 tests pass via `uv run --project <checkout> python -P -m devteam check`. The earlier non-UTF-8 defect is fixed.
+Whole suite: 93 tests pass via `uv run python -m devteam check`. The earlier non-UTF-8 defect is fixed.
 
 ## Review
 

@@ -6,10 +6,6 @@ parent: EPIC-003
 workflow: default
 step: publish
 ---
-
-Harness invocation examples updated for STORY-006; findings and recorded check
-output below describe the original work. Replace `<checkout>` with the harness path.
-
 As the customer, I want a published item to wait for my pull request decision, so that it is not shown as done before I have reviewed the PR.
 
 ## Analysis
@@ -53,7 +49,7 @@ This list is the one to judge. It supersedes the original five criteria (publish
 2. `pull-request` is owned by `human` and has exactly the transitions `merged` (to step `merged`) and `rejected` (to step `rejected`).
 3. `accept` still has `accept` -> `done`, `pr` -> `publish` and `revise` -> `implement`, unchanged from today.
 4. Steps `merged` and `rejected` have a harness-owned owner (`harness:merged`, `harness:rejected`), each with exactly the transition `completed`; `merged` -> `done`, `rejected` -> `implement`.
-5. `workflow.load("default")` succeeds and `uv run --project <checkout> python -P -m devteam backlog validate` reports no errors; a unit test loads the default workflow.
+5. `workflow.load("default")` succeeds and `uv run python -m devteam backlog validate` reports no errors; a unit test loads the default workflow.
 6. Workflow validation rejects: a harness step whose action is unknown, and a harness step whose transitions are not exactly `completed`. Each has a test naming the step in the error.
 7. `Runner.pending()` returns an item at a harness step, and `run_pass()` runs it without any engine call (a test with a stub engine asserts it was never invoked), moves the item along `completed`, and reports the move.
 8. If a harness action raises `StepFailed`, the item stays at its step and is not retried until `retry()`/restart, as for other failures (test).
@@ -62,7 +58,7 @@ This list is the one to judge. It supersedes the original five criteria (publish
 11. An item at `pull-request` is shown as needing the customer (`needs_you`), and it keeps holding the checkout: while it sits there, `take_checkout` for another code-changing item raises `Waiting` (test in `tests/test_runner.py`). `take_checkout` itself is not changed. The checkout is released only when the item reaches a terminal step.
 12. `README.md` workflow table lists `pull-request`, `merged` and `rejected` and the `publish` row shows `published` leading to `pull-request`.
 13. Neither harness action takes the checkout or counts a run; each only returns `completed`.
-14. `uv run --project <checkout> python -P -m devteam check` passes.
+14. `uv run python -m devteam check` passes.
 
 ## Challenge
 
@@ -156,7 +152,7 @@ Ran 41 tests in 24.487s
 OK
 ```
 
-`UV_CACHE_DIR=/tmp/devteam-uv-cache PYTHONPATH=/tmp/story-010-python-wakeup uv run --project <checkout> python -P -m devteam check` exited 0; actual output:
+`UV_CACHE_DIR=/tmp/devteam-uv-cache PYTHONPATH=/tmp/story-010-python-wakeup uv run python -m devteam check` exited 0; actual output:
 
 ```text
 uv run python -m unittest discover -s tests
@@ -170,7 +166,7 @@ OK
 check passed; full output: /home/tarttelin/projects/pyruby/dev-team/backlog/log/check/20261007T115704562110.log
 ```
 
-`UV_CACHE_DIR=/tmp/devteam-uv-cache uv run --project <checkout> python -P -m devteam backlog validate` exited 0; actual output:
+`UV_CACHE_DIR=/tmp/devteam-uv-cache uv run python -m devteam backlog validate` exited 0; actual output:
 
 ```text
 EPIC-001   -            -                  Workflow-driven work items
@@ -201,7 +197,7 @@ All changes are left in the working tree; no commit was made in either project w
 
 ## Tests
 
-New suite `tests/test_pr_decision.py`, driven through `python -m devteam backlog ...` and `python -m devteam run --once` against a throwaway product with a stub `claude` on PATH (the stub writes its argv file only if started, so a missing file shows no agent ran). Run one test with `uv run --project <checkout> python -P -m devteam check tests.test_pr_decision.<Class>.<test>`; the module with `uv run --project <checkout> python -P -m devteam check tests.test_pr_decision`.
+New suite `tests/test_pr_decision.py`, driven through `python -m devteam backlog ...` and `python -m devteam run --once` against a throwaway product with a stub `claude` on PATH (the stub writes its argv file only if started, so a missing file shows no agent ran). Run one test with `uv run python -m devteam check tests.test_pr_decision.<Class>.<test>`; the module with `uv run python -m devteam check tests.test_pr_decision`.
 
 - 1 `DefaultWorkflowShape.test_done_is_reachable_from_publish_only_through_the_pull_request`; `PullRequestDecision.test_published_item_waits_for_the_customer_instead_of_reaching_done`
 - 2 `DefaultWorkflowShape.test_pull_request_is_the_customers_and_leads_to_the_harness_steps`; `PullRequestDecision.test_customer_can_only_move_a_pull_request_to_merged_or_rejected`
@@ -215,7 +211,7 @@ New suite `tests/test_pr_decision.py`, driven through `python -m devteam backlog
 - 10 TUI behaviour stays with `tests.test_tui.Acting.test_pr_decision_notes_and_harness_labels`; the CLI `-m` note on `rejected` is covered by the rejected test above.
 - 11 `PullRequestHoldsTheCheckout.test_item_awaiting_the_customers_pull_request_decision_blocks_other_code_changes` (real git product; `run --once` reports the wait and the branch is unchanged); `pull-request` as the human step is asserted in the same test.
 - 12 README table is documentation, not tested automatically.
-- 14 `uv run --project <checkout> python -P -m devteam check` passes (113 tests).
+- 14 `uv run python -m devteam check` passes (113 tests).
 
 ## Review
 

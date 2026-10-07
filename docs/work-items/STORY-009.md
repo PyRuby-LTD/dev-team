@@ -6,10 +6,6 @@ parent: EPIC-001
 workflow: default
 step: publish
 ---
-
-Harness invocation examples updated for STORY-006; findings and recorded check
-output below describe the original work. Replace `<checkout>` with the harness path.
-
 ## Goal
 
 The customer can watch the active agent's output live in the TUI, and switch the view on and off.
@@ -191,7 +187,7 @@ No implementation blockers.
 
 ## Tests
 
-All in `tests/test_tui.py`, class `AgentOutput`, driving the real `Backlog` app (Textual pilot, 120x40) with a real `Runner` and a fake engine that emits lines through `on_line` from a worker thread. Run one with `uv run --project <checkout> python -P -m devteam check tests.test_tui.AgentOutput.<test>`, or the class with `tests.test_tui.AgentOutput`.
+All in `tests/test_tui.py`, class `AgentOutput`, driving the real `Backlog` app (Textual pilot, 120x40) with a real `Runner` and a fake engine that emits lines through `on_line` from a worker thread. Run one with `uv run python -m devteam check tests.test_tui.AgentOutput.<test>`, or the class with `tests.test_tui.AgentOutput`.
 
 - Widget properties, no header/title, sits below `#detail` outside its scroll content: `test_output_pane_is_a_plain_log_below_detail_outside_its_scroll_content`
 - Hidden at startup, empty, `#detail` fills the column; geometry once toggled; `l` binding labelled for agent output: `test_l_toggles_the_pane_and_the_footer_names_it` and the start of `test_wrapping_after_open_close_emit_open_matches_live_output`
