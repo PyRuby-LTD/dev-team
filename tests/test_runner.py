@@ -2,11 +2,13 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from devteam import engines
+from devteam import engines, git, tui, workflow
+from devteam import runner as runners
 from devteam.backlog import Repository
 from devteam.config import Role
-from devteam.runner import Runner
+from devteam.runner import Runner, StepFailed, Waiting
 
 WORKFLOW = {
     "initial": "captured",
@@ -155,6 +157,88 @@ class RunnerAcceptance(unittest.TestCase):
         self.assertEqual("implement", self.step(self.story))
         self.assertEqual(1, len(self.engine.calls))
         self.assertIn("git repository", self.messages[-1])
+
+
+class HarnessSteps(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.repo = Repository(self.root / "backlog")
+        epic = self.repo.create("epic", "Delivery")
+        self.story = self.repo.create("story", "Published item", parent=epic.id)
+        self.other = self.repo.create("story", "Next item", parent=epic.id)
+        self.engine = FakeEngine({})
+        self.messages = []
+        self.runner = Runner(self.repo, engine=self.engine, report=self.messages.append, max_runs=0)
+
+    def at(self, step):
+        # Place the fixture at the step under test without running the intervening agents.
+        record = self.repo.scan().valid[self.story.id]
+        record.path.write_text(record.path.read_text().replace(
+            f"step: {record.metadata['step']}\n", f"step: {step}\n", 1))
+        return self.repo.scan().valid[self.story.id]
+
+    def test_registry_matches_the_validated_actions(self):
+        self.assertEqual(workflow.HARNESS_ACTIONS, set(runners.HARNESS_ACTIONS))
+
+    def test_harness_steps_run_without_engine_checkout_or_run_count(self):
+        for action, target in (("merged", "done"), ("rejected", "implement")):
+            with self.subTest(action=action):
+                record = self.at(action)
+                self.assertEqual([(record, self.repo.step(record))], self.runner.pending())
+                self.assertEqual(1, self.runner.run_pass())
+                self.assertEqual(target, self.repo.scan().valid[record.id].metadata["step"])
+                self.assertIn(f"completed -> {target}", self.messages[-1])
+                self.assertEqual([], self.engine.calls)
+                self.assertEqual({}, self.runner.runs)
+                self.assertEqual({}, self.runner.failed)
+
+    def test_failure_waits_for_retry_or_restart(self):
+        self.at("merged")
+        calls = []
+
+        def fail(runner, record):
+            calls.append(record.id)
+            raise StepFailed("cannot complete")
+
+        with patch.dict(runners.HARNESS_ACTIONS, merged=fail):
+            self.assertEqual(1, self.runner.run_pass())
+            self.assertEqual("merged", self.repo.scan().valid[self.story.id].metadata["step"])
+            self.assertIn("FAILED - cannot complete", self.messages[-1])
+            self.assertEqual(0, self.runner.run_pass())
+            self.assertEqual([self.story.id], calls)
+            self.runner.retry(self.story.id)
+            self.assertEqual(1, self.runner.run_pass())
+            restarted = Runner(self.repo, engine=self.engine, report=self.messages.append)
+            self.assertEqual(1, restarted.run_pass())
+            self.assertEqual([self.story.id] * 3, calls)
+        self.runner.retry(self.story.id)
+        self.assertEqual(1, self.runner.run_pass())
+        self.assertEqual("done", self.repo.scan().valid[self.story.id].metadata["step"])
+
+    def test_pr_decision_holds_checkout_until_terminal(self):
+        product = self.root / "product"
+        product.mkdir()
+        git.must(product, "init", "-q", "-b", "main")
+        # A real, empty base commit in this temporary repository permits branch switching.
+        git.must(product, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+        self.runner.checkout = product
+        self.runner.take_checkout(self.story)
+        for step in ("pull-request", "rejected", "merged"):
+            with self.subTest(step=step):
+                self.at(step)
+                with self.assertRaises(Waiting) as raised:
+                    self.runner.take_checkout(self.other)
+                self.assertIn(f"holds the checkout at step {step}", str(raised.exception))
+        self.at("pull-request")
+        row = next(row for row in tui.rows(self.repo) if row.key == self.story.id)
+        self.assertTrue(row.needs_you)
+        self.assertEqual("YOU", row.waiting_on)
+        self.assertEqual([], self.runner.pending())
+        self.at("done")
+        self.assertEqual(f"devteam/{self.other.id}", self.runner.take_checkout(self.other))
+        self.assertEqual(f"devteam/{self.other.id}", git.current_branch(product))
 
 
 class EngineInvocation(unittest.TestCase):

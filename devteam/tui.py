@@ -55,6 +55,8 @@ def owner_label(step):
         return "finished"
     if step.check:
         return "checks"
+    if step.harness:
+        return "harness"
     return "YOU" if step.human else step.role
 
 
@@ -189,9 +191,10 @@ class Actions(ModalScreen):
         if row.unanswered:
             options.append(Option(f"Answer {row.unanswered} question{'s' if row.unanswered != 1 else ''}", id="answer"))
         if not row.needs_you and row.waiting_on != "checks":
-            options.append(Option(f"Leave a note for the {row.waiting_on}", id="note"))
+            label = "Leave a note on the item" if row.waiting_on == "harness" else f"Leave a note for the {row.waiting_on}"
+            options.append(Option(label, id="note"))
         for name, target, owner in row.transitions:
-            who = {"finished": "it is finished", "YOU": "back to you", "checks": "the checks run"}.get(owner, f"the {owner} takes over")
+            who = {"finished": "it is finished", "YOU": "back to you", "checks": "the checks run", "harness": "the harness runs"}.get(owner, f"the {owner} takes over")
             label = Text.assemble(("" if row.needs_you else "override ", YOU), (name, "bold"), f"  ->  {target}  ", (who, "dim"))
             options.append(Option(label, id=f"move:{name}"))
         with Vertical(classes="dialog"):
@@ -242,7 +245,7 @@ class Answers(ModalScreen):
 
 
 class Note(ModalScreen):
-    """Feedback for an agent: with a transition that hands it the item, or on its own (name is None)."""
+    """Feedback on a transition, or on its own (name is None)."""
     BINDINGS = [("escape", "dismiss(None)", "Cancel"), ("ctrl+s", "move", "Move")]
 
     def __init__(self, row, name, target, owner):
@@ -253,11 +256,17 @@ class Note(ModalScreen):
         with Vertical(classes="dialog wide"):
             yield Label(Text.assemble((self.row.label, "bold"), "  ", self.row.title))
             moving = self.move_name is not None
-            if moving:
+            if self.next_owner == "harness":
+                description = (f"{self.move_name}  ->  {self.target}; the harness runs." if moving
+                               else f"The item stays at {self.row.step}; your note is saved on the item.")
+                yield Label(Text(description))
+            elif moving:
                 yield Label(Text.assemble((self.move_name, "bold"), f"  ->  {self.target}; the {self.next_owner} takes over."))
             else:
                 yield Label(Text(f"The item stays at {self.row.step}; the {self.next_owner} reads your note on its next run."))
-            question = f"Anything the {self.next_owner} should know or change?" + (" (optional)" if moving else "")
+            question = ("Anything to record for the next steps?" if self.next_owner == "harness"
+                        else f"Anything the {self.next_owner} should know or change?")
+            question += " (optional)" if moving else ""
             yield Label(Text(question, "bold"), classes="question")
             yield TextArea(id="note", soft_wrap=True)
             with Horizontal(classes="buttons"):
@@ -496,7 +505,9 @@ class Backlog(App):
             self.push_screen(Note(row, None, None, row.waiting_on), lambda note: self.noted(row, note))
         elif choice:
             name, target, owner = next(move for move in row.transitions if move[0] == choice.removeprefix("move:"))
-            if owner in ("YOU", "finished", "checks"):
+            steps = self.repository.workflow(self.repository.scan().valid[row.key].metadata["workflow"]).steps
+            # A merged PR leads to completion; a rejected PR keeps the feedback prompt.
+            if owner in ("YOU", "finished", "checks") or steps[target].action == "merged":
                 self.move(row, name, "")
             else:
                 self.push_screen(Note(row, name, target, owner),

@@ -28,7 +28,7 @@ class WorkflowDefinition(unittest.TestCase):
         workflow = load("default")
         self.assertEqual("captured", workflow.initial)
         for step in workflow.steps.values():
-            self.assertTrue(step.human or step.check or step.role)
+            self.assertTrue(step.human or step.check or step.harness or step.role)
             self.assertLessEqual(set(step.transitions.values()), set(workflow.steps))
         self.assertEqual("analyst", workflow.steps["analysis"].role)
         # Implementation cannot reach review without passing the tester; a stuck implementer has a way out.
@@ -45,6 +45,33 @@ class WorkflowDefinition(unittest.TestCase):
         self.assertEqual({"sound": "ready", "rework": "analysis"}, workflow.steps["challenge"].transitions)
         self.assertIsNone(workflow.steps["ready"].role)
         self.assertTrue(workflow.steps["done"].terminal)
+
+    def test_pr_decision_gates_completion_after_publish(self):
+        steps = load("default").steps
+        self.assertEqual({"published": "pull-request"}, steps["publish"].transitions)
+        self.assertTrue(steps["pull-request"].human)
+        self.assertEqual({"merged": "merged", "rejected": "rejected"}, steps["pull-request"].transitions)
+        self.assertEqual({"accept": "done", "pr": "publish", "revise": "implement"}, steps["accept"].transitions)
+        for action, target in (("merged", "done"), ("rejected", "implement")):
+            self.assertTrue(steps[action].harness)
+            self.assertIsNone(steps[action].role)
+            self.assertEqual(action, steps[action].action)
+            self.assertEqual({"completed": target}, steps[action].transitions)
+
+    def test_invalid_harness_actions_and_outcomes_name_the_step(self):
+        for owner, transitions, reason in (
+            ("harness:unknown", {"completed": "done"}, "unknown harness action"),
+            ("harness:merged", {}, "exactly the transition 'completed'"),
+            ("harness:rejected", {"completed": "done", "failed": "captured"}, "exactly the transition 'completed'"),
+            ("harness:merged", {"ready": "done"}, "exactly the transition 'completed'"),
+        ):
+            with self.subTest(owner=owner, transitions=transitions):
+                data = definition()
+                data["steps"]["analysis"] = {"owner": owner, "transitions": transitions}
+                with self.assertRaises(InvalidWorkflow) as raised:
+                    build("w", data, ROLES)
+                self.assertIn("step 'analysis'", str(raised.exception))
+                self.assertIn(reason, str(raised.exception))
 
     def test_invalid_definitions_name_the_step(self):
         def change(mutate):

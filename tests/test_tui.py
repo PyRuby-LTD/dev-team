@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from textual.widgets import Markdown, Static, Tree
+from textual.widgets import Label, Markdown, Static, Tree
 
 from devteam import questions, tui
 from devteam.backlog import Repository
@@ -297,6 +297,46 @@ class Acting(Fixture):
                 await self.select(app, pilot, key)
                 self.assertEqual(1, len(app.screen_stack), key)
         self.assertEqual("done", self.step(self.finished))
+
+    async def test_pr_decision_notes_and_harness_labels(self):
+        data = json.loads((self.workflows / "default.json").read_text())
+        data["steps"].update({
+            "pull-request": {"owner": "human", "transitions": {"merged": "merged", "rejected": "rejected"}},
+            "merged": {"owner": "harness:merged", "transitions": {"completed": "done"}},
+            "rejected": {"owner": "harness:rejected", "transitions": {"completed": "analysis"}},
+        })
+        (self.workflows / "default.json").write_text(json.dumps(data))
+        self.repo = Repository(self.repo.root, self.workflows, {"analyst"})
+        self.waiting.path.write_text(self.waiting.path.read_text().replace("step: captured", "step: pull-request"))
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await self.select(app, pilot, self.waiting.id)
+            self.assertEqual(["merged", "rejected"], self.options(app))
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertEqual(1, len(app.screen_stack))
+            self.assertEqual("merged", self.step(self.waiting))
+            row = next(row for row in tui.rows(self.repo) if row.key == self.waiting.id)
+            self.assertEqual("harness", row.waiting_on)
+            self.assertFalse(row.needs_you)
+            self.waiting.path.write_text(self.waiting.path.read_text().replace("step: merged", "step: pull-request"))
+            app.action_reload()
+            await pilot.pause()
+            await self.select(app, pilot, self.waiting.id)
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, tui.Note)
+            labels = " ".join(str(label.content) for label in app.screen.query(Label))
+            self.assertIn("Anything to record for the next steps?", labels)
+            self.assertNotIn("analyst", labels)
+            self.assertNotIn("implementer", labels)
+            await pilot.press(*"Fix", "space", *"it", "ctrl+s")
+            await pilot.pause()
+            self.assertEqual("rejected", self.step(self.waiting))
+            self.assertIn("**rejected -> rejected:** Fix it", self.repo.scan().valid[self.waiting.id].body)
+            self.assertEqual("harness", next(row for row in tui.rows(self.repo) if row.key == self.waiting.id).waiting_on)
+        self.assertEqual([], self.calls)
 
     async def test_customer_can_leave_a_note_on_an_agent_owned_step(self):
         app = tui.Backlog(self.repo, self.runner)

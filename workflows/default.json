@@ -11,7 +11,10 @@
     "verify":    {"owner": "check",             "transitions": {"passed": "review", "failed": "test"}},
     "review":    {"owner": "agent:reviewer",    "transitions": {"approve": "accept", "revise": "implement"}},
     "accept":    {"owner": "human",             "transitions": {"pr": "publish", "accept": "done", "revise": "implement"}},
-    "publish":   {"owner": "agent:publisher",   "transitions": {"published": "done"}},
+    "publish":   {"owner": "agent:publisher",   "transitions": {"published": "pull-request"}},
+    "pull-request": {"owner": "human",         "transitions": {"merged": "merged", "rejected": "rejected"}},
+    "merged":    {"owner": "harness:merged",    "transitions": {"completed": "done"}},
+    "rejected":  {"owner": "harness:rejected",  "transitions": {"completed": "implement"}},
     "done":      {"owner": "human",             "transitions": {}}
   }
 }
