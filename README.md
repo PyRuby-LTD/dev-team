@@ -52,6 +52,9 @@ uv run python -m devteam check                   # run this repository's own sui
 
 `tui` is the main way in: it shows every item, lets you answer an agent's
 questions and choose a transition, and runs the agents once you press `s`.
+Press `l` to show or hide live agent output below the item details. The pane
+starts closed and keeps a continuous stream across runs, including output
+received while hidden, bounded to the latest 2000 lines.
 Press `n` to create a request from your text. Requests follow `analysis.json`:
 move a submitted request with `analyse`, then the product owner asks questions
 or consults the architect, platform engineer and quality lead. Each role's

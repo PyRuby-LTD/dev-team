@@ -1,5 +1,6 @@
 """Terminal view of the backlog: every work item, its step and who that step is waiting on."""
 import threading
+from collections import deque
 from dataclasses import dataclass
 
 from rich.text import Text
@@ -339,8 +340,10 @@ class Backlog(App):
     #summary { height: 1; padding: 0 1; background: $panel; }
     #items { width: 1fr; min-width: 40; border: round $primary; padding: 0 1; overflow-x: hidden; }
     #items:focus-within { border: round $accent; }
-    #detail { width: 1fr; border: round $primary; padding: 0 1; }
+    #right { width: 1fr; }
+    #detail { height: 1fr; border: round $primary; padding: 0 1; }
     #detail:focus { border: round $accent; }
+    #output { height: 1fr; }
     #card { padding: 1 1 0 1; }
     #body { padding: 0 0 1 0; }
     #activity { height: 7; border: round $primary; padding: 0 1; }
@@ -361,6 +364,7 @@ class Backlog(App):
         ("y", "toggle_mine", "Only waiting on you"),
         ("g", "toggle_group", "Group by step / epic"),
         ("s", "toggle_agents", "Start / stop agents"),
+        ("l", "toggle_output", "Agent output"),
         ("t", "retry", "Retry failed"),
         ("tab", "switch_pane", "Switch pane"),
         ("r", "reload", "Refresh"),
@@ -381,15 +385,22 @@ class Backlog(App):
         self.shown = None
         self.restoring = False
         self.signature = None
+        self.output_buffer = deque(maxlen=2000)
+        self.output_ready = False
 
     def compose(self):
         yield Header()
         yield Static(id="summary")
         with Horizontal():
             yield ItemTree("Backlog", id="items")
-            with VerticalScroll(id="detail"):
-                yield Static(id="card")
-                yield Markdown(id="body")
+            with Vertical(id="right"):
+                with VerticalScroll(id="detail"):
+                    yield Static(id="card")
+                    yield Markdown(id="body")
+                output = RichLog(id="output", auto_scroll=True, max_lines=2000,
+                                 markup=False, wrap=True, min_width=1)
+                output.display = False
+                yield output
         yield RichLog(id="activity", wrap=True, markup=False)
         yield Footer()
 
@@ -401,12 +412,15 @@ class Backlog(App):
         self.card_view = self.query_one("#card", Static)
         self.body_view = self.query_one("#body", Markdown)
         self.agent_log = self.query_one("#activity", RichLog)
+        self.output_log = self.query_one("#output", RichLog)
         self.item_tree.show_root = False
         self.item_tree.guide_depth = 3
         self.item_tree.focus()
         if self.runner is not None:
             self.runner.report = lambda message: self.from_agents(self.agent_report, message)
+            self.runner.on_line = lambda line: self.from_agents(self.agent_output, line)
         self.agent_log.can_focus = False
+        self.output_log.can_focus = False
         self.agents_title()
         self.action_reload()
         self.set_interval(REFRESH_SECONDS, self.action_reload)
@@ -565,6 +579,26 @@ class Backlog(App):
     def agent_report(self, message):
         self.agent_log.write(message)
         self.action_reload()
+
+    def agent_output(self, line):
+        if self.output_ready:
+            self.output_log.write(line)
+        else:
+            self.output_buffer.append(line)
+
+    def action_toggle_output(self):
+        self.output_ready = False
+        self.output_log.display = not self.output_log.display
+        if self.output_log.display:
+            self.call_after_refresh(self.flush_output)
+
+    def flush_output(self):
+        # Wait for the shown pane's layout before wrapping; arrivals meanwhile stay ordered.
+        if not self.output_log.display:
+            return
+        while self.output_buffer:
+            self.output_log.write(self.output_buffer.popleft())
+        self.output_ready = True
 
     def agent_loop(self):
         while not self.stop.is_set():

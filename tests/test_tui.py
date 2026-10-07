@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 import tempfile
@@ -211,7 +212,7 @@ class Acting(Fixture):
         self.runner = Runner(Repository(self.repo.root, self.workflows, {"analyst"}), {"analyst": role}, self.engine,
                              lambda message: None)
 
-    def engine(self, role, prompt, cwd, extra_dir, log):
+    def engine(self, role, prompt, cwd, extra_dir, log, on_line=None):
         self.calls.append(prompt)
         log.write_text("transcript")
         return self.replies.pop(0)
@@ -431,6 +432,75 @@ class Acting(Fixture):
             await self.settle(pilot, lambda: self.step(self.waiting) == "done")
             await pilot.press("s")
             await self.settle(pilot, lambda: app.thread is None)
+
+
+class AgentOutput(Fixture):
+    def setUp(self):
+        super().setUp()
+        self.lines = []
+        role = Role("analyst", "fake", "m", 5, ["fake"], "w")
+        self.runner = Runner(self.repo, {"analyst": role}, self.engine, lambda message: None)
+
+    def engine(self, role, prompt, cwd, extra_dir, log, on_line=None):
+        for line in self.lines:
+            on_line(line)
+        return 0, "TRANSITION: ready"
+
+    async def emit(self, lines):
+        self.lines = lines
+        record = self.repo.create("story", "Output", parent=self.first.id)
+        record = self.repo.transition(record.id, "analyse")
+        await asyncio.to_thread(self.runner.run_item, record, self.repo.step(record))
+
+    async def test_wrapping_after_open_close_emit_open_matches_live_output(self):
+        app = tui.Backlog(self.repo, self.runner)
+        line = "0123456789" * 20
+        async with app.run_test(size=(120, 40)) as pilot:
+            output = app.query_one("#output")
+            detail = app.query_one("#detail")
+            column = detail.parent
+            self.assertFalse(output.display)
+            self.assertEqual(0, output.size.height)
+            self.assertEqual([], output.lines)
+            self.assertEqual(column.region.height, detail.region.height)
+            await pilot.press("l")
+            await pilot.pause()
+            self.assertLessEqual(abs(detail.region.height - output.region.height), 1)
+            self.assertEqual(column.region.height, detail.region.height + output.region.height)
+            await pilot.press("l")
+            await self.emit([line])
+            self.assertEqual([], output.lines)
+            self.assertFalse(output.display)
+            await pilot.press("l")
+            await pilot.pause()
+            buffered = list(output.lines)
+            self.assertGreater(len(buffered), 1)
+            self.assertTrue(all(strip.cell_length <= output.scrollable_content_region.width for strip in buffered))
+            self.assertEqual(line, "".join(strip.text for strip in buffered))
+            await self.emit([line])
+            await pilot.pause()
+            live = output.lines[len(buffered):]
+            self.assertEqual([strip.cell_length for strip in buffered], [strip.cell_length for strip in live])
+            self.assertEqual(line, "".join(strip.text for strip in live))
+        self.runner.on_line("after shutdown")
+
+    async def test_hidden_buffer_is_bounded_and_preserves_order_across_runs(self):
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            output = app.query_one("#output")
+            # Before the first opening, writes must also use the bounded buffer.
+            await self.emit(["first", "[red]x[/red]"])
+            await self.emit(["second"])
+            await pilot.press("l")
+            await pilot.pause()
+            self.assertEqual(["first", "[red]x[/red]", "second"], [strip.text for strip in output.lines])
+            await pilot.press("l")
+            previous = list(output.lines)
+            await self.emit([f"line {index}" for index in range(2001)])
+            self.assertEqual(previous, output.lines)
+            await pilot.press("l")
+            await pilot.pause()
+            self.assertEqual([f"line {index}" for index in range(1, 2001)], [strip.text for strip in output.lines])
 
 
 if __name__ == "__main__":
