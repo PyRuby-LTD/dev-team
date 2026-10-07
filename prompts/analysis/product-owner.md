@@ -16,11 +16,10 @@ the Questions section. State reasonable assumptions instead of asking needless
 questions. Do not change the request's front matter.
 
 Before choosing `complete`, create the necessary epics, stories, tasks and bugs
-through the existing capture code. Use `uv run python -m devteam --product <product>
+through the existing capture code. Use `{{harness_command}} --product <product>
 backlog capture <type> "<title>" --file <body-file>`; the product is the repository
 you are running in, and its backlog must be the directory containing this
-request. If the module is unavailable from the product, locate the team harness
-and run its module there with `--product` pointing to the product repository.
+request.
 Write each body file inside the repository, since you cannot write outside it,
 and delete it once the item is captured.
 Create epics first, stories with `--parent EPIC-...`, tasks with a story or bug

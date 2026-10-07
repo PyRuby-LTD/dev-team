@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from . import check as checks
 from . import engines, git, questions
 from .backlog import InvalidRecord
-from .config import ROOT, load_roles
+from .config import ROOT, harness_command, load_roles
 from .workflow import InvalidWorkflow
 
 REPLY = re.compile(r"TRANSITION:\s*([A-Za-z0-9_-]+)\W*\Z")
@@ -148,6 +148,8 @@ def render(step, values, workflow="default"):
     if not template.is_file():
         template = ROOT / "prompts" / f"{step.name}.md"
     text = (template.read_text() if template.exists() else "") + PROTOCOL
+    if "{{harness_command}}" in text:
+        text = text.replace("{{harness_command}}", harness_command())
     for key, value in values.items():
         text = text.replace("{{" + key + "}}", value)
     return text

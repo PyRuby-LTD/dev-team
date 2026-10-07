@@ -5,8 +5,8 @@ not run `git commit` yourself. Change tests, fixtures, canned data, stubs and
 the Makefile's test target only, not the code under test.
 
 Give each acceptance criterion in the item at least one test that exercises the
-running system. Run a single test with `uv run python -m devteam check <test>`
-and the whole suite with `uv run python -m devteam check`.
+running system. Run a single test with `{{harness_command}} check <test>`
+and the whole suite with `{{harness_command}} check`.
 
 If the item has a `## Test run` section showing a failure, the harness ran the
 suite after your last attempt and it failed. Work out whether the tests or the

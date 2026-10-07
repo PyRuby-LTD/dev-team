@@ -4,7 +4,7 @@ from pathlib import Path
 from threading import Lock, Thread
 from collections.abc import Callable
 
-from .config import Role
+from .config import Role, harness_command
 from .render import STREAMS
 
 
@@ -22,6 +22,8 @@ def build_argv(role: Role, prompt: str, cwd: Path, extra_dir: Path) -> list[str]
         "permission": role.permission,
         "max_turns": str(role.max_turns),
     }
+    if any("{harness_command}" in arg for arg in role.command):
+        values["harness_command"] = harness_command()
     return [arg.format_map(values) if "{" in arg else arg for arg in role.command]
 
 
