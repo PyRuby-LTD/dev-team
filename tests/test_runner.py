@@ -182,29 +182,27 @@ class HarnessSteps(unittest.TestCase):
     def test_registry_matches_the_validated_actions(self):
         self.assertEqual(workflow.HARNESS_ACTIONS, set(runners.HARNESS_ACTIONS))
 
-    def test_harness_steps_run_without_engine_checkout_or_run_count(self):
-        for action, target in (("merged", "done"), ("rejected", "implement")):
-            with self.subTest(action=action):
-                record = self.at(action)
-                self.assertEqual([(record, self.repo.step(record))], self.runner.pending())
-                self.assertEqual(1, self.runner.run_pass())
-                self.assertEqual(target, self.repo.scan().valid[record.id].metadata["step"])
-                self.assertIn(f"completed -> {target}", self.messages[-1])
-                self.assertEqual([], self.engine.calls)
-                self.assertEqual({}, self.runner.runs)
-                self.assertEqual({}, self.runner.failed)
+    def test_rejected_runs_without_engine_checkout_or_run_count(self):
+        record = self.at("rejected")
+        self.assertEqual([(record, self.repo.step(record))], self.runner.pending())
+        self.assertEqual(1, self.runner.run_pass())
+        self.assertEqual("implement", self.repo.scan().valid[record.id].metadata["step"])
+        self.assertIn("completed -> implement", self.messages[-1])
+        self.assertEqual([], self.engine.calls)
+        self.assertEqual({}, self.runner.runs)
+        self.assertEqual({}, self.runner.failed)
 
     def test_failure_waits_for_retry_or_restart(self):
-        self.at("merged")
+        self.at("rejected")
         calls = []
 
         def fail(runner, record):
             calls.append(record.id)
             raise StepFailed("cannot complete")
 
-        with patch.dict(runners.HARNESS_ACTIONS, merged=fail):
+        with patch.dict(runners.HARNESS_ACTIONS, rejected=fail):
             self.assertEqual(1, self.runner.run_pass())
-            self.assertEqual("merged", self.repo.scan().valid[self.story.id].metadata["step"])
+            self.assertEqual("rejected", self.repo.scan().valid[self.story.id].metadata["step"])
             self.assertIn("FAILED - cannot complete", self.messages[-1])
             self.assertEqual(0, self.runner.run_pass())
             self.assertEqual([self.story.id], calls)
@@ -215,7 +213,7 @@ class HarnessSteps(unittest.TestCase):
             self.assertEqual([self.story.id] * 3, calls)
         self.runner.retry(self.story.id)
         self.assertEqual(1, self.runner.run_pass())
-        self.assertEqual("done", self.repo.scan().valid[self.story.id].metadata["step"])
+        self.assertEqual("implement", self.repo.scan().valid[self.story.id].metadata["step"])
 
     def test_pr_decision_holds_checkout_until_terminal(self):
         product = self.root / "product"

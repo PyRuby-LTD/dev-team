@@ -8,6 +8,8 @@ import sys
 import tempfile
 import unittest
 
+from devteam import git as product_git
+
 ROOT = Path(__file__).resolve().parents[1]
 STUBS = ROOT / "tests" / "stubs"
 STREAMS = ROOT / "tests" / "fixtures" / "streams"
@@ -76,6 +78,20 @@ class PullRequestDecision(unittest.TestCase):
         self.assertEqual("pull-request", self.listing()[1])
 
     def test_merged_decision_is_completed_by_the_harness_without_an_agent(self):
+        saved_backlog = self.directory / "saved-backlog"
+        (self.product / "backlog").rename(saved_backlog)
+        remote = self.directory / "remote.git"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
+        git = ["git", "-C", str(self.product)]
+        subprocess.run([*git, "init", "-q", "-b", "main"], check=True)
+        subprocess.run([*git, "-c", "user.name=t", "-c", "user.email=t@t", "commit",
+                        "-q", "--allow-empty", "-m", "init"], check=True)
+        subprocess.run([*git, "remote", "add", "origin", str(remote)], check=True)
+        subprocess.run([*git, "push", "-q", "origin", "main"], check=True)
+        subprocess.run([*git, "switch", "-q", "-c", "devteam/STORY-001"], check=True)
+        subprocess.run([*git, "config", "branch.devteam/STORY-001.base", "main"], check=True)
+        backlog = product_git.ensure_backlog(self.product)
+        shutil.copytree(saved_backlog, backlog, dirs_exist_ok=True)
         self.at_pull_request()
         moved = self.devteam("backlog", "move", "STORY-001", "merged").stdout
         self.assertIn("merged (harness:merged)", moved)
