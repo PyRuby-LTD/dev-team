@@ -136,8 +136,11 @@ finishing at `done`. Local commits ahead of origin are kept. A dirty checkout
 (including untracked files) or a base that has diverged from origin fails the
 step before switching or moving any local branch. The item stays at `merged`
 and holds the checkout, so other code-changing items wait. Fix the cause, then
-press `t` in the TUI or call `Runner.retry(id)` to try again. The rejected action
-currently only advances the item; neither action inspects or changes the PR.
+press `t` in the TUI or call `Runner.retry(id)` to try again. At `rejected`, the
+harness reads the PR's review, inline and conversation comments with `gh`, which
+must be installed and authenticated. It replaces `## Pull request feedback`
+before returning to `implement`. A failure leaves the item at `rejected`; fix
+the cause and retry. Neither action changes the PR.
 
 ## The project check
 

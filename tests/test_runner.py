@@ -183,9 +183,11 @@ class HarnessSteps(unittest.TestCase):
         self.assertEqual(workflow.HARNESS_ACTIONS, set(runners.HARNESS_ACTIONS))
 
     def test_rejected_runs_without_engine_checkout_or_run_count(self):
+        self.repo.write_body(self.story.id, "## Pull request\nhttps://github.com/example/product/pull/2\n", "fixture")
         record = self.at("rejected")
         self.assertEqual([(record, self.repo.step(record))], self.runner.pending())
-        self.assertEqual(1, self.runner.run_pass())
+        with patch.object(runners, "pr_comments", return_value=[]):
+            self.assertEqual(1, self.runner.run_pass())
         self.assertEqual("implement", self.repo.scan().valid[record.id].metadata["step"])
         self.assertIn("completed -> implement", self.messages[-1])
         self.assertEqual([], self.engine.calls)
@@ -211,8 +213,10 @@ class HarnessSteps(unittest.TestCase):
             restarted = Runner(self.repo, engine=self.engine, report=self.messages.append)
             self.assertEqual(1, restarted.run_pass())
             self.assertEqual([self.story.id] * 3, calls)
+        self.repo.write_body(self.story.id, "## Pull request\nhttps://github.com/example/product/pull/2\n", "fixture")
         self.runner.retry(self.story.id)
-        self.assertEqual(1, self.runner.run_pass())
+        with patch.object(runners, "pr_comments", return_value=[]):
+            self.assertEqual(1, self.runner.run_pass())
         self.assertEqual("implement", self.repo.scan().valid[self.story.id].metadata["step"])
 
     def test_pr_decision_holds_checkout_until_terminal(self):
