@@ -130,7 +130,9 @@ uncommitted changes; it waits and says so.
 
 At `accept`, look at the result in place. `pr` makes the runner push the branch to
 `origin` and hands the item to the publisher, which opens a pull request against
-the base branch with `gh`. The item then waits at `pull-request` for your decision
+the base branch with `gh`. Re-publishing after a rejection updates the existing
+open PR's body and commits, preserving its title and URL. If no open PR exists,
+the publisher creates one. The item then waits at `pull-request` for your decision
 and continues to hold the checkout. Merging is yours to do; the tool does not
 merge or close the PR. Choose `merged` to finish or `rejected` to return to
 implementation, with an optional feedback note. At `merged`, the harness fetches
@@ -183,6 +185,7 @@ role gets wrong.
 - The engine templates have only been exercised with a fake engine in the
   tests. Try one item on a throwaway repository and read `log/` first.
 - Publishing needs `git push` access to `origin` for you, and an authenticated
-  `gh` that the publisher's engine is permitted to run.
+  `gh` that the publisher's engine is permitted to run for PR lookup, creation
+  and editing. Re-publishing after a rejection updates the existing open PR.
 - Expect to hit subscription rate limits mid-run. Restart the runner once the
   window resets; every step resumes from the item file.
