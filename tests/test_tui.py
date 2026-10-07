@@ -1,9 +1,10 @@
+import asyncio
 import json
 from pathlib import Path
 import tempfile
 import unittest
 
-from textual.widgets import Label, Markdown, Static, Tree
+from textual.widgets import Label, Markdown, RichLog, Static, Tree
 
 from devteam import questions, tui
 from devteam.backlog import Repository
@@ -211,7 +212,7 @@ class Acting(Fixture):
         self.runner = Runner(Repository(self.repo.root, self.workflows, {"analyst"}), {"analyst": role}, self.engine,
                              lambda message: None)
 
-    def engine(self, role, prompt, cwd, extra_dir, log):
+    def engine(self, role, prompt, cwd, extra_dir, log, on_line=None):
         self.calls.append(prompt)
         log.write_text("transcript")
         return self.replies.pop(0)
@@ -431,6 +432,256 @@ class Acting(Fixture):
             await self.settle(pilot, lambda: self.step(self.waiting) == "done")
             await pilot.press("s")
             await self.settle(pilot, lambda: app.thread is None)
+
+
+class AgentOutput(Fixture):
+    def setUp(self):
+        super().setUp()
+        self.lines = []
+        self.code = 0
+        role = Role("analyst", "fake", "m", 5, ["fake"], "w")
+        self.runner = Runner(self.repo, {"analyst": role}, self.engine, lambda message: None)
+
+    def engine(self, role, prompt, cwd, extra_dir, log, on_line=None):
+        for line in self.lines:
+            on_line(line)
+        return self.code, "TRANSITION: ready"
+
+    async def emit(self, lines):
+        self.lines = lines
+        record = self.repo.create("story", "Output", parent=self.first.id)
+        record = self.repo.transition(record.id, "analyse")
+        await asyncio.to_thread(self.runner.run_item, record, self.repo.step(record))
+
+    async def test_wrapping_after_open_close_emit_open_matches_live_output(self):
+        app = tui.Backlog(self.repo, self.runner)
+        line = "0123456789" * 20
+        async with app.run_test(size=(120, 40)) as pilot:
+            output = app.query_one("#output")
+            detail = app.query_one("#detail")
+            column = detail.parent
+            self.assertFalse(output.display)
+            self.assertEqual(0, output.size.height)
+            self.assertEqual([], output.lines)
+            self.assertEqual(column.region.height, detail.region.height)
+            await pilot.press("l")
+            await pilot.pause()
+            self.assertLessEqual(abs(detail.region.height - output.region.height), 1)
+            self.assertEqual(column.region.height, detail.region.height + output.region.height)
+            await pilot.press("l")
+            await self.emit([line])
+            self.assertEqual([], output.lines)
+            self.assertFalse(output.display)
+            await pilot.press("l")
+            await pilot.pause()
+            buffered = list(output.lines)
+            self.assertGreater(len(buffered), 1)
+            self.assertTrue(all(strip.cell_length <= output.scrollable_content_region.width for strip in buffered))
+            self.assertEqual(line, "".join(strip.text for strip in buffered))
+            await self.emit([line])
+            await pilot.pause()
+            live = output.lines[len(buffered):]
+            self.assertEqual([strip.cell_length for strip in buffered], [strip.cell_length for strip in live])
+            self.assertEqual(line, "".join(strip.text for strip in live))
+        self.runner.on_line("after shutdown")
+
+    async def test_hidden_buffer_is_bounded_and_preserves_order_across_runs(self):
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            output = app.query_one("#output")
+            # Before the first opening, writes must also use the bounded buffer.
+            await self.emit(["first", "[red]x[/red]"])
+            await self.emit(["second"])
+            await pilot.press("l")
+            await pilot.pause()
+            self.assertEqual(["first", "[red]x[/red]", "second"], [strip.text for strip in output.lines])
+            await pilot.press("l")
+            previous = list(output.lines)
+            await self.emit([f"line {index}" for index in range(2001)])
+            self.assertEqual(previous, output.lines)
+            await pilot.press("l")
+            await pilot.pause()
+            self.assertEqual([f"line {index}" for index in range(1, 2001)], [strip.text for strip in output.lines])
+
+    async def run_exiting(self, lines, code):
+        self.code = code
+        await self.emit(lines)
+        self.code = 0
+
+    def texts(self, output):
+        return [strip.text for strip in output.lines]
+
+    async def test_output_pane_is_a_plain_log_below_detail_outside_its_scroll_content(self):
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)):
+            output = app.query_one("#output")
+            detail = app.query_one("#detail")
+            self.assertIsInstance(output, RichLog)
+            self.assertIs(detail.parent, output.parent)
+            self.assertNotIn(output, list(detail.query("*")))
+            self.assertEqual(["detail", "output"], [child.id for child in output.parent.children])
+            self.assertTrue(output.auto_scroll)
+            self.assertEqual(2000, output.max_lines)
+            self.assertFalse(output.markup)
+            self.assertTrue(output.wrap)
+            self.assertEqual(1, output.min_width)
+            self.assertFalse(output.border_title)
+
+    async def test_output_pane_has_the_same_border_and_padding_as_the_other_panels(self):
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("l")
+            await pilot.pause()
+            output = app.query_one("#output")
+            for other in (app.query_one("#detail"), app.query_one("#activity")):
+                self.assertEqual(other.styles.border_top, output.styles.border_top)
+                self.assertEqual(other.styles.border_bottom, output.styles.border_bottom)
+                self.assertEqual(other.styles.border_left, output.styles.border_left)
+                self.assertEqual(other.styles.border_right, output.styles.border_right)
+                self.assertEqual(other.styles.padding, output.styles.padding)
+            self.assertEqual("round", output.styles.border_top[0])
+
+    async def test_l_toggles_the_pane_and_the_footer_names_it(self):
+        bindings = [binding for binding in tui.Backlog.BINDINGS if binding[0] == "l"]
+        self.assertEqual(1, len(bindings))
+        self.assertIn("output", bindings[0][2].lower())
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            output = app.query_one("#output")
+            detail = app.query_one("#detail")
+            column = detail.parent
+            await pilot.press("l")
+            await pilot.pause()
+            self.assertTrue(output.display)
+            self.assertLessEqual(abs(detail.region.height - output.region.height), 1)
+            self.assertEqual(column.region.height, detail.region.height + output.region.height)
+            await pilot.press("l")
+            await pilot.pause()
+            self.assertFalse(output.display)
+            self.assertEqual(column.region.height, detail.region.height)
+
+    async def test_output_log_is_not_focusable_and_tab_alternates_items_and_detail(self):
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("l")
+            await pilot.pause()
+            self.assertFalse(app.query_one("#output").can_focus)
+            self.assertTrue(app.query_one("#items").has_focus)
+            await pilot.press("tab")
+            self.assertTrue(app.query_one("#detail").has_focus)
+            await pilot.press("tab")
+            self.assertTrue(app.query_one("#items").has_focus)
+
+    async def test_runs_never_change_visibility_whether_they_succeed_or_exit_non_zero(self):
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            output = app.query_one("#output")
+            await self.emit(["hidden ok"])
+            self.assertFalse(output.display)
+            await self.run_exiting(["hidden fail"], 3)
+            self.assertFalse(output.display)
+            await pilot.press("l")
+            await pilot.pause()
+            self.assertEqual(["hidden ok", "hidden fail"], self.texts(output))
+            await self.emit(["shown ok"])
+            await self.run_exiting(["shown fail"], 1)
+            await pilot.pause()
+            self.assertTrue(output.display)
+            self.assertEqual(["hidden ok", "hidden fail", "shown ok", "shown fail"], self.texts(output))
+
+    async def test_a_run_that_raises_leaves_the_log_and_visibility_as_they_were(self):
+        def raising(role, prompt, cwd, extra_dir, log, on_line=None):
+            on_line("before the crash")
+            raise RuntimeError("engine crashed")
+        self.runner.engine = raising
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            output = app.query_one("#output")
+            await pilot.press("l")
+            await pilot.pause()
+            record = self.repo.create("story", "Crash", parent=self.first.id)
+            record = self.repo.transition(record.id, "analyse")
+            with self.assertRaises(RuntimeError):
+                await asyncio.to_thread(self.runner.run_item, record, self.repo.step(record))
+            await pilot.pause()
+            self.assertTrue(output.display)
+            self.assertEqual(["before the crash"], self.texts(output))
+
+    async def test_two_runs_form_one_continuous_stream_whether_the_pane_is_shown_or_hidden(self):
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            output = app.query_one("#output")
+            await self.emit(["a1", "a2"])
+            await self.emit(["b1", "b2"])
+            await pilot.press("l")
+            await pilot.pause()
+            self.assertEqual(["a1", "a2", "b1", "b2"], self.texts(output))
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            output = app.query_one("#output")
+            await pilot.press("l")
+            await pilot.pause()
+            await self.emit(["c1"])
+            await pilot.pause()
+            await self.emit(["d1"])
+            await pilot.pause()
+            self.assertEqual(["c1", "d1"], self.texts(output))
+
+    async def test_brackets_in_agent_text_are_shown_literally(self):
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("l")
+            await pilot.pause()
+            await self.emit(["[red]x[/red]"])
+            await pilot.pause()
+            self.assertEqual(["[red]x[/red]"], self.texts(app.query_one("#output")))
+
+    async def test_runner_has_no_start_hook_and_the_tui_registers_its_listener_on_mount(self):
+        self.assertFalse(hasattr(self.runner, "on_start"))
+        self.assertIsNone(self.runner.on_line)
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)):
+            self.assertIsNotNone(self.runner.on_line)
+
+    async def test_a_check_step_leaves_the_pane_untouched(self):
+        (Path(self.temp.name) / "workflows" / "default.json").write_text(json.dumps({
+            "initial": "captured",
+            "steps": {
+                "captured": {"owner": "human", "transitions": {"analyse": "analysis"}},
+                "analysis": {"owner": "agent:analyst", "transitions": {"ready": "verify"}},
+                "verify": {"owner": "check", "transitions": {"passed": "done", "failed": "analysis"}},
+                "done": {"owner": "human", "transitions": {}},
+            }}))
+        checked = []
+
+        class Checking(Runner):
+            def take_checkout(self, record):
+                return "devteam/" + record.id
+
+        repo = Repository(self.repo.root, self.workflows, {"analyst"})
+        runner = Checking(repo, self.runner.roles, self.engine, lambda message: None,
+                          check=lambda checkout, log=None: (checked.append(1) or 0, "ok"))
+        app = tui.Backlog(repo, runner)
+        self.lines = ["agent line"]
+        async with app.run_test(size=(120, 40)) as pilot:
+            output = app.query_one("#output")
+            await pilot.press("l")
+            await pilot.pause()
+            record = repo.create("story", "Checked", parent=self.first.id)
+            record = repo.transition(record.id, "analyse")
+            await asyncio.to_thread(runner.run_item, record, repo.step(record))
+            await pilot.pause()
+            record = repo.scan().valid[record.id]
+            self.assertEqual("verify", record.metadata["step"])
+            await asyncio.to_thread(runner.run_item, record, repo.step(record))
+            await pilot.pause()
+            self.assertEqual([1], checked)
+            self.assertTrue(output.display)
+            self.assertEqual(["agent line"], self.texts(output))
+
+    def test_readme_mentions_the_l_key(self):
+        readme = (Path(__file__).resolve().parent.parent / "README.md").read_text()
+        self.assertIn("`l`", readme)
 
 
 if __name__ == "__main__":
