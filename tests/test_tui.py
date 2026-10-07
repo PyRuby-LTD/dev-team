@@ -527,6 +527,20 @@ class AgentOutput(Fixture):
             self.assertEqual(1, output.min_width)
             self.assertFalse(output.border_title)
 
+    async def test_output_pane_has_the_same_border_and_padding_as_the_other_panels(self):
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("l")
+            await pilot.pause()
+            output = app.query_one("#output")
+            for other in (app.query_one("#detail"), app.query_one("#activity")):
+                self.assertEqual(other.styles.border_top, output.styles.border_top)
+                self.assertEqual(other.styles.border_bottom, output.styles.border_bottom)
+                self.assertEqual(other.styles.border_left, output.styles.border_left)
+                self.assertEqual(other.styles.border_right, output.styles.border_right)
+                self.assertEqual(other.styles.padding, output.styles.padding)
+            self.assertEqual("round", output.styles.border_top[0])
+
     async def test_l_toggles_the_pane_and_the_footer_names_it(self):
         bindings = [binding for binding in tui.Backlog.BINDINGS if binding[0] == "l"]
         self.assertEqual(1, len(bindings))
