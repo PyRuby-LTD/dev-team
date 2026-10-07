@@ -28,6 +28,8 @@ class PullRequestDecision(unittest.TestCase):
         self.bin.mkdir()
         shutil.copy(STUBS / "claude", self.bin / "claude")
         (self.bin / "claude").chmod(0o755)
+        shutil.copy(STUBS / "gh", self.bin / "gh")
+        (self.bin / "gh").chmod(0o755)
         self.argv = self.directory / "argv.json"
         self.devteam("backlog", "capture", "epic", "Epic", "--id", "EPIC-001")
         self.capture("STORY-001")
@@ -51,7 +53,9 @@ class PullRequestDecision(unittest.TestCase):
     def run_once(self):
         # The stub records its arguments only when it is started, so a missing file means no agent ran.
         env = {"PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}", "STUB_ARGV": str(self.argv),
-               "STUB_STDOUT": str(STREAMS / "success.jsonl")}
+               "STUB_STDOUT": str(STREAMS / "success.jsonl"),
+               "GH_STUB_ARGV": str(self.directory / "gh-argv.jsonl"),
+               "GH_STUB_FIXTURES": str(ROOT / "tests" / "fixtures" / "gh")}
         return self.devteam("run", "--once", env=env)
 
     def at_pull_request(self, item="STORY-001"):
@@ -102,6 +106,8 @@ class PullRequestDecision(unittest.TestCase):
 
     def test_rejected_decision_returns_the_item_to_implement_without_an_agent_at_rejected(self):
         self.at_pull_request()
+        item = next((self.product / "backlog").rglob("STORY-001.md"))
+        item.write_text(item.read_text() + "\n## Pull request\n\nhttps://github.com/example/product/pull/2\n")
         moved = self.devteam("backlog", "move", "STORY-001", "rejected", "-m", "Rename the flag").stdout
         self.assertIn("rejected (harness:rejected)", moved)
         result = self.run_once()

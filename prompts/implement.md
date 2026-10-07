@@ -7,6 +7,10 @@ section, address its findings; if its `## Tests` section reports a defect, fix
 the code rather than the test. Run your unit tests directly; the full suite is
 run for you after the tester's step.
 
+If `## Pull request feedback` is present, address every comment there. It holds
+the whole history of the PR with dates; comments the code already meets need no
+further change. The latest `## Feedback` note takes precedence.
+
 Record what you changed and the actual output of the checks under an
 `## Implementation` heading in the item body, replacing any earlier one.
 

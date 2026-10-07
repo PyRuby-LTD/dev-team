@@ -1,0 +1,4 @@
+[
+  {"user": {"login": "alice"}, "state": "COMMENTED", "body": "Please rename the flag.", "submitted_at": "2026-03-01T10:00:00Z"},
+  {"user": {"login": "bob"}, "state": "COMMENTED", "body": "", "submitted_at": "2026-03-01T11:00:00Z"}
+]

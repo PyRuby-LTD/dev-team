@@ -1,5 +1,7 @@
 """Runs automated steps: invoke the owning role, check or harness action, then apply its transition."""
+import json
 import re
+import subprocess
 import time
 from datetime import datetime, timezone
 
@@ -11,6 +13,8 @@ from .workflow import InvalidWorkflow
 
 REPLY = re.compile(r"TRANSITION:\s*([A-Za-z0-9_-]+)\W*\Z")
 RECORDS = "docs/work-items"
+GH_TIMEOUT = 60
+PR_URL = re.compile(r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/pull/([0-9]+)\b")
 
 PROTOCOL = """
 ## Work item
@@ -53,8 +57,87 @@ def merged(runner, record):
 
 
 def rejected(runner, record):
-    """Placeholder until the harness copies the PR comments into the item."""
+    """Copy the PR's full submitted feedback before returning to implementation."""
+    lines = record.body.splitlines()
+    start = next((i for i, line in enumerate(lines)
+                  if re.fullmatch(r"##\s+Pull request\s*", line, re.IGNORECASE)), None)
+    urls = []
+    if start is not None:
+        end = next((i for i in range(start + 1, len(lines)) if questions.HEADING.match(lines[i])), len(lines))
+        urls = PR_URL.findall("\n".join(lines[start + 1:end]))
+    if not urls:
+        raise StepFailed("PR URL is missing from ## Pull request (expected https://github.com/<owner>/<repo>/pull/<n>)")
+    owner, repo, number = urls[-1]
+    base = f"repos/{owner}/{repo}"
+    reviews = pr_comments(f"{base}/pulls/{number}/reviews")
+    inline = pr_comments(f"{base}/pulls/{number}/comments")
+    conversation = pr_comments(f"{base}/issues/{number}/comments")
+    feedback = render_pr_feedback(reviews, inline, conversation)
+    runner.repository.write_body(record.id, questions.replace_section(record.body, "Pull request feedback", feedback),
+                                 "pull request feedback")
     return "completed"
+
+
+def pr_comments(endpoint):
+    """gh pagination prints consecutive JSON arrays; accept only arrays of objects."""
+    argv = ["gh", "api", endpoint, "--paginate"]
+    call = " ".join(argv)
+    try:
+        result = subprocess.run(argv, capture_output=True, text=True, errors="replace", timeout=GH_TIMEOUT)
+    except subprocess.TimeoutExpired as exc:
+        raise StepFailed(f"{call}: timed out after {GH_TIMEOUT} seconds") from exc
+    if result.returncode:
+        raise StepFailed(f"{call}: exit {result.returncode}: {result.stderr.strip()}")
+    decoder = json.JSONDecoder()
+    remaining, comments = result.stdout.strip(), []
+    try:
+        if not remaining:
+            raise ValueError("empty output")
+        while remaining:
+            page, end = decoder.raw_decode(remaining)
+            if not isinstance(page, list) or any(not isinstance(entry, dict) for entry in page):
+                raise ValueError("expected an array of objects")
+            if any(entry.get("body") is not None and not isinstance(entry["body"], str) for entry in page):
+                raise ValueError("expected comment bodies to be strings")
+            comments.extend(page)
+            remaining = remaining[end:].lstrip()
+    except ValueError as exc:
+        raise StepFailed(f"{call}: invalid JSON response: {exc}") from exc
+    return comments
+
+
+def render_pr_feedback(reviews, inline, conversation):
+    def field(value):
+        # Keep metadata on its introduction line too, even in malformed API data.
+        return " ".join(str(value).splitlines()) if value is not None else ""
+
+    entries = []
+
+    def add(kind, comment, date, location=""):
+        user = comment.get("user")
+        author = field(user.get("login")) if isinstance(user, dict) else ""
+        title = f"**{kind}** by {author or 'unknown author'}{location}"
+        stamp = field(comment.get(date))
+        if stamp:
+            title += f" ({stamp})"
+        body = comment.get("body") or ""
+        entries.append(title + ":\n" + "\n".join("> " + line for line in body.splitlines()))
+
+    for review in reviews:
+        if review.get("state") == "PENDING" or not review.get("submitted_at") or not review.get("body"):
+            continue
+        add(f"Review ({field(review.get('state'))})", review, "submitted_at")
+    for comment in inline:
+        location = f" on {field(comment.get('path'))}"
+        if comment.get("subject_type") != "file":
+            if comment.get("line") is not None:
+                location += f" line {field(comment['line'])}"
+            elif comment.get("original_line") is not None:
+                location += f" line {field(comment['original_line'])} (outdated)"
+        add("Inline comment", comment, "created_at", location)
+    for comment in conversation:
+        add("Conversation comment", comment, "created_at")
+    return "\n\n".join(entries) if entries else "There are no comments on this pull request."
 
 
 HARNESS_ACTIONS = {"merged": merged, "rejected": rejected}
