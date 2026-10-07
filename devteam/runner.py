@@ -1,4 +1,4 @@
-"""Runs agent-owned steps: invoke the owning role, then apply the transition it names."""
+"""Runs automated steps: invoke the owning role, check or harness action, then apply its transition."""
 import re
 import time
 from datetime import datetime, timezone
@@ -36,6 +36,19 @@ class Waiting(Exception):
     pass
 
 
+def merged(runner, record):
+    """Placeholder until the harness updates the base after a merge."""
+    return "completed"
+
+
+def rejected(runner, record):
+    """Placeholder until the harness copies the PR comments into the item."""
+    return "completed"
+
+
+HARNESS_ACTIONS = {"merged": merged, "rejected": rejected}
+
+
 def render(step, values, workflow="default"):
     template = ROOT / "prompts" / workflow / f"{step.name}.md"
     if not template.is_file():
@@ -68,7 +81,7 @@ class Runner:
             if record.metadata["type"] == "epic" or record.id in self.failed:
                 continue
             step = self.repository.step(record)
-            if step.role or step.check:
+            if step.role or step.check or step.harness:
                 found.append((record, step))
         return found
 
@@ -178,11 +191,19 @@ class Runner:
         log = self.repository.root / "log" / record.id / f"{step.name}-{stamp}.log"
         if step.check:
             label = f"{record.id} {step.name} (check)"
+        elif step.harness:
+            label = f"{record.id} {step.name} (harness: {step.action})"
         else:
             role = self.roles[step.role]
             label = f"{record.id} {step.name} ({role.name} via {role.engine}/{role.model})"
         try:
-            name, updated = self.verify(record, step, log) if step.check else self.invoke(record, step, log)
+            if step.check:
+                name, updated = self.verify(record, step, log)
+            elif step.harness:
+                name = HARNESS_ACTIONS[step.action](self, record)
+                updated = self.repository.transition(record.id, name)
+            else:
+                name, updated = self.invoke(record, step, log)
         except Waiting as reason:
             if self.waiting.get(record.id) != str(reason):
                 self.waiting[record.id] = str(reason)

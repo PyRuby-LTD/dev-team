@@ -8,6 +8,7 @@ from .config import ROOT, load_roles
 
 CHECK = "check"
 CHECK_OUTCOMES = {"passed", "failed"}
+HARNESS_ACTIONS = {"merged", "rejected"}
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 
 
@@ -32,6 +33,14 @@ class Step:
     @property
     def check(self):
         return self.owner == CHECK
+
+    @property
+    def harness(self):
+        return self.owner.startswith("harness:")
+
+    @property
+    def action(self):
+        return self.owner.removeprefix("harness:") if self.harness else None
 
     @property
     def terminal(self):
@@ -63,10 +72,12 @@ def build(name, data, roles):
         if not isinstance(spec, dict) or set(spec) != {"owner", "transitions"}:
             raise InvalidWorkflow(f"step {step_name!r} must have exactly 'owner' and 'transitions'")
         owner, transitions = spec["owner"], spec["transitions"]
-        if not isinstance(owner, str) or (owner not in ("human", CHECK) and not owner.startswith("agent:")):
-            raise InvalidWorkflow(f"step {step_name!r}: owner must be 'human', 'agent:<role>' or 'check'")
+        if not isinstance(owner, str) or (owner not in ("human", CHECK) and not owner.startswith(("agent:", "harness:"))):
+            raise InvalidWorkflow(f"step {step_name!r}: owner must be 'human', 'agent:<role>', 'check' or 'harness:<action>'")
         if owner.startswith("agent:") and owner.removeprefix("agent:") not in roles:
             raise InvalidWorkflow(f"step {step_name!r}: role {owner.removeprefix('agent:')!r} is not in config/roles.toml")
+        if owner.startswith("harness:") and owner.removeprefix("harness:") not in HARNESS_ACTIONS:
+            raise InvalidWorkflow(f"step {step_name!r}: unknown harness action {owner.removeprefix('harness:')!r}")
         if not isinstance(transitions, dict):
             raise InvalidWorkflow(f"step {step_name!r}: transitions must be an object of name -> step")
         for transition, target in transitions.items():
@@ -74,6 +85,8 @@ def build(name, data, roles):
                 raise InvalidWorkflow(f"step {step_name!r}: transition {transition!r} targets undefined step {target!r}")
         if owner == CHECK and set(transitions) != CHECK_OUTCOMES:
             raise InvalidWorkflow(f"step {step_name!r}: a check step has exactly the transitions 'passed' and 'failed'")
+        if owner.startswith("harness:") and set(transitions) != {"completed"}:
+            raise InvalidWorkflow(f"step {step_name!r}: a harness step has exactly the transition 'completed'")
         steps[step_name] = Step(step_name, owner, dict(transitions))
     if data.get("initial") not in steps:
         raise InvalidWorkflow(f"initial step {data.get('initial')!r} is not defined")

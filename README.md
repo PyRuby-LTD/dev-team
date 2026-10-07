@@ -16,8 +16,8 @@ docs/                 the work item format, and records of finished items
 ```
 
 Work items are Markdown files whose front matter names a workflow and the
-item's current step. A workflow is JSON: each step has one owner, a human or an
-agent role, and named transitions to other steps. The runner invokes the owning
+item's current step. A workflow is JSON: each step has one owner (a human, an
+agent role, a project check or a harness action) and named transitions to other steps. The runner invokes the owning
 agent for agent-owned steps by shelling out to coding agent CLIs, and waits on
 human-owned ones.
 
@@ -82,7 +82,10 @@ beside the code; the first command creates it. See
 | verify | the harness runs `make regression` | `passed` (to review), `failed` (back to test) |
 | review | reviewer, on the item's branch | `approve`, `revise` |
 | accept | you | `pr` (to publish), `accept` (done, no pull request), `revise` |
-| publish | publisher, on the item's branch | `published` |
+| publish | publisher, on the item's branch | `published` (to pull-request) |
+| pull-request | you | `merged` (to merged), `rejected` (to rejected) |
+| merged | harness | `completed` (to done) |
+| rejected | harness | `completed` (back to implement) |
 | done | - | |
 
 The implementer writes unit tests only where the logic is hard to get right;
@@ -124,7 +127,11 @@ uncommitted changes; it waits and says so.
 
 At `accept`, look at the result in place. `pr` makes the runner push the branch to
 `origin` and hands the item to the publisher, which opens a pull request against
-the base branch with `gh`. Merging is yours to do.
+the base branch with `gh`. The item then waits at `pull-request` for your decision
+and continues to hold the checkout. Merging is yours to do; the tool does not
+merge or close the PR. Choose `merged` to finish or `rejected` to return to
+implementation, with an optional feedback note. The harness actions currently
+only advance the item; they do not inspect or change the PR or the base branch.
 
 ## The project check
 
