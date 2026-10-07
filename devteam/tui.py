@@ -343,7 +343,7 @@ class Backlog(App):
     #right { width: 1fr; }
     #detail { height: 1fr; border: round $primary; padding: 0 1; }
     #detail:focus { border: round $accent; }
-    #output { height: 1fr; }
+    #output { height: 1fr; border: round $primary; padding: 0 1; }
     #card { padding: 1 1 0 1; }
     #body { padding: 0 0 1 0; }
     #activity { height: 7; border: round $primary; padding: 0 1; }
