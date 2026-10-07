@@ -45,6 +45,29 @@ def base_of(directory, branch):
     return run(directory, "config", "--get", f"branch.{branch}.base").stdout.strip() or None
 
 
+def fetch(directory, remote):
+    must(directory, "fetch", remote)
+
+
+def fast_forward(directory, branch, remote_ref):
+    """Check ancestry before switching; an ahead-only branch keeps its commits."""
+    for ref in (f"refs/heads/{branch}", f"refs/remotes/{remote_ref}"):
+        if not has_ref(directory, ref):
+            raise GitError(f"missing ref {ref}")
+    local = f"refs/heads/{branch}"
+    remote = f"refs/remotes/{remote_ref}"
+    for ancestor, descendant in ((local, remote), (remote, local)):
+        result = run(directory, "merge-base", "--is-ancestor", ancestor, descendant)
+        if result.returncode == 0:
+            break
+        if result.returncode != 1:
+            raise GitError(result.stderr.strip() or result.stdout.strip())
+    else:
+        raise GitError(f"base branch {branch} has diverged from {remote_ref}")
+    must(directory, "switch", "-q", branch)
+    must(directory, "merge", "--ff-only", remote)
+
+
 def commit_all(directory, message, *paths):
     """Commit everything, or just the given paths; returns False when nothing changed."""
     must(directory, "add", "-A", "--", *(paths or (".",)))

@@ -37,7 +37,18 @@ class Waiting(Exception):
 
 
 def merged(runner, record):
-    """Placeholder until the harness updates the base after a merge."""
+    """Bring the recorded base up to date after the customer's merge decision."""
+    if runner.checkout is None:
+        raise StepFailed("the merged step needs a git repository")
+    branch = f"devteam/{record.id}"
+    base = git.base_of(runner.checkout, branch)
+    if base is None:
+        raise StepFailed(f"no base branch is recorded for {branch}")
+    if not git.clean(runner.checkout):
+        current = git.current_branch(runner.checkout)
+        raise StepFailed(f"the checkout has uncommitted changes on {current}")
+    git.fetch(runner.checkout, "origin")
+    git.fast_forward(runner.checkout, base, f"origin/{base}")
     return "completed"
 
 

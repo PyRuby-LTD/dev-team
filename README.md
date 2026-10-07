@@ -130,8 +130,14 @@ At `accept`, look at the result in place. `pr` makes the runner push the branch 
 the base branch with `gh`. The item then waits at `pull-request` for your decision
 and continues to hold the checkout. Merging is yours to do; the tool does not
 merge or close the PR. Choose `merged` to finish or `rejected` to return to
-implementation, with an optional feedback note. The harness actions currently
-only advance the item; they do not inspect or change the PR or the base branch.
+implementation, with an optional feedback note. At `merged`, the harness fetches
+`origin`, switches to the recorded base branch, and fast-forwards it before
+finishing at `done`. Local commits ahead of origin are kept. A dirty checkout
+(including untracked files) or a base that has diverged from origin fails the
+step before switching or moving any local branch. The item stays at `merged`
+and holds the checkout, so other code-changing items wait. Fix the cause, then
+press `t` in the TUI or call `Runner.retry(id)` to try again. The rejected action
+currently only advances the item; neither action inspects or changes the PR.
 
 ## The project check
 
