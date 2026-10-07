@@ -6,6 +6,10 @@ parent: EPIC-003
 workflow: default
 step: publish
 ---
+
+Harness invocation examples updated for STORY-006; findings and recorded check
+output below describe the original work. Replace `<checkout>` with the harness path.
+
 As the customer, I want re-publishing after rejection to update the existing PR, so that I review one PR rather than several.
 
 ## Acceptance criteria
@@ -21,7 +25,7 @@ As the customer, I want re-publishing after rejection to update the existing PR,
 - `devteam/runner.py` `invoke()`: because `[roles.publisher]` has `push = true`, the harness runs `git push -q -u origin <branch>` before every publisher run. On re-publish that is a fast-forward push of the new implement/test commits, and GitHub updates an open PR for that branch automatically. The publisher agent is told not to push or commit, and that stays.
 - `prompts/publish.md` always says to run `gh pr create`, then record the URL under `## Pull request`. Nothing tells the agent to look for an existing PR, so a second run would try to create another PR (which `gh` rejects for a branch that already has an open PR, or creates a duplicate if the first was closed). That is the problem this story describes, and it does reproduce by reading the prompt.
 - The item body keeps its `## Pull request` section across the rejection loop (the `rejected` action only replaces `## Pull request feedback`), so the existing URL is available to the publisher in the item it is given. `rejected()` reads the last URL in that section (STORY-012), so the section must keep a valid URL after re-publish.
-- `config/roles.toml`: the claude engine's `--allowedTools` is `Bash(uv run python -m devteam *) Bash(git diff *) Bash(git log *) Bash(git status *) Bash(gh pr create *)`. Only `gh pr create` is allowed, so an unattended publisher could not run any `gh` call needed to find or update an existing PR. The list is per engine, not per role, so any addition applies to every claude role. The `gh api` calls used by the `rejected` step run in the harness, not the agent, and need no allow-listing.
+- `config/roles.toml`: the claude engine's `--allowedTools` is `Bash(uv run --project <checkout> python -P -m devteam *) Bash(git diff *) Bash(git log *) Bash(git status *) Bash(gh pr create *)`. Only `gh pr create` is allowed, so an unattended publisher could not run any `gh` call needed to find or update an existing PR. The list is per engine, not per role, so any addition applies to every claude role. The `gh api` calls used by the `rejected` step run in the harness, not the agent, and need no allow-listing.
 - `roles/publisher.md` says "Open a pull request"; it also needs to allow for an existing one.
 - Tests: `tests/stubs/` has `claude`, `codex` and a `gh` stub that only serves `gh api` fixtures. No existing test covers the publisher prompt or the allow-list. `tests/test_merged_cli.py` already reads source files as text to assert on them, which is a precedent for prompt/config assertions.
 
@@ -95,7 +99,7 @@ Ran 4 tests in 0.004s
 OK
 ```
 
-`uv run python -m devteam check tests.test_publish`
+`uv run --project <checkout> python -P -m devteam check tests.test_publish`
 
 ```text
 uv run python -m unittest tests.test_publish
@@ -134,7 +138,7 @@ No failures in these checks. The full suite is left to the runner after the test
 - Criterion 6 (allow-list): `test_publisher_is_launched_with_the_gh_calls_it_needs_and_not_merge`
 - Criterion 7 (role brief): `test_publisher_brief_covers_an_existing_pr`
 
-Run one test: `uv run python -m devteam check tests.test_republish.RepublishAfterRejection.test_publisher_is_launched_with_the_gh_calls_it_needs_and_not_merge`. Run the module: `uv run python -m devteam check tests.test_republish`.
+Run one test: `uv run --project <checkout> python -P -m devteam check tests.test_republish.RepublishAfterRejection.test_publisher_is_launched_with_the_gh_calls_it_needs_and_not_merge`. Run the module: `uv run --project <checkout> python -P -m devteam check tests.test_republish`.
 
 Full suite: 162 tests, OK.
 

@@ -6,6 +6,10 @@ parent: EPIC-003
 workflow: default
 step: publish
 ---
+
+Harness invocation examples updated for STORY-006; findings and recorded check
+output below describe the original work. Replace `<checkout>` with the harness path.
+
 As the customer, I want local main brought in line with origin when I mark a PR merged, so that my checkout reflects what I merged.
 
 ## Original criteria
@@ -75,7 +79,7 @@ This list supersedes the "Original criteria", all of which it covers. Dependency
 10. A test asserts no engine is invoked and a `gh` stub placed first on `PATH` records no call during the action; `grep` finds no `gh pr merge` in `devteam/`.
 11. The failure message and the success report appear in the runner's `report` output in the existing `<id> merged ...: FAILED - ...` / `completed -> done` format (asserted on the messages list).
 12. `README.md` describes the `merged` behaviour, including both failure causes (dirty, diverged) and how to recover (fix the cause, press `t` or call retry).
-13. `uv run python -m devteam check` passes.
+13. `uv run --project <checkout> python -P -m devteam check` passes.
 14. Checkout on neither the item's branch nor the base, and clean: the step switches to base and fast-forwards, item reaches `done`. One test.
 15. After a failed `merged` step the checkout is still on its pre-step branch and another code-changing item's `take_checkout` still waits; after the cause is fixed and `retry(id)` succeeds, the item is terminal and the other item can take the checkout.
 
@@ -160,7 +164,7 @@ Ran 43 tests in 13.802s
 OK
 ```
 
-`UV_CACHE_DIR=/tmp/devteam-uv-cache uv run python -m devteam check`: interrupted, exit 130, no output. It captures the child process output until completion, so there is no suite verdict from this invocation.
+`UV_CACHE_DIR=/tmp/devteam-uv-cache uv run --project <checkout> python -P -m devteam check`: interrupted, exit 130, no output. It captures the child process output until completion, so there is no suite verdict from this invocation.
 
 `UV_CACHE_DIR=/tmp/devteam-uv-cache timeout 180s uv run python -m unittest discover -s tests -v > /tmp/story-011-suite.log 2>&1`: interrupted, exit 130, before the timeout. The log contains successful test results through the following lines, then no further progress or final verdict:
 
@@ -180,7 +184,7 @@ devteam/runner.py:60:HARNESS_ACTIONS = {"merged": merged, "rejected": rejected}
 
 ## Tests
 
-Whole suite: `uv run python -m devteam check` (128 tests, passing). One module or test: `uv run python -m devteam check tests.test_merged_cli` or `uv run python -m devteam check tests.test_merged_cli.MergedFromTheCommandLine.test_diverged_main_fails_the_step_and_leaves_the_repository_untouched`.
+Whole suite: `uv run --project <checkout> python -P -m devteam check` (128 tests, passing). One module or test: `uv run --project <checkout> python -P -m devteam check tests.test_merged_cli` or `uv run --project <checkout> python -P -m devteam check tests.test_merged_cli.MergedFromTheCommandLine.test_diverged_main_fails_the_step_and_leaves_the_repository_untouched`.
 
 `tests/test_merged_cli.py` starts `python -m devteam` as a subprocess against a bare remote, a product clone and a second writer clone, with a `claude` stub and a `gh` stub that records calls. `tests/test_merged.py` (the implementer's) covers the same behaviour in-process against real git.
 

@@ -5,6 +5,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def harness_command() -> str:
+    path = str(ROOT)
+    if any(char.isspace() or char in "*?[]()\"'\\" for char in path):
+        raise ValueError("Harness checkout path cannot contain whitespace or * ? [ ] ( ) \" ' \\")
+    return f"uv run --project {path} python -P -m devteam"
+
+
 @dataclass
 class Role:
     name: str
@@ -19,7 +26,8 @@ class Role:
     stream: str = "text"
 
     def brief(self) -> str:
-        return (ROOT / "roles" / f"{self.name}.md").read_text()
+        text = (ROOT / "roles" / f"{self.name}.md").read_text()
+        return text.replace("{{harness_command}}", harness_command()) if "{{harness_command}}" in text else text
 
 
 def load_roles(path: Path | None = None) -> dict[str, Role]:

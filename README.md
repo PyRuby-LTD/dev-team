@@ -31,23 +31,82 @@ Nothing is promoted automatically - `play` is a transition only you can make.
 
 ## Requirements
 
-[`uv`](https://docs.astral.sh/uv/) (it supplies Python 3.13+ and the pinned
-dependencies from `uv.lock`), `git`, and the CLIs named in `config/roles.toml` - `claude`
-and `codex` by default, both signed in with your own subscription.
+[`uv`](https://docs.astral.sh/uv/) supplies Python 3.13+ and the pinned
+dependencies from `uv.lock`. You also need:
 
-## Use
+- `git` with `user.name` and `user.email` configured, and a GitHub `origin`
+  for the product repository.
+- The engine CLIs named in `config/roles.toml`: `claude` and `codex` by
+  default, both signed in with your own subscription.
+- `gh`, authenticated, for publishing, and permission to push to the product's
+  `origin`.
+- From the `test` step onwards, a product `Makefile` with a `regression` target
+  (`make regression`, optionally `TEST=<name>`). `init` creates a placeholder
+  that fails with an "unimplemented" message until you replace it.
 
-Run from the root of the product repository, or pass `--product DIR`:
+Makefile targets must select the product's own environment (for a uv product,
+use `uv run ...`), because `dev-team` runs `make` with the checkout's virtual
+environment inherited. Engine CLIs and credentials are prerequisites; they
+are not bundled. The team uses the checkout's workflows, prompts, briefs and
+configuration, without agents or skills from your home directory.
+
+## Set up the launcher
+
+Check out dev-team once. From that checkout run:
 
 ```bash
 uv sync
-uv run python -m devteam backlog capture request "An idea for the product" --file idea.md
-uv run python -m devteam backlog capture story "CSV export drops the final row" --parent EPIC-001
-uv run python -m devteam tui                           # see items, answer questions, move them, run agents
-uv run python -m devteam backlog validate              # the same list, printed once
-uv run python -m devteam backlog move STORY-008 analyse
-uv run python -m devteam run --once                    # run agent-owned steps until none can run
-uv run python -m devteam check                   # run this repository's own suite
+./install.sh
+```
+
+The installer checks prerequisites and appends the alias to `~/.bashrc`. Missing
+uv or git is an error; missing git identity, engine CLIs or gh are warnings.
+It installs no tools and does not check sign-in. An existing `dev-team` alias
+is left unchanged with a warning, including one pointing to an old checkout.
+Open a new bash shell or run `source ~/.bashrc`.
+
+Alternatively, add this line to `~/.bashrc`, replacing `<checkout>` with the
+absolute path to your dev-team checkout (run `uv sync` there first):
+
+```bash
+alias dev-team='uv run --project "<checkout>" python -P -m devteam'
+```
+
+The checkout path must contain no whitespace or any of `* ? [ ] ( ) " ' \`.
+`--project` selects the harness environment while preserving your current
+directory; `-P` prevents product files from shadowing harness dependencies.
+
+## Use
+
+`dev-team` is the alias for `uv run --project <checkout> python -P -m devteam`.
+It acts on the directory it is run from, or the directory passed with
+`--product DIR` before the subcommand. `dev-team help` lists the commands;
+`dev-team backlog --help` describes the work item arguments. A bare `dev-team`
+prints usage and exits nonzero.
+
+Run `dev-team init` first in a new product. It requires an existing Git repository
+and a GitHub origin (HTTPS, `git@github.com:owner/repo`, or
+`ssh://git@github.com/owner/repo`; other hosts are refused). It refuses detached
+HEAD and `devteam/` item branches before making changes. It creates a missing
+Makefile and sets up the backlog. In an empty repository it commits only the
+Makefile on the current branch and pushes that branch if it does not exist on
+origin. A rerun completes a failed commit or push; an existing different origin
+commit produces a warning and no push. In an existing codebase it makes no
+commit or push: it leaves a new placeholder uncommitted and asks you to wire up
+`make regression` and commit before opening the TUI. Existing Makefiles are
+preserved, with a warning if they lack a regression target.
+
+```bash
+cd /path/to/product
+dev-team init
+dev-team help
+dev-team backlog capture request "An idea for the product" --file idea.md
+dev-team backlog capture story "CSV export drops the final row" --parent EPIC-001
+dev-team tui                           # open the TUI
+dev-team backlog validate
+dev-team backlog move STORY-008 analyse
+dev-team run --once                    # run agent-owned steps until none can run
+dev-team check                         # run the product's checks
 ```
 
 `tui` is the main way in: it shows every item, lets you answer an agent's
@@ -153,7 +212,8 @@ Every product repository has a `Makefile` in its root with one target that
 proves the system works: `make regression`, which also accepts `TEST=<name>` to
 run a single test. It is named in `[check]` in `config/roles.toml`.
 
-Agents never call `make`. They run `uv run python -m devteam check [<test>]`,
+Agents never call `make`. Their rendered prompts supply the absolute harness
+command followed by `check [<test>]`,
 which runs the target, prints a short result and keeps the full output under
 `backlog/log/check/`. A workflow step owned by `check` is run by the harness
 itself: the exit code chooses `passed` or `failed`, and the result is written
@@ -173,7 +233,9 @@ branch = true
 ```
 
 Placeholders substituted per invocation: `{prompt}` `{model}` `{brief}`
-`{cwd}` `{extra_dir}` (the workspace) `{permission}` `{max_turns}`.
+`{cwd}` `{extra_dir}` (the backlog directory) `{permission}` `{max_turns}`
+`{harness_command}`. Prompts and briefs use `{{harness_command}}` for the same
+command derived from the checkout path.
 
 Role briefs and step prompts are prose you should edit as you learn what each
 role gets wrong.

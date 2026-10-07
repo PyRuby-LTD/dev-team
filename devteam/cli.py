@@ -81,6 +81,16 @@ def cmd_check(args):
     raise SystemExit(code)
 
 
+def cmd_init(args):
+    from . import git
+    from .initialise import initialise
+
+    try:
+        initialise(Path(args.product).resolve())
+    except (git.GitError, OSError) as exc:
+        raise SystemExit(str(exc)) from exc
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="devteam")
     parser.add_argument("--product", default=".", help="the product repository; its work items live in backlog/ (default: here)")
@@ -88,9 +98,9 @@ def main(argv=None):
 
     p = sub.add_parser("backlog", help="capture and validate Markdown work items (no agents)")
     actions = p.add_subparsers(dest="backlog_action", required=True)
-    actions.add_parser("validate").set_defaults(func=cmd_backlog)
+    actions.add_parser("validate", help="validate work items and report errors").set_defaults(func=cmd_backlog)
     actions.add_parser("list", help="list work items with their step and owner").set_defaults(func=cmd_backlog)
-    capture = actions.add_parser("capture")
+    capture = actions.add_parser("capture", help="create a Markdown work item")
     capture.add_argument("type", choices=["epic", "story", "task", "bug", "request"])
     capture.add_argument("title")
     capture.add_argument("--id")
@@ -114,5 +124,16 @@ def main(argv=None):
     p.add_argument("test", nargs="?", help="a single test to run, as the project's Makefile understands TEST=")
     p.set_defaults(func=cmd_check)
 
+    sub.add_parser("init", help="set up a product with a GitHub origin and backlog").set_defaults(func=cmd_init)
+    sub.add_parser("help", help="show commands and backlog actions").set_defaults(
+        func=lambda args: (parser.print_help(), sub.choices["backlog"].print_help()))
+
     args = parser.parse_args(argv)
+    if args.cmd in {"run", "tui", "init"}:
+        from .config import harness_command
+
+        try:
+            harness_command()
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
     args.func(args)

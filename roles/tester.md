@@ -25,8 +25,8 @@ You do not change the code under test. When a test shows the implementation
 does not meet a criterion, leave the failing test in place, say exactly what
 failed, and send the item back.
 
-Run tests only through the harness: `uv run python -m devteam check <test>` for
-the one you are working on, and `uv run python -m devteam check` for the whole
+Run tests only through the harness: `{{harness_command}} check <test>` for
+the one you are working on, and `{{harness_command}} check` for the whole
 suite before you finish. Do not call `make` or the test runner directly. If a
 new kind of test needs the project's Makefile target to change, change it.
 

@@ -94,18 +94,17 @@ the pull request is merged.
 
 ## Usage
 
-`uv` is required; `uv sync` installs Python and the pinned dependencies. Run
-from the product repository, or pass `--product DIR` before the command:
+`dev-team` is the alias set up in the README. Run from the product repository,
+or pass `--product DIR` before the command:
 
 ```sh
-uv sync
-uv run python -m devteam backlog capture epic 'Example'
-uv run python -m devteam backlog capture request 'A new idea' --file idea.md
-uv run python -m devteam backlog capture story 'Feature' --parent EPIC-001
-uv run python -m devteam backlog validate
-uv run python -m devteam backlog move STORY-001 analyse
-uv run python -m devteam run --once
-uv run python -m unittest discover -s tests -v
+dev-team backlog capture epic 'Example'
+dev-team backlog capture request 'A new idea' --file idea.md
+dev-team backlog capture story 'Feature' --parent EPIC-001
+dev-team backlog validate
+dev-team backlog move STORY-001 analyse
+dev-team run --once
+dev-team check
 ```
 
 Use `--file` to supply the body and `--id` to choose an ID. `list` and `validate` list

@@ -12,7 +12,7 @@ from textual.widgets import TextArea
 from devteam import questions, tui
 from devteam.backlog import InvalidRecord, Repository
 from devteam.cli import main
-from devteam.config import ROOT, load_roles
+from devteam.config import ROOT, harness_command, load_roles
 from devteam.runner import Runner, render
 from devteam.workflow import load
 
@@ -78,10 +78,10 @@ class Requests(unittest.TestCase):
 
     def test_workflow_scoped_prompt_precedence_and_legacy_fallback(self):
         review = load('default').steps['review']
-        self.assertTrue(render(review, {}, 'default').startswith((ROOT / 'prompts/review.md').read_text()))
+        self.assertTrue(render(review, {}, 'default').startswith((ROOT / 'prompts/review.md').read_text().replace('{{harness_command}}', harness_command())))
         step = load('analysis').steps['product-owner']
         self.assertTrue(render(step, {}, 'analysis').startswith(
-            (ROOT / 'prompts/analysis/product-owner.md').read_text()))
+            (ROOT / 'prompts/analysis/product-owner.md').read_text().replace('{{harness_command}}', harness_command())))
         with tempfile.TemporaryDirectory() as directory, patch('devteam.runner.ROOT', Path(directory)):
             prompts = Path(directory) / 'prompts'
             (prompts / 'analysis').mkdir(parents=True)
@@ -158,7 +158,7 @@ class Requests(unittest.TestCase):
                 previous = request.body
 
                 def engine(role, prompt, cwd, extra_dir, log):
-                    self.assertTrue(prompt.startswith((ROOT / f'prompts/analysis/{name}.md').read_text()))
+                    self.assertTrue(prompt.startswith((ROOT / f'prompts/analysis/{name}.md').read_text().replace('{{harness_command}}', harness_command())))
                     body = previous + ('\n## Questions\n\n' if number == 0 else '')
                     self.repo.write_body(request.id, body + f'{number + 1}. Question from {name}?\n', 'questions')
                     log.write_text('fake transcript')
