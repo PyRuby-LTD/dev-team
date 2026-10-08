@@ -13,3 +13,7 @@ appear beneath each question as `**Answer:** ...`. Keep earlier questions and
 answers, and add new questions to the end of that list. Put findings outside
 the Questions section. State reasonable assumptions instead of asking needless
 questions. Do not change the request's front matter.
+
+Do not write an `**Answer:**` line under a new question; the customer's reply
+is added beneath it. Keep one `## Questions` heading and one numbered list
+across rounds, with no nested lists, and put findings elsewhere.

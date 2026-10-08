@@ -5,8 +5,10 @@ from dataclasses import dataclass
 FEEDBACK = re.compile(r"##\s+Feedback\s*$", re.IGNORECASE)
 SECTION = re.compile(r"##\s+Questions\s*$", re.IGNORECASE)
 HEADING = re.compile(r"#{1,2}\s")
-QUESTION = re.compile(r"\s{0,3}(?:\d+[.)]|[-*])\s+(\S.*)")
-ANSWER = re.compile(r"\s*>?\s*\**\s*Answer\b", re.IGNORECASE)
+QUESTION = re.compile(r"( {0,3})(?:\d+[.)]|[-*])\s+(\S.*)")
+ANSWER = re.compile(r"\s*>?\s*\**\s*Answer\s*\**:\**\s*(.*?)\s*$", re.IGNORECASE)
+# A suffixed subheading must not let its list leak into an open Questions section.
+QUESTIONS_VARIANT = re.compile(r"#{3,}\s+Questions\s+\S", re.IGNORECASE)
 
 
 @dataclass
@@ -14,26 +16,34 @@ class Question:
     text: str
     answered: bool
     last_line: int
+    placeholder_line: int | None = None
 
 
 def parse(body):
-    """Each list item under a '## Questions' heading; answered once an 'Answer' line follows it."""
+    """Top-level list items under '## Questions'; only inline answer text counts."""
     lines = body.splitlines()
-    found, inside, current = [], False, None
+    found, inside, current, base_indent = [], False, None, None
     for number, line in enumerate(lines):
         if SECTION.match(line):
-            inside, current = True, None
-        elif inside and HEADING.match(line):
+            inside, current, base_indent = True, None, None
+        elif inside and (HEADING.match(line) or QUESTIONS_VARIANT.match(line)):
             inside, current = False, None
         elif inside:
             match = QUESTION.match(line)
-            if match:
-                current = Question(match.group(1).strip(), False, number)
+            indent = len(match.group(1)) if match else None
+            if match and (base_indent is None or indent <= base_indent):
+                if base_indent is None:
+                    base_indent = indent
+                current = Question(match.group(2).strip(), False, number)
                 found.append(current)
             elif current is not None and line.strip():
                 current.last_line = number
-                if ANSWER.match(line):
-                    current.answered = True
+                marker = ANSWER.match(line)
+                if marker:
+                    if marker.group(1):
+                        current.answered = True
+                    elif current.placeholder_line is None:
+                        current.placeholder_line = number
                 else:
                     current.text += " " + line.strip()
     return found
@@ -49,9 +59,13 @@ def answer(body, answers):
         if not text or questions[index].answered:
             continue
         first, *rest = text.splitlines()
-        block = ["", f"   **Answer:** {first}"] + [f"   {line}".rstrip() for line in rest]
-        at = questions[index].last_line + 1
-        lines[at:at] = block
+        block = [f"   **Answer:** {first}"] + [f"   {line}".rstrip() for line in rest]
+        placeholder = questions[index].placeholder_line
+        if placeholder is not None:
+            lines[placeholder:placeholder + 1] = block
+        else:
+            at = questions[index].last_line + 1
+            lines[at:at] = [""] + block
     return newline.join(lines) + (newline if body.endswith(("\n", "\r")) else "")
 
 

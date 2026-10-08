@@ -497,6 +497,7 @@ class Acting(Fixture):
             self.assertEqual("answering", self.step(self.waiting))
             self.assertIsInstance(app.screen, tui.Actions)
             self.assertEqual(["answered", "withdraw"], self.options(app))
+            self.assertIn("All 2 questions in the body are answered", " ".join(str(label.content) for label in app.screen.query(Label)))
             await pilot.press("s")
             await pilot.press("enter")
             await pilot.pause()
@@ -776,6 +777,67 @@ class AgentOutput(Fixture):
     def test_readme_mentions_the_l_key(self):
         readme = (Path(__file__).resolve().parent.parent / "README.md").read_text()
         self.assertIn("`l`", readme)
+
+
+class QuestionsNotice(Fixture):
+    async def test_placeholder_round_shows_four_unanswered(self):
+        from tests.test_questions import ROUND_TWO
+        self.repo.transition(self.waiting.id, 'analyse')
+        self.repo.write_body(self.waiting.id, ROUND_TWO, 'questions')
+        self.repo.transition(self.waiting.id, 'questions')
+        row = self.by_key()[self.waiting.id]
+        self.assertIn('4 unanswered questions', tui.card(row).plain)
+        self.assertEqual('', row.questions_notice)
+        app = DialogApp()
+        async with app.run_test() as pilot:
+            await app.push_screen(tui.Actions(row))
+            await pilot.pause()
+            options = app.screen.query_one('OptionList').options
+            self.assertEqual('Answer 4 questions', str(options[0].prompt))
+            self.assertFalse(any('questions in the body' in str(label.content) for label in app.screen.query(Label)))
+
+    async def test_zero_unanswered_label_and_options(self):
+        self.repo.transition(self.waiting.id, 'analyse')
+        self.repo.transition(self.waiting.id, 'questions')
+        answered = '## Questions\n1. A?\n   **Answer:** yes\n'
+        cases = [
+            ('No Questions section.', 'No questions found in the body.'),
+            (answered + 'Another question in prose?\n', 'All 1 question in the body is answered.'),
+            (answered + '\n## Questions (round 2)\n2. B?\n', 'All 1 question in the body is answered.'),
+            (answered + '\n### Questions already settled\n2. B?\n', 'All 1 question in the body is answered.'),
+            (answered + '2. B?\n   **Answer:** yes\n', 'All 2 questions in the body are answered.'),
+        ]
+        app = DialogApp()
+        async with app.run_test() as pilot:
+            for body, status in cases:
+                with self.subTest(body=body):
+                    self.repo.write_body(self.waiting.id, body, 'questions')
+                    row = self.by_key()[self.waiting.id]
+                    expected = status + ' If the analyst asked ' + ('anything else' if status.startswith('All') else 'anything') + ', it is not written as a list under a Questions heading.'
+                    self.assertEqual(expected, row.questions_notice)
+                    self.assertIn(expected, tui.card(row).plain)
+                    await app.push_screen(tui.Actions(row))
+                    await pilot.pause()
+                    self.assertIn(expected, [str(label.content) for label in app.screen.query(Label)])
+                    self.assertEqual(['move:answered', 'move:withdraw'], [option.id for option in app.screen.query_one('OptionList').options])
+                    await pilot.press('escape')
+                    await pilot.pause()
+
+    def test_questions_step_uses_transition_name_and_human_owner(self):
+        data = json.loads((self.workflows / 'default.json').read_text())
+        data['steps']['customer-reply'] = data['steps'].pop('answering')
+        data['steps']['analysis']['transitions']['questions'] = 'customer-reply'
+        (self.workflows / 'default.json').write_text(json.dumps(data))
+        self.repo = Repository(self.repo.root, self.workflows, {'analyst'})
+        self.assertEqual('', self.by_key()[self.waiting.id].questions_notice)
+        self.repo.transition(self.waiting.id, 'analyse')
+        self.assertEqual('', self.by_key()[self.waiting.id].questions_notice)
+        self.repo.transition(self.waiting.id, 'questions')
+        row = self.by_key()[self.waiting.id]
+        self.assertEqual('customer-reply', row.step)
+        self.assertIn('No questions found in the body.', row.questions_notice)
+        self.repo.write_body(self.waiting.id, '## Questions\n1. A?\n', 'questions')
+        self.assertEqual('', self.by_key()[self.waiting.id].questions_notice)
 
 
 if __name__ == "__main__":

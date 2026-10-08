@@ -17,3 +17,7 @@ challenger before the customer sees it.
 If the item has a `## Challenge` section, it was sent back to you. Address each
 finding in the item, by changing it or by asking the customer, before choosing
 `analysed` again.
+
+Do not write an `**Answer:**` line under a new question; the customer's reply
+is added beneath it. Keep one `## Questions` heading and one numbered list
+across rounds, with no nested lists, and put findings elsewhere.

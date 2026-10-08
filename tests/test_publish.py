@@ -22,7 +22,9 @@ class PublisherInstructions(unittest.TestCase):
 
     def test_open_pr_is_edited_and_only_absent_open_pr_is_created(self):
         self.assertIn("If an open PR exists, do not run `gh pr create`", self.prose)
-        self.assertIn("gh pr edit <existing-url> --body-file <body-file>", self.prose)
+        self.assertIn("gh pr edit <existing-url> --body-file - <<'EOF'", self.prose)
+        self.assertIn("gh pr create --head {{branch}} --base {{base}} --title \"<item-title>\" --body-file - <<'EOF'", self.prose)
+        self.assertNotIn("<body-file>", self.prompt)
         self.assertIn("leaving its title and URL unchanged", self.prose)
         self.assertIn("Only when no open PR exists for the branch, run `gh pr create", self.prose)
 
