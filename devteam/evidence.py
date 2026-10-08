@@ -1,5 +1,6 @@
 """Mask machine paths in Markdown records and newly committed backlog text."""
 import difflib
+import os
 import re
 import sys
 import subprocess
@@ -44,8 +45,16 @@ class PathGuard:
 
     def __call__(self, root, notice):
         # Include staged changes, unstaged changes and untracked, non-ignored files.
-        listing = git.run(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
-        for name in sorted(set(listing.stdout.split("\0")) - {""}):
+        changed = git.run(root, "diff", "--name-only", "--no-renames", "-z", "HEAD")
+        if changed.returncode:
+            # An unborn branch has no HEAD; all tracked files are new.
+            git.must(root, "rev-parse", "--git-dir")
+            if git.has_ref(root, "HEAD"):
+                raise git.GitError(changed.stderr.strip())
+            changed = git.run(root, "ls-files", "-z", "--cached")
+        untracked = git.run(root, "ls-files", "-z", "--others", "--exclude-standard")
+        names = set(changed.stdout.split("\0")) | set(untracked.stdout.split("\0"))
+        for name in sorted(names - {""}):
             path = root / name
             if not path.is_file() or path.is_symlink():
                 continue
@@ -75,4 +84,4 @@ class PathGuard:
             saved.write_bytes(text.encode("utf-8"))
             path.write_bytes(masked.encode("utf-8"))
             base = Path(self.checkout) if self.checkout else root.parent
-            notice(f"{name}: masked lines {', '.join(map(str, numbers))}; original saved to {saved.relative_to(base)}")
+            notice(f"{name}: masked lines {', '.join(map(str, numbers))}; original saved to {os.path.relpath(saved, base)}")

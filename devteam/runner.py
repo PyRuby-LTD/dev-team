@@ -252,7 +252,8 @@ class Runner:
             front = text[:len(text) - len(record.body)]
             copy.write_bytes((front + masked).encode("utf-8"))
             if numbers:
-                self.report(f"{record.id}: copy masked body lines {', '.join(map(str, numbers))}")
+                offset = len(front.splitlines())
+                self.report(f"{record.id}: copy masked lines {', '.join(str(offset + n) for n in numbers)}")
             git.commit_all(self.checkout, f"{record.id}: record the work item", str(copy))
         if role.push:
             git.must(self.checkout, "push", "-q", "-u", "origin", branch)

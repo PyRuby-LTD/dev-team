@@ -17,6 +17,6 @@ which test covers each criterion and how to run one test on its own.
 Choose `written` when every criterion is covered and the whole suite passes for
 you; the harness then runs it again. Choose `defect` when a test shows the code
 does not meet a criterion or breaks existing behaviour: name the failing test,
-what it expected and the relative path of the failing run’s log, and leave
-the test in place. The implementer’s latest workflow check log predates this
+what it expected and the relative path of the failing run's log, and leave
+the test in place. The implementer's latest workflow check log predates this
 run, so give the path printed by `dev-team check`.

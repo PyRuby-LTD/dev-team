@@ -348,13 +348,14 @@ class TestPublicationCopy(Product):
         self.move("pr")
         with self.item.open("a") as fh:
             fh.write(f"\nOutput kept in `{HOME}/out/log.txt` and {self.product}/src/app.py.\n")
+        number = len(self.item.read_text().splitlines())
         self.plan({"reply": "published"})
         output = self.run_once()
         copy = self.git(self.product, "show", "devteam/STORY-001:docs/work-items/STORY-001.md")
         self.assertIn("Output kept in `<path>` and src/app.py.", copy)
         self.assertNotIn(NAME, copy)
         self.assertNotIn(str(self.product), copy)
-        self.assertRegex(output, r"STORY-001: copy masked body lines \d+")
+        self.assertIn(f"STORY-001: copy masked lines {number}", output)
         self.assertNotIn(NAME, output)
         self.assertEqual("pull-request", self.step())
         self.assertFalse(re.search(r"/home/", self.git(self.product, "show", "devteam/STORY-001:docs/work-items/STORY-001.md")))
@@ -580,9 +581,8 @@ class TestCopyGuardRule(Product):
         self.assertIn(f"masked lines {', '.join(map(str, numbers))};", result.stdout)
         self.assertNotIn(NAME, result.stdout)
 
-    def test_this_stories_own_body_trips_nothing(self):
-        text = (ROOT / "backlog" / "stories" / "STORY-014.md").read_text()
-        body = text.split("\n---\n", 1)[1]
+    def test_this_stories_criteria_fixture_trips_nothing(self):
+        body = (ROOT / "tests/fixtures/evidence/STORY-014-criteria.md").read_text()
         result = self.capture(body.splitlines(), item="STORY-014")
         self.assertNotIn("masked", result.stdout)
         self.assertEqual(body.splitlines(), self.committed_lines("STORY-014"))
