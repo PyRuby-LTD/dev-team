@@ -225,7 +225,7 @@ class Answers(ModalScreen):
             yield Label(Text.assemble((self.row.label, "bold"), "  ", self.row.title))
             with VerticalScroll():
                 for number, (index, question) in enumerate(self.open, 1):
-                    yield Label(Text(f"{number}. {question.text}", "bold"), classes="question")
+                    yield Label(Text(f"{number}. {question.text}", "bold"), shrink=True, classes="question")
                     yield TextArea(id=f"answer-{index}", soft_wrap=True)
             with Horizontal(classes="buttons"):
                 yield Button("Save answers (ctrl+s)", variant="primary", id="save")
@@ -234,6 +234,15 @@ class Answers(ModalScreen):
 
     def on_mount(self):
         self.query(TextArea).first().focus()
+
+    def on_resize(self):
+        dialog = self.query_one(".dialog")
+        # Keep auto height for fitting questions, reserving the title (2),
+        # buttons (4), and hint (2) when the dialog reaches its height limit.
+        limit = int(dialog.styles.max_height.resolve(self.size, self.app.size))
+        self.query_one(VerticalScroll).styles.max_height = max(
+            1, min(30, limit - dialog.styles.gutter.height - 8)
+        )
 
     def action_save(self):
         self.dismiss({index: self.query_one(f"#answer-{index}", TextArea).text for index, _ in self.open})

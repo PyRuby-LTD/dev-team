@@ -4,7 +4,10 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from textual.widgets import Label, Markdown, RichLog, Static, Tree
+from textual.app import App
+from textual.containers import VerticalScroll
+from textual.geometry import Region
+from textual.widgets import Label, Markdown, RichLog, Static, TextArea, Tree
 
 from devteam import questions, tui
 from devteam.backlog import Repository
@@ -85,6 +88,97 @@ class ViewModel(Fixture):
         self.assertIn("1 invalid", tui.summary(data).plain)
         self.assertIn("ERROR: missing required fields", tui.card(invalid).plain)
         self.assertTrue(tui.item_label(invalid).plain.startswith("! stories/STORY-002.md"))
+
+
+class DialogApp(App):
+    CSS = tui.Backlog.CSS
+
+
+class AnswerLayout(Fixture):
+    long_question = (
+        "Please describe the expected behaviour and explain how the answer should handle this unusually long identifier "
+        + "x" * 120
+        + " before continuing with enough detail to make the complete question readable through its distinctive final word ENDWORD"
+    )
+
+    def row(self, texts):
+        self.repo.write_body(self.waiting.id, "## Questions\n\n" + "\n".join(
+            f"{number}. {text}" for number, text in enumerate(texts, 1)), "questions")
+        return self.by_key()[self.waiting.id]
+
+    def assert_controls_visible(self, screen):
+        content = screen.query_one(".dialog").content_region
+        for widget in (screen.query_one("#save"), screen.query_one("#cancel"),
+                       list(screen.query(Label))[-1]):
+            self.assertTrue(content.contains_region(widget.region), (content, widget.region))
+
+    def assert_question_wraps(self, label, scroll):
+        self.assertGreater(label.region.height, 1)
+        self.assertGreaterEqual(label.region.x, scroll.content_region.x)
+        self.assertLessEqual(label.region.right, scroll.content_region.right)
+        rendered = "".join(strip.text for strip in label.render_lines(
+            Region(0, 0, label.size.width, label.size.height)))
+        self.assertIn("ENDWORD", rendered)
+
+    async def test_long_question_wraps_in_both_terminal_sizes(self):
+        for size in ((120, 40), (80, 30)):
+            with self.subTest(size=size):
+                app = DialogApp()
+                async with app.run_test(size=size) as pilot:
+                    await app.push_screen(tui.Answers(self.row([self.long_question])))
+                    await pilot.pause()
+                    self.assert_question_wraps(app.screen.query_one(".question"),
+                                               app.screen.query_one(VerticalScroll))
+
+    async def test_overflow_scrolls_with_controls_visible(self):
+        fixtures = [((80, 30), [self.long_question] * 2),
+                    ((120, 40), ["Which users?"] * 4),
+                    ((80, 30), ["Which users?"] * 3),
+                    ((120, 60), ["Which users?"] * 5)]
+        for size, texts in fixtures:
+            with self.subTest(size=size, count=len(texts)):
+                app = DialogApp()
+                async with app.run_test(size=size) as pilot:
+                    await app.push_screen(tui.Answers(self.row(texts)))
+                    await pilot.pause()
+                    screen = app.screen
+                    scroll = screen.query_one(VerticalScroll)
+                    self.assert_controls_visible(screen)
+                    self.assertGreater(scroll.max_scroll_y, 0)
+                    if texts[0] == self.long_question:
+                        self.assert_question_wraps(list(screen.query(".question"))[-1], scroll)
+                    scroll.scroll_end(animate=False)
+                    await pilot.pause()
+                    self.assertTrue(scroll.region.contains_region(
+                        screen.query_one(f"#answer-{len(texts) - 1}").region))
+                    self.assertTrue(scroll.region.contains_region(
+                        list(screen.query(".question"))[-1].region))
+
+    async def test_fitting_questions_keep_the_original_dialog_height(self):
+        app = DialogApp()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await app.push_screen(tui.Answers(self.row(["Which users?", "What deadline?"])))
+            await pilot.pause()
+            screen = app.screen
+            scroll = screen.query_one(VerticalScroll)
+            self.assertEqual(26, screen.query_one(".dialog").region.height)
+            self.assertEqual(0, scroll.max_scroll_y)
+            self.assert_controls_visible(screen)
+            answers = list(screen.query(TextArea))
+            self.assertEqual(["answer-0", "answer-1"], [answer.id for answer in answers])
+            for answer in answers:
+                self.assertEqual(5, answer.region.height)
+                self.assertTrue(answer.soft_wrap)
+                self.assertTrue(scroll.region.contains_region(answer.region))
+            self.assertEqual(["1. Which users?", "2. What deadline?"],
+                             [label.content.plain for label in screen.query(".question")])
+
+    async def test_note_prompt_stays_one_line(self):
+        app = DialogApp()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await app.push_screen(tui.Note(self.by_key()[self.waiting.id], None, None, "analyst"))
+            await pilot.pause()
+            self.assertEqual(1, app.screen.query_one(".question").region.height)
 
 
 class Screen(Fixture):
