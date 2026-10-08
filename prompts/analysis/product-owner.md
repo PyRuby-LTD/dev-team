@@ -33,3 +33,7 @@ in the request body. Before completing, run backlog validate and check that
 all listed items exist, have valid links, and remain at their initial steps.
 On `revise`, read the customer's feedback, update the listed items' bodies as
 needed and reuse their IDs; avoid duplicating previously captured work.
+
+Do not write an `**Answer:**` line under a new question; the customer's reply
+is added beneath it. Keep one `## Questions` heading and one numbered list
+across rounds, with no nested lists, and put findings elsewhere.

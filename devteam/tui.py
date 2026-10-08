@@ -37,6 +37,18 @@ class Row:
     running: bool = False
     failure: str = ""
     held: str = ""
+    questions_step: bool = False
+
+    @property
+    def questions_notice(self):
+        if not self.questions_step or not self.needs_you or self.unanswered:
+            return ""
+        count = len(questions.parse(self.body))
+        status = (f"All {count} question{'s' if count != 1 else ''} in the body "
+                  f"{'are' if count != 1 else 'is'} answered." if count else "No questions found in the body.")
+        asked = "anything else" if count else "anything"
+        return (f"{status} If the analyst asked {asked}, "
+                "it is not written as a list under a Questions heading.")
 
     @property
     def is_item(self):
@@ -82,6 +94,7 @@ def rows(repository, runner=None):
                 row.waiting_on = owner_label(step)
             if row.needs_you:
                 row.unanswered = sum(not question.answered for question in questions.parse(record.body))
+                row.questions_step = any(source.transitions.get("questions") == step.name for source in steps.values())
             if runner is not None and not row.needs_you:
                 row.running = runner.active == record.id
                 row.failure = runner.failed.get(record.id, "")
@@ -172,6 +185,8 @@ def card(row):
         if row.unanswered:
             text.append(f"\n\n{row.unanswered} unanswered question{'s' if row.unanswered != 1 else ''}. Press enter to answer.", YOU)
         elif row.needs_you:
+            if row.questions_notice:
+                text.append(f"\n\n{row.questions_notice}", YOU)
             text.append("\n\nPress enter to choose what happens next.", YOU)
     if row.parent:
         text.append(f"\nPart of     {row.parent}")
@@ -205,6 +220,8 @@ class Actions(ModalScreen):
                                  "or override it by choosing the outcome yourself.", YOU))
             if row.unanswered and row.transitions:
                 yield Label(Text("Unanswered questions remain; moving on now leaves them blank.", YOU))
+            if row.questions_notice:
+                yield Label(Text(row.questions_notice, YOU))
             yield OptionList(*options)
             yield Label(Text("enter: choose    esc: cancel", "dim"))
 
