@@ -165,11 +165,13 @@ def validate_links(result):
 
 class Repository:
     """Explicit backlog root; only the item-type directories contain items."""
-    def __init__(self, root, workflows=None, roles=None):
+    def __init__(self, root, workflows=None, roles=None, guard=None, notice=print):
         self.root = Path(root).resolve()
         self.workflow_dir = workflows
         self.roles = roles
         self._workflows = {}
+        self.guard = guard
+        self.notice = notice
 
     def workflow(self, name):
         if name not in self._workflows:
@@ -181,6 +183,8 @@ class Repository:
         if (self.root / ".git").exists():
             try:
                 with WRITE:
+                    if self.guard is not None:
+                        self.guard(self.root, self.notice)
                     git.commit_all(self.root, message)
             except git.GitError as exc:
                 raise InvalidRecord(f"could not commit the backlog: {exc}") from exc

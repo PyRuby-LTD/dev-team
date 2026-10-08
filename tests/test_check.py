@@ -49,6 +49,17 @@ class ProjectCheck(unittest.TestCase):
         self.assertIn("timed out after 1 seconds", output)
         self.assertEqual(127, check.run(self.directory, config=check.Check(["no-such-command-xyz"], "{name}", 1))[0])
 
+    def test_launch_outcomes_are_distinct_from_real_exit_codes(self):
+        for code in (124, 127):
+            with self.subTest(code=code):
+                result = check.run(self.directory, config=check.Check(["sh", "-c", f"exit {code}"], "{name}", 5))
+                self.assertEqual(code, result[0])
+                self.assertEqual("finished", result.status)
+        missing = check.run(self.directory, config=check.Check(["no-such-command-xyz"], "{name}", 1))
+        self.assertEqual("could not be started", missing.status)
+        slow = check.run(self.directory, config=check.Check(["sh", "-c", "sleep 2"], "{name}", 0.01))
+        self.assertEqual("timed out", slow.status)
+
     def test_configured_check_is_the_makefile_target(self):
         config = check.load()
         self.assertEqual((["make", "regression"], "TEST=x"), (config.command, config.one.format(name="x")))
@@ -133,8 +144,10 @@ class VerifyStep(unittest.TestCase):
         self.assertEqual("review", self.current().metadata["step"])
         body = self.current().body
         self.assertIn("## Test run\n\nRun by the harness", body)
-        self.assertIn("Passed: `the project check`", body)
-        self.assertIn("all good", body)
+        self.assertIn("passed (exit 0)", body)
+        self.assertNotIn("all good", body)
+        self.assertNotIn("```", body)
+        self.assertIn("duration", body)
         self.assertIn("STORY-001 verify (check): passed -> review", self.messages)
 
     def test_failure_returns_to_the_tester_and_the_result_is_replaced_next_time(self):
@@ -148,6 +161,43 @@ class VerifyStep(unittest.TestCase):
         self.assertIn("STORY-001 verify (check): failed -> test", self.messages)
         history = git.must(self.repo.root, "log", "--format=%s").splitlines()
         self.assertIn("STORY-001: failed -> test", history)
+
+    def test_verdict_is_opaque_and_launch_errors_have_no_exit_code(self):
+        self.repo.transition(self.story.id, "implemented")
+        self.repo.transition(self.story.id, "written")
+        step = self.repo.step(self.current())
+        cases = [
+            (check.Result(0, "FAILED Traceback"), "passed (exit 0)", "passed"),
+            (check.Result(124, "OK"), "failed (exit 124)", "failed"),
+            (check.Result(127, "OK"), "failed (exit 127)", "failed"),
+            (check.Result(124, "secret", "timed out"), "timed out", "failed"),
+            (check.Result(127, "secret", "could not be started"), "could not be started", "failed"),
+        ]
+        log = self.repo.root / "log" / self.story.id / "verify-unit.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        for outcome, expected, transition in cases:
+            with self.subTest(expected=expected):
+                self.results = [outcome]
+                # Test the record writer on the branch without running the later agent loop.
+                if self.current().metadata["step"] != "verify":
+                    self.repo.transition(self.story.id, "written")
+                with patch("devteam.config.ROOT", Path("/home/fixture/harness")), \
+                        patch("sys.executable", "/home/fixture/python/bin/python"), \
+                        patch("sys.prefix", "/home/fixture/python"):
+                    name, updated = self.runner.verify(self.current(), step, log)
+                body = updated.body
+                self.assertEqual(transition, name)
+                self.assertIn(expected, body)
+                self.assertNotIn(outcome[1], body)
+                self.assertNotIn(str(self.product), body)
+                self.assertNotIn(str(log), body)
+                self.assertNotIn("/home/fixture", body)
+                if outcome.status != "finished":
+                    self.assertNotIn("exit", body)
+                # The successful case ends at the human review step; return to verify.
+                if name == "passed":
+                    text = self.story.path.read_text().replace("step: review", "step: verify")
+                    self.story.path.write_text(text)
 
     def test_check_steps_count_towards_the_run_limit(self):
         self.results = [(1, "no\n")] * 10

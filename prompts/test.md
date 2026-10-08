@@ -8,9 +8,8 @@ Give each acceptance criterion in the item at least one test that exercises the
 running system. Run a single test with `{{harness_command}} check <test>`
 and the whole suite with `{{harness_command}} check`.
 
-If the item has a `## Test run` section showing a failure, the harness ran the
-suite after your last attempt and it failed. Work out whether the tests or the
-code are wrong.
+Read the latest workflow check log: {{verify_log}}. If it shows a failure,
+work out whether the tests or the code are wrong.
 
 Record under a `## Tests` heading in the item body, replacing any earlier one,
 which test covers each criterion and how to run one test on its own.
@@ -18,4 +17,6 @@ which test covers each criterion and how to run one test on its own.
 Choose `written` when every criterion is covered and the whole suite passes for
 you; the harness then runs it again. Choose `defect` when a test shows the code
 does not meet a criterion or breaks existing behaviour: name the failing test,
-its output and what it expected, and leave the test in place.
+what it expected and the relative path of the failing run’s log, and leave
+the test in place. The implementer’s latest workflow check log predates this
+run, so give the path printed by `dev-team check`.

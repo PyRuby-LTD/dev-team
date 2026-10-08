@@ -21,23 +21,34 @@ def load(path=None):
     return Check(list(spec["command"]), spec["one"], spec.get("timeout", 1800))
 
 
+class Result(tuple):
+    """Keep the public (code, output) pair, with a distinct launch outcome."""
+    def __new__(cls, code, output, status="finished"):
+        result = super().__new__(cls, (code, output))
+        result.status = status
+        return result
+
+
 def run(directory, name=None, log=None, config=None):
     """Run the whole check, or one named test; returns (exit code, combined output)."""
     config = config or load()
     argv = config.command + ([config.one.format(name=name)] if name else [])
+    status = "finished"
     try:
         proc = subprocess.run(argv, cwd=directory, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               text=True, errors="replace", timeout=config.timeout)
         code, output = proc.returncode, proc.stdout
     except subprocess.TimeoutExpired as exc:
+        status = "timed out"
         partial = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
         code, output = 124, partial + f"\ntimed out after {config.timeout} seconds\n"
     except OSError as exc:
+        status = "could not be started"
         code, output = 127, f"could not start {argv[0]}: {exc}\n"
     if log is not None:
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text(f"# {' '.join(argv)}\n# cwd: {directory}\n# exit {code}\n\n{output}")
-    return code, output
+    return Result(code, output, status)
 
 
 def tail(output, lines=TAIL_LINES):

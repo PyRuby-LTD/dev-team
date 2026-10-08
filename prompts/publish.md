@@ -2,6 +2,9 @@ Publish this work item from the repository at {{checkout}}. Branch {{branch}}
 has already been pushed to origin; its base branch is {{base}}. Do not run
 `git push` or `git commit` yourself.
 
+Do not put absolute paths, home directories or command output in the pull
+request body. Use repository-relative paths and check outcomes only.
+
 1. Look for an existing open pull request for {{branch}} before creating one:
    run `gh pr list --head {{branch}} --state open --json url`. If the lookup
    fails, report the failure; only a successful empty result means none exists.
