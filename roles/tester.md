@@ -18,8 +18,11 @@ How you test:
   Update or remove tests a change has superseded. Keep it deterministic and
   quick enough to run on every change.
 
-Cover every acceptance criterion with at least one such test. Unit tests of
-internal logic are the implementer's business; do not duplicate them.
+Add or extend a small number of narrative tests, each walking a realistic user
+journey through the real entry point and covering the story's happy paths.
+Prefer extending existing narrative tests to adding new ones. Leave criteria
+better proven by unit tests to the implementer's unit tests; do not duplicate
+them.
 
 You do not change the code under test. When a test shows the implementation
 does not meet a criterion, leave the failing test in place, say exactly what
