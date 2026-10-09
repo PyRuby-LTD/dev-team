@@ -73,102 +73,123 @@ The cheapest way to be wrong is already named in the Analysis and still holds: t
 ## Feedback
 
 - **analyse -> analysis:** An additional consideration is the implementer shouldn't run the full test suite as a default position. Running tests they create or in the module they are updating is sensible. The full test suite is run in a later step and failures passed back to implement and at the moment the full suite is being run too many times even for small isolated changes.
+- **rejected -> rejected:** def test_implement_step_hands_the_agent_judgement_led_unit_testing_and_targeted_runs(self): This is a poor test that just asserts on content of a role. It makes the code brittle and changes harder without giving any real assurances.
 
 ## Implementation
 
-Updated `roles/implementer.md` to make the implementer the main author of
-tests below end-to-end level, using judgement about which criteria merit unit
-tests. Retained the rules about plumbing, plain code and mocks, and added the
-prose exemption and guidance about adapting existing tests. Default test runs
-now cover changed tests and modified modules, plus tests named in returned
-findings. Other project checks still run, and the role describes later
-full-suite runs and returned failures without specifying a workflow route.
+Addressed the latest customer feedback by removing
+`tests/test_launcher.py::test_implement_step_hands_the_agent_judgement_led_unit_testing_and_targeted_runs`.
+It asserted phrases in role and prompt prose, making wording changes brittle
+without proving behaviour. No replacement wording test was added. The earlier
+Tests and Review sections describe that removed test and are historical.
 
-Updated `prompts/implement.md` to require a coverage decision for each
-criterion under `## Implementation`, including a reason when no test is
-provided. Retained direct unit-test execution and the full-suite timing.
+Read `roles/implementer.md` and `prompts/implement.md`: they already meet
+criteria 1–7, so no further wording changes were needed. The existing changes
+make the implementer responsible for worthwhile unit-level proof, allow
+judgement and prose/plumbing exemptions, recommend real collaborators and
+adapting existing tests, require targeted runs and rerunning named findings,
+retain other project checks and evidence reporting, and require the three-way
+coverage record. The role remains workflow-agnostic; the prompt retains the
+full-suite timing.
 
 Acceptance-criterion coverage notes (numbered in the order above):
 
-1. No unit test: this is role prose; checked by reading the ownership wording.
-2. No unit test: this is role prose; checked the precedence, mock guidance and
-   delegation of running-system criteria to the tester's narrative tests.
-3. No unit test: this is role prose; checked judgement, the prose exemption and
-   the options for extending or reworking existing tests.
-4. No unit test: this is role prose; checked default targeted runs and re-running
-   tests named in tester defects or review findings.
-5. No unit test: this is role prose; checked later full-suite execution and
-   returned failures without a workflow step or route.
-6. No unit test: this is prompt prose; checked the three coverage choices, the
-   reason note and the retained unit-test and full-suite instructions.
-7. No unit test: this is role prose; checked that other project checks and
-   reporting failures with captured evidence remain required.
-8. No unit test: this is a file-scope constraint; checked the diffs. Only the
-   two specified markdown files and this item body changed; evidence is saved
-   in the backlog logs. Whole-suite proof remains with workflow verification.
+1. No unit test: role prose; ownership and removal of the tester-ownership rule
+   were checked by reading the file.
+2. No unit test: role prose; mock guidance, plumbing/plain-code precedence and
+   delegation to the tester's narrative tests were checked by reading.
+3. No unit test: role prose; judgement, prose exemptions and adapting existing
+   tests were checked by reading; the old relaxed/hard-logic-only rule is gone.
+4. No unit test: role prose; default targeted runs and rerunning tests named in
+   tester defects or review findings were checked by reading.
+5. No unit test: role prose; later full-suite execution and returned failures
+   were checked by reading, with no workflow step or route specified.
+6. No unit test: prompt prose; all three coverage choices, the reason note and
+   retained direct-unit-test/full-suite timing instructions were checked by reading.
+7. No unit test: role prose; other checks and reporting failures with captured
+   evidence remain required, as checked by reading.
+8. No unit test: file-scope constraint, checked by inspecting the diff. This
+   revision removes the tester-added test specifically rejected by the customer,
+   restoring the story's overall scope to the two markdown files and item record.
+   Evidence logs are saved separately. Whole-suite proof remains with verification.
 
 Checks and results:
 
-- Direct unit-test run via `uv run python -m unittest` selecting
-  `tests.test_run_evidence.TestStoryFromStartToPublication.test_no_prompt_or_brief_tells_an_agent_to_read_or_paste_test_output_in_the_item`
-  and `tests.test_launcher.AgentsReachTheHarness.test_prompts_and_tester_brief_carry_the_checkout_command`:
-  initial attempt failed before tests started (exit 2), because the default uv
-  cache was read-only. Evidence: `backlog/log/STORY-016/targeted-tests.log`.
-  Retried with `UV_CACHE_DIR=/tmp/story-016-uv-cache`: both tests passed
-  (exit 0). Evidence: `backlog/log/STORY-016/targeted-tests-retry.log`.
-- `git diff --check`: passed (exit 0).
-  Evidence: `backlog/log/STORY-016/diff-check.log`.
-- No workflow check log existed to read. Did not run `dev-team check` or the
-  full suite, as criterion 8 reserves that proof for workflow verification.
-  The project provides no separate lint, type-check or build check target.
+- Read the latest workflow log,
+  `backlog/log/STORY-016/verify-20261009T133234970639.log`: the prior full suite
+  passed (276 tests, exit 0). This is existing workflow evidence, not a new run.
+- Re-ran the exact test named in the customer finding before deleting it,
+  using `.venv/bin/python -m unittest
+  tests.test_launcher.AgentsReachTheHarness.test_implement_step_hands_the_agent_judgement_led_unit_testing_and_targeted_runs`:
+  passed (1 test, exit 0). Evidence:
+  `backlog/log/STORY-016/rejected-test-before-removal.log`. Its passing result
+  does not address the customer's objection to the test's value; removal does.
+- Direct affected-module run, `.venv/bin/python -m unittest tests.test_launcher`:
+  failed (45 tests, 25 failures and 2 errors, exit 1) because launcher subprocesses
+  could not write to the default uv cache. Evidence:
+  `backlog/log/STORY-016/launcher-tests-after-removal.log`.
+  Retried the same command with `UV_CACHE_DIR=/tmp/story-016-uv-cache`:
+  passed (45 tests, exit 0). Evidence:
+  `backlog/log/STORY-016/launcher-tests-after-removal-retry.log`.
+- `git diff --check` and `git -C backlog diff --check`: passed (exit 0).
+  Evidence: `backlog/log/STORY-016/revision-diff-check.log`.
+- Inspected the removal and updated item diffs. Evidence:
+  `backlog/log/STORY-016/revision-code-diff.log` and
+  `backlog/log/STORY-016/revision-item-diff.log`.
+- No new unit tests: the acceptance criteria are prose and scope checks; the
+  customer explicitly rejected the phrase-pinning test. No narrative suite was added.
+- Did not run `dev-team check` or the full suite, as criterion 8 leaves that
+  proof to workflow verification. The Makefile provides only regression testing;
+  there are no separate configured lint, type-check or build check targets.
 
-No criteria are blocked. As noted in the Challenge, the README sentence about
-testing only difficult logic remains stale; changing it is outside criterion 8.
+No criteria are blocked. The README's hard-logic-only sentence remains outside
+scope, as already noted in the Challenge and Review. No PR comments require
+further changes.
 
 ## Tests
 
-Narrative test: `tests.test_launcher.AgentsReachTheHarness.test_implement_step_hands_the_agent_judgement_led_unit_testing_and_targeted_runs`
-builds the implementer's brief and the rendered `implement` prompt through the
-same `config.load_roles` and `render` paths the launcher uses, and checks what
-the agent is handed: tests for criteria owned by the implementer with the
-prose and plain-code exemptions, extending or reworking existing tests,
-targeted runs by default with re-runs of tests named in findings, the full
-suite run later, other project checks still run, the three-way coverage record
-with a reason, and that the old "relaxed approach", "tester's job" and "run
-whatever tests or checks" wording is gone. It covers criteria 1 to 7 at the
-level of key phrases. The implementer is a codex role, for which the suite has
-no stub, so the test stops short of launching it.
+No narrative test added. Every criterion is a statement about the wording of
+`roles/implementer.md` or `prompts/implement.md`, or about which files change.
+None describes behaviour of the running system, and the customer rejected the
+earlier phrase-pinning test as brittle without real assurance, so it stays
+removed and nothing replaces it. Existing narrative tests are unaffected.
 
-Left to reading the files: the precise sense of each criterion (wording
-quality), and criterion 8 (file scope), which is a diff matter and is not a
-behaviour of the running system.
+Left to reading the files: criteria 1 to 7 (role and prompt prose) and
+criterion 8 (file scope, a diff matter). The implementer's record gives a
+"no unit test, and why" note for each.
 
-Run one test: `dev-team check tests.test_launcher.AgentsReachTheHarness.test_implement_step_hands_the_agent_judgement_led_unit_testing_and_targeted_runs`.
-The whole suite passed (276 tests): `backlog/log/check/20261009T133037424915.log`.
+Run one test on its own: `dev-team check <module.Class.test_name>`, for example
+`dev-team check tests.test_run_evidence`.
+The whole suite passed (275 tests): `backlog/log/check/20261009T144100641311.log`.
 
 ## Test run
 
-Run by the harness, 2026-10-09 13:34:22 UTC: passed (exit 0); duration 107.200 seconds.
+Run by the harness, 2026-10-09 14:44:51 UTC: passed (exit 0); duration 106.532 seconds.
 
 ## Review
 
-No blocking findings. Every criterion is met and the wording is pinned by a passing test.
-
-Evidence: the harness ran the whole suite on this branch (276 tests, exit 0): `backlog/log/STORY-016/verify-20261009T133234970639.log`.
+No blocking findings. Every criterion is met by the wording in the two files. Evidence: the harness ran the whole suite on this branch (275 tests, exit 0): `backlog/log/STORY-016/verify-20261009T144305234727.log`.
 
 Notes, most significant first:
 
-1. Criterion 8 says only the two markdown files and the item record change; the diff also adds `tests/test_launcher.py::test_implement_step_hands_the_agent_judgement_led_unit_testing_and_targeted_runs`. It comes from the tester's step, is additive, and is what proves criteria 1 to 7, so I do not treat it as scope creep. The customer may want criterion 8 read as excluding the tester's narrative test.
-2. The pinning test checks key phrases, so it would pass a rewording that kept the phrases but changed the sense. That is the limit of what a phrase check can show. I read the files for the sense.
-3. The `README.md` sentence "writes unit tests only where the logic is hard to get right" is now stale. It was flagged in the Challenge and is correctly left alone under criterion 8.
+1. The earlier review described a phrase-pinning test in `tests/test_launcher.py`. The customer rejected it and it is gone: the diff against `main` touches only `roles/implementer.md`, `prompts/implement.md` and the item record (`docs/work-items/STORY-016.md`). Criteria 1 to 7 therefore rest on reading the files, which is what the customer asked for; no test would fail if the wording regressed. That is accepted, not a defect.
+2. The `README.md` sentence "writes unit tests only where the logic is hard to get right" is now stale. It was flagged in the Challenge and is correctly left alone under criterion 8.
 
-Criteria satisfied:
+Criteria satisfied (read from `git diff main...devteam/STORY-016`):
 
-1. `roles/implementer.md`: "main author of tests for acceptance criteria that can be proven below the end-to-end level"; the "automation tester's job" sentence is removed. Test asserts the phrase and the absence.
-2. Mocks and plumbing/plain-code guidance kept; "That rule takes precedence ... such a criterion needs no unit test"; criteria needing the running system are left to the tester's narrative tests.
-3. "relaxed approach" and "only where logic is hard" are gone. The role expects a unit test for each criterion worth proving, with judgement, and says prose changes (prompt or role markdown) need none. For code changes, an added assertion or a reworked superseded test may serve better.
-4. "By default, run the tests you wrote or changed and the tests of the modules you modified, not the full test suite", plus re-running tests named in a tester defect or review finding.
-5. "The full suite is run later; failures that are yours to fix are passed back to you", with no workflow step or route named.
-6. `prompts/implement.md` asks, per criterion, for unit-tested, left to narrative tests, or no test and why, with the reason as a note under the heading. "Run your unit tests directly; the full suite is run for you after the tester's step" is kept.
-7. "Run whatever tests or checks" is replaced. Only the test-suite part is narrowed; linters, type checks and builds still run; results including failures are reported with output kept in the evidence logs.
-8. Met in substance. See note 1.
+1. `roles/implementer.md`: "main author of tests for acceptance criteria that can be proven below the end-to-end level"; the "automation tester's job" sentence is removed.
+2. Mock avoidance and the plumbing/plain-code rule are kept; "That rule takes precedence ... such a criterion needs no unit test"; criteria needing the running system are left to the tester's narrative tests.
+3. "relaxed approach" and "only where logic is hard" are gone. A unit test is expected for each criterion worth proving, with judgement. Prose changes (prompt or role markdown) need none. For code, an added assertion or a reworked superseded test may serve better.
+4. "By default, run the tests you wrote or changed and the tests of the modules you modified, not the full test suite"; re-run tests named in a tester defect or review finding.
+5. "The full suite is run later; failures that are yours to fix are passed back to you", naming no step or route.
+6. `prompts/implement.md` asks per criterion for unit-tested, left to narrative tests, or no test and why, with the reason as a note under the heading. Line 7 still says "Run your unit tests directly; the full suite is" run after the tester's step.
+7. "Run whatever tests or checks" is replaced; only the test suite is narrowed, linters, type checks and builds still run, and results including failures are reported with output in the evidence logs.
+8. Only the two files and the item record change.
+
+## Pull request
+
+https://github.com/PyRuby-LTD/dev-team/pull/13
+
+## Pull request feedback
+
+There are no comments on this pull request.
