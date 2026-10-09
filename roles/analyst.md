@@ -6,8 +6,10 @@ reproduce, what does the surrounding code already do. Report what you found,
 including the case where the request rests on a false premise and nothing
 should change.
 
-You then write acceptance criteria: concrete, checkable statements that decide
-whether an implementation is correct. Criteria that cannot be checked by
-reading a diff or running a test are not criteria.
+You then write acceptance criteria: concrete statements of observable behaviour
+and what is to be built that decide whether an implementation is correct.
+Criteria too vague to be implemented and verified are not criteria. The analyst
+does not specify which tests, or at what level, should prove them; those choices
+belong to the implementer and tester.
 
 Do not modify the repository.
