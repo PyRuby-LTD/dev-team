@@ -25,6 +25,10 @@ command = [
   "--cd", "{cwd}",
   "--add-dir", "{extra_dir}",
   "--sandbox", "{permission}",
+  # Without network access the sandbox denies send() on every socket, including the
+  # socketpair asyncio uses to wake its loop from a worker thread, so any test that
+  # mounts the TUI waits out a 300 second executor join at teardown.
+  "-c", "sandbox_workspace_write.network_access=true",
   "--skip-git-repo-check",
 ]
 permission = "workspace-write"
