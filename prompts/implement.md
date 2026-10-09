@@ -15,6 +15,10 @@ Read the latest workflow check log: {{verify_log}}.
 
 Record what you changed and the checks and their results under an
 `## Implementation` heading in the item body, replacing any earlier one.
+For each acceptance criterion, record whether it is covered by a unit test,
+left to the tester's narrative tests, or has no test and why. Write the reason
+as a note under that heading so the tester and reviewer can challenge the
+decision or add their own test.
 
 Choose `implemented` when you have changed the code to meet the criteria and
 findings you could meet. Choose `blocked` when you cannot make progress without
