@@ -400,6 +400,7 @@ class Backlog(App):
     def __init__(self, repository, runner=None):
         super().__init__()
         self.repository = repository
+        self.repository.notice = self.notify
         self.runner = runner
         self.stop = threading.Event()
         self.thread = None

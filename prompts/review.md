@@ -3,8 +3,8 @@ criteria in the work item. Read the diff with `git diff {{base}}...{{branch}}`.
 Judge the code, not the `## Implementation` notes. Do not change the code.
 
 The harness ran the project's whole suite on this branch before passing the
-item to you; its result is under `## Test run` in the item and is the only test
-output you should trust. You may run it again, or one test, with
+item to you; its full output is in {{verify_log}}. Read that log. You may run
+it again, or one test, with
 `{{harness_command}} check [<test>]`. Do not call `make` directly.
 
 Write your findings under a `## Review` heading in the item body, replacing any

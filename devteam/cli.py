@@ -1,6 +1,8 @@
 import argparse
 from pathlib import Path
 
+from .evidence import PathGuard
+
 
 def locate(args):
     """The product's checkout (None outside git) and its backlog directory."""
@@ -20,7 +22,8 @@ def cmd_backlog(args):
     from .backlog import InvalidRecord, Repository
     from .workflow import InvalidWorkflow
 
-    repo = Repository(locate(args)[1])
+    checkout, backlog = locate(args)
+    repo = Repository(backlog, guard=PathGuard(checkout), notice=print)
     try:
         if args.backlog_action == "move":
             record = repo.transition(args.id, args.transition, args.note or "")
@@ -51,7 +54,7 @@ def cmd_run(args):
 
     checkout, backlog = locate(args)
     try:
-        Runner(Repository(backlog), checkout=checkout).run(once=args.once)
+        Runner(Repository(backlog, guard=PathGuard(checkout)), checkout=checkout).run(once=args.once)
     except KeyboardInterrupt:
         pass
 
@@ -63,7 +66,8 @@ def cmd_tui(args):
     from .runner import Runner
 
     checkout, backlog = locate(args)
-    tui.run(Repository(backlog), Runner(Repository(backlog), checkout=checkout))
+    tui.run(Repository(backlog, guard=PathGuard(checkout)),
+            Runner(Repository(backlog, guard=PathGuard(checkout)), checkout=checkout))
 
 
 def cmd_check(args):
@@ -77,7 +81,7 @@ def cmd_check(args):
     code, output = check.run(directory, args.test, log)
     # Agents read this, so a pass stays short and a failure shows only its end.
     print(check.tail(output, 8 if code == 0 else check.TAIL_LINES))
-    print(f"\ncheck {'passed' if code == 0 else f'FAILED (exit {code})'}; full output: {log}")
+    print(f"\ncheck {'passed' if code == 0 else f'FAILED (exit {code})'}; full output: {log.relative_to(directory)}")
     raise SystemExit(code)
 
 

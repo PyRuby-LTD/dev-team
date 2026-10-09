@@ -11,7 +11,9 @@ If `## Pull request feedback` is present, address every comment there. It holds
 the whole history of the PR with dates; comments the code already meets need no
 further change. The latest `## Feedback` note takes precedence.
 
-Record what you changed and the actual output of the checks under an
+Read the latest workflow check log: {{verify_log}}.
+
+Record what you changed and the checks and their results under an
 `## Implementation` heading in the item body, replacing any earlier one.
 
 Choose `implemented` when you have changed the code to meet the criteria and

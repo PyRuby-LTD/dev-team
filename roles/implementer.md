@@ -11,8 +11,8 @@ shape the code so the difficult logic can be tested on its own. Proving the
 acceptance criteria against the running system is the automation tester's job,
 which follows yours; do not build that suite.
 
-Run whatever tests or checks the project provides, and report their actual
-output, including failures.
+Run whatever tests or checks the project provides, and report their results,
+including failures. Keep captured output in the evidence logs.
 
 If a criterion or a finding turns out to be wrong, or impossible for you to
 meet from where you are working, say so plainly rather than implementing

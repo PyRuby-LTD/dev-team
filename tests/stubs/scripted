@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""Stand-in for the claude and codex CLIs that follows a plan chosen by the test.
+
+STUB_PLAN is a JSON list; each invocation takes the next entry:
+  {"sh": "<shell run in the working directory>", "reply": "<transition>", "exit": <code>}
+The prompt is saved to STUB_PROMPTS/<n>-<engine>.txt. With no entry left the stub exits 97.
+"""
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+engine = pathlib.Path(sys.argv[0]).name
+prompts = pathlib.Path(os.environ["STUB_PROMPTS"])
+prompts.mkdir(parents=True, exist_ok=True)
+number = len(list(prompts.glob("*.txt"))) + 1
+(prompts / f"{number:02d}-{engine}.txt").write_text(sys.argv[2])
+plan = json.loads(pathlib.Path(os.environ["STUB_PLAN"]).read_text())
+if number > len(plan):
+    sys.exit(97)
+entry = plan[number - 1]
+if entry.get("sh"):
+    subprocess.run(entry["sh"], shell=True, check=False, stdout=open(os.devnull, "w"), stderr=subprocess.STDOUT)
+reply = f"Done.\nTRANSITION: {entry['reply']}" if entry.get("reply") else "No transition."
+if engine == "claude":
+    print(json.dumps({"type": "result", "subtype": "success", "result": reply}))
+else:
+    print(reply)
+sys.exit(entry.get("exit", 0))

@@ -10,6 +10,7 @@ from . import engines, git, questions
 from .backlog import InvalidRecord
 from .config import ROOT, harness_command, load_roles
 from .workflow import InvalidWorkflow
+from .evidence import PathGuard
 
 REPLY = re.compile(r"TRANSITION:\s*([A-Za-z0-9_-]+)\W*\Z")
 RECORDS = "docs/work-items"
@@ -23,6 +24,14 @@ The work item is the file {{item}}. Read it first; it is the full context.
 You may edit the body of that file. Do not change its front matter.
 If it has a `## Feedback` section, the last entry there is the customer's reason
 for sending the item to you; act on it.
+
+## Run evidence
+
+For `dev-team check`, cite the path the command prints: it has already saved
+all output. Do not copy that output. Save any other command output you capture
+under {{evidence_dir}} (the backlog's log/{{id}}/ directory).
+Name checks and their results in the item without pasting output. Write paths
+relative to the repository, and write the harness command as `dev-team`.
 
 ## Finishing
 
@@ -166,6 +175,9 @@ class Runner:
         self.max_runs = max_runs
         self.checkout = checkout
         self.check = check
+        if repository.guard is None:
+            repository.guard = PathGuard(checkout)
+        repository.notice = lambda message: self.report(message)
         self.failed = {}
         self.waiting = {}
         self.active = None
@@ -213,7 +225,14 @@ class Runner:
     def invoke(self, record, step, log):
         root = self.repository.root
         role = self.roles[step.role]
+        workflow = self.repository.workflow(record.metadata["workflow"])
+        check_names = [candidate.name for candidate in workflow.steps.values() if candidate.check]
+        evidence = root / "log" / record.id
+        logs = sorted((path for name in check_names for path in evidence.glob(f"{name}-*.log")),
+                      key=lambda path: path.name.rsplit("-", 1)[-1])
         values = {
+            "evidence_dir": str(evidence),
+            "verify_log": str(logs[-1]) if logs else "No workflow check has run yet.",
             "item": str(record.path),
             "id": record.id,
             "transitions": "\n".join(f"- `{name}` moves the item to `{target}`" for name, target in step.transitions.items()),
@@ -228,7 +247,13 @@ class Runner:
         if role.record:
             copy = self.checkout / RECORDS / f"{record.id}.md"
             copy.parent.mkdir(parents=True, exist_ok=True)
-            copy.write_bytes(record.path.read_bytes())
+            masked, numbers = self.repository.guard.mask(record.body)
+            text = record.path.read_bytes().decode("utf-8")
+            front = text[:len(text) - len(record.body)]
+            copy.write_bytes((front + masked).encode("utf-8"))
+            if numbers:
+                offset = len(front.splitlines())
+                self.report(f"{record.id}: copy masked lines {', '.join(str(offset + n) for n in numbers)}")
             git.commit_all(self.checkout, f"{record.id}: record the work item", str(copy))
         if role.push:
             git.must(self.checkout, "push", "-q", "-u", "origin", branch)
@@ -269,17 +294,24 @@ class Runner:
         self.count_run(record)
         self.active = record.id
         self.report(f"{record.id} {step.name}: check started")
+        started = time.monotonic()
         try:
-            code, output = self.check(self.checkout, log=log)
+            outcome = self.check(self.checkout, log=log)
+            code, _ = outcome
         finally:
             self.active = None
-        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        result = f"Run by the harness, {stamp}. Full output: `{log}`\n\n" + checks.summary(code, output, "the project check")
+        duration = time.monotonic() - started
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        status = getattr(outcome, "status", "finished")
+        verdict = status
+        if status == "finished":
+            verdict = ("passed" if code == 0 else "failed") + f" (exit {code})"
+        result = f"Run by the harness, {stamp}: {verdict}; duration {duration:.3f} seconds.\n"
         current = self.repository.scan().valid.get(record.id)
         if current is None:
             raise StepFailed("the item is missing or invalid after the check")
         self.repository.write_body(record.id, questions.replace_section(current.body, "Test run", result), "test run")
-        name = "passed" if code == 0 else "failed"
+        name = "passed" if code == 0 and status == "finished" else "failed"
         return name, self.repository.transition(record.id, name)
 
     def run_item(self, record, step):
