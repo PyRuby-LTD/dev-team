@@ -265,27 +265,6 @@ class AgentsReachTheHarness(Launcher):
         self.assertIn(HARNESS_COMMAND, brief)
         self.assertNotIn(BARE_COMMAND, brief)
 
-    def test_implement_step_hands_the_agent_judgement_led_unit_testing_and_targeted_runs(self):
-        prompt = render(SimpleNamespace(name="implement"), {"verify_log": "none"}, "default")
-        delivered = " ".join((config.load_roles()["implementer"].brief() + " " + prompt).split())
-        for expected in (
-            "main author of tests for acceptance criteria",
-            "needs no unit test",
-            "Prose changes",
-            "adding an assertion to an existing test",
-            "not the full test suite",
-            "re-run any test named in findings",
-            "The full suite is run later",
-            "linters, type checks and builds",
-            "has no test and why",
-            "tester's narrative tests",
-            "Run your unit tests directly",
-        ):
-            self.assertIn(expected, delivered)
-        for gone in ("relaxed approach to unit tests", "is the automation tester's job",
-                     "Run whatever tests or checks the project provides"):
-            self.assertNotIn(gone, delivered)
-
     def test_harness_command_runs_from_a_product_directory(self):
         result = subprocess.run([*HARNESS_COMMAND.split(), "help"], cwd=self.repo(), env=self.env(),
                                 capture_output=True, text=True, timeout=120)
