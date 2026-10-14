@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+"""Stand-in for claude that proves steps overlap in time.
+
+STUB_SCRIPT is a JSON object keyed by item id; each value is a list with one entry per invocation for
+that item: {"wait_for": [ids], "wait_for_any": [ids], "sh": "<shell in the working directory>", "reply": "<transition>"}.
+The invocation announces itself with a marker file in STUB_MARKERS, then waits (up to 10 seconds, else
+exit 3) until the markers of every item in wait_for exist, so it only finishes if those steps started too.
+"""
+import json
+import os
+import pathlib
+import re
+import subprocess
+import sys
+import time
+
+markers = pathlib.Path(os.environ["STUB_MARKERS"])
+markers.mkdir(parents=True, exist_ok=True)
+item = re.search(r"STORY-\d+", sys.argv[2]).group(0)
+turn = len(list(markers.glob(f"{item}.*")))
+entry = json.loads(pathlib.Path(os.environ["STUB_SCRIPT"]).read_text())[item][turn]
+(markers / f"{item}.{turn}").write_text("started")
+deadline = time.monotonic() + 10
+for other in entry.get("wait_for", []):
+    while not (markers / f"{other}.0").exists():
+        if time.monotonic() > deadline:
+            sys.exit(3)
+        time.sleep(0.02)
+if entry.get("wait_for_any"):
+    while not any((markers / f"{other}.0").exists() for other in entry["wait_for_any"]):
+        if time.monotonic() > deadline:
+            sys.exit(3)
+        time.sleep(0.02)
+if entry.get("sh"):
+    subprocess.run(entry["sh"], shell=True, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+reply = f"Done.\nTRANSITION: {entry['reply']}"
+if pathlib.Path(sys.argv[0]).name == "claude":
+    print(json.dumps({"type": "result", "subtype": "success", "result": reply}))
+else:
+    print(reply)
