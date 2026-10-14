@@ -404,39 +404,43 @@ class TestBacklogCommits(Product):
         self.assert_never_committed()
         self.assert_saved_unmasked()
 
-    def test_a_path_written_to_a_different_item_is_masked_in_the_commit(self):
+    def test_a_path_written_to_a_different_item_stays_uncommitted_and_unmasked(self):
         self.devteam("backlog", "capture", "story", "Other", "--id", "STORY-002", "--parent", "EPIC-001")
         self.plan({"sh": self.leak("stories/STORY-002.md"), "reply": "analysed"})
         self.run_once()
         self.assert_never_committed()
-        self.assertIn("Leaked: <path>", self.text(self.backlog / "stories" / "STORY-002.md"))
-        self.assert_saved_unmasked("STORY-002")
+        self.assertIn(f"Leaked: {HOME}/src/thing.py", self.text(self.backlog / "stories" / "STORY-002.md"))
+        self.assertEqual("stories/STORY-002.md", self.git(self.backlog, "diff", "--name-only").strip())
+        self.assertEqual([], self.saved("STORY-002"))
         self.assertEqual([], self.saved("STORY-001"))
 
     def test_an_item_captured_by_another_process_while_the_engine_runs_commits_nothing_tripping(self):
         capture = (f'printf "Body\\n" > "$BACKLOG/../second.md"; PYTHONPATH="$ROOT" $DEVTEAM backlog capture story '
                    f'Second --id STORY-002 --parent EPIC-001 --file "$BACKLOG/../second.md" > "$BACKLOG/../capture.out" 2>&1')
         self.plan({"sh": f"{self.leak()}; {capture}", "reply": "analysed"})
-        self.run_once()
+        output = self.run_once()
         self.assertIn("STORY-002: captured at captured", self.subjects())
         self.assert_never_committed()
         self.assert_saved_unmasked()
         notice = (self.product / "capture.out").read_text()
-        self.assertIn("masked lines", notice)
-        self.assertIn("backlog/log/STORY-001/unmasked-", notice)
+        self.assertNotIn("masked lines", notice)
+        self.assertIn("masked lines", output)
+        self.assertIn("backlog/log/STORY-001/unmasked-", output)
         self.assertNotIn(NAME, notice)
+        capture_commit = self.git(self.backlog, "log", "-1", "--format=%H", "--grep=^STORY-002: captured").strip()
+        self.assertEqual("stories/STORY-002.md",
+                         self.git(self.backlog, "show", "--format=", "--name-only", capture_commit).strip())
 
-    def test_a_non_markdown_file_beside_the_item_and_a_file_in_the_backlog_root_are_masked(self):
+    def test_unrelated_non_markdown_and_root_files_stay_untracked_and_unmasked(self):
         sh = f"{self.leak('stories/notes.txt')}; {self.leak('brief.md', f'cwd={HOME}/work')}"
         self.plan({"sh": sh, "reply": "analysed"})
         self.run_once()
         self.assert_never_committed()
-        self.assertIn("Leaked: <path>", (self.backlog / "stories" / "notes.txt").read_text())
-        self.assertIn("cwd=<path>", (self.backlog / "brief.md").read_text())
-        unmasked = {path.name.split("-", 1)[1]: path for path in (self.backlog / "log" / "unmasked").iterdir()}
-        self.assertEqual({"stories__notes.txt", "brief.md"}, set(unmasked))
-        for path in unmasked.values():
-            self.assertIn(NAME, path.read_text())
+        self.assertIn(f"Leaked: {HOME}/src/thing.py", (self.backlog / "stories" / "notes.txt").read_text())
+        self.assertIn(f"cwd={HOME}/work", (self.backlog / "brief.md").read_text())
+        self.assertFalse((self.backlog / "log" / "unmasked").exists())
+        self.assertEqual({"brief.md", "stories/notes.txt"},
+                         set(self.git(self.backlog, "ls-files", "--others", "--exclude-standard").splitlines()))
         self.assertEqual("challenge", self.step())
 
     def test_an_item_with_broken_front_matter_is_masked_and_saved_under_its_file_stem(self):

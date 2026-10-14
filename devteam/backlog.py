@@ -1,5 +1,7 @@
 """Markdown work items. Front matter holds identity, hierarchy and the current workflow step."""
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+import fcntl
 from pathlib import Path
 import os
 import re
@@ -55,6 +57,31 @@ DEFAULT_WORKFLOW = "default"
 
 # The terminal UI and the runner write from different threads.
 WRITE = threading.RLock()
+HELD_LOCKS = threading.local()
+
+
+@contextmanager
+def mutation(root):
+    """Take the process lock before WRITE; reuse it for nested calls on this thread."""
+    held = getattr(HELD_LOCKS, "roots", None)
+    if held is None:
+        held = HELD_LOCKS.roots = set()
+    key = (os.getpid(), root)
+    if key in held:
+        with WRITE:
+            yield
+        return
+    lock = root / "log" / "backlog.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with lock.open("a") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        held.add(key)
+        try:
+            with WRITE:
+                yield
+        finally:
+            held.remove(key)
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def valid_id(value):
@@ -178,14 +205,14 @@ class Repository:
             self._workflows[name] = workflows.load(name, self.workflow_dir, self.roles)
         return self._workflows[name]
 
-    def commit(self, message):
+    def commit(self, message, *paths):
         # Only a backlog that is its own git working tree is versioned by the harness.
         if (self.root / ".git").exists():
             try:
-                with WRITE:
+                with mutation(self.root):
                     if self.guard is not None:
-                        self.guard(self.root, self.notice)
-                    git.commit_all(self.root, message)
+                        self.guard(self.root, self.notice, *paths)
+                    git.commit_all(self.root, message, *paths)
             except git.GitError as exc:
                 raise InvalidRecord(f"could not commit the backlog: {exc}") from exc
 
@@ -219,7 +246,7 @@ class Repository:
         return validate_links(result)
 
     def create(self, kind, title, body="", *, parent=None, item_id=None):
-        with WRITE:
+        with mutation(self.root):
             return self._create(kind, title, body, parent, item_id)
 
     def _create(self, kind, title, body, parent, item_id):
@@ -251,14 +278,14 @@ class Repository:
         record.path.parent.mkdir(parents=True, exist_ok=True)
         with record.path.open("xb") as fh:
             fh.write(record.render().encode("utf-8"))
-        self.commit(f"{item_id}: captured" + (f" at {metadata['step']}" if kind != "epic" else ""))
+        self.commit(f"{item_id}: captured" + (f" at {metadata['step']}" if kind != "epic" else ""), record.path)
         return record
 
     def transition(self, item_id, name, note=""):
         """Apply a transition; a note is first recorded in the body as feedback for the next owner."""
         from . import questions
 
-        with WRITE:
+        with mutation(self.root):
             if note.strip():
                 record = self.scan().valid.get(item_id)
                 if record is not None and record.metadata["type"] != "epic":
@@ -270,14 +297,14 @@ class Repository:
 
     def write_body(self, item_id, body, message):
         """Replace an item's body, leaving its front matter text exactly as it is."""
-        with WRITE:
+        with mutation(self.root):
             record = self.scan().valid.get(item_id)
             if record is None:
                 raise InvalidRecord(f"{item_id} is missing or invalid; run validate")
             text = record.path.read_bytes().decode("utf-8")
             front = text[:len(text) - len(record.body)]
             self._replace(record.path, front + body)
-            self.commit(f"{item_id}: {message}")
+            self.commit(f"{item_id}: {message}", record.path)
 
     def _replace(self, path, text):
         temporary = path.with_name(path.name + ".tmp")
@@ -307,5 +334,5 @@ class Repository:
         if updated.metadata["step"] != target or updated.body != record.body:
             raise InvalidRecord(f"could not rewrite the step line in {record.path}")
         self._replace(record.path, text)
-        self.commit(f"{item_id}: {name} -> {target}")
+        self.commit(f"{item_id}: {name} -> {target}", record.path)
         return updated

@@ -341,7 +341,7 @@ class Runner:
             self.failed[record.id] = str(exc)
             self.report(f"{label}: FAILED - {exc}; still at {step.name}, not retried until restart; see {log}")
             try:
-                self.repository.commit(f"{record.id}: {step.name} failed")
+                self.repository.commit(f"{record.id}: {step.name} failed", record.path)
             except InvalidRecord:
                 pass
             return True
