@@ -96,7 +96,7 @@ def rows(repository, runner=None):
                 row.unanswered = sum(not question.answered for question in questions.parse(record.body))
                 row.questions_step = any(source.transitions.get("questions") == step.name for source in steps.values())
             if runner is not None and not row.needs_you:
-                row.running = runner.active == record.id
+                row.running = record.id in runner.active_ids()
                 row.failure = runner.failed.get(record.id, "")
                 row.held = "" if row.running else runner.waiting.get(record.id, "")
         result.append(row)
@@ -445,7 +445,8 @@ class Backlog(App):
         self.item_tree.focus()
         if self.runner is not None:
             self.runner.report = lambda message: self.from_agents(self.agent_report, message)
-            self.runner.on_line = lambda line: self.from_agents(self.agent_output, line)
+            self.runner.on_line = lambda item_id, line: self.from_agents(self.agent_output, f"{item_id} | {line}")
+            self.runner.on_change = lambda: self.from_agents(self.agents_changed)
         self.agent_log.can_focus = False
         self.output_log.can_focus = False
         self.agents_title()
@@ -600,6 +601,8 @@ class Backlog(App):
             log.border_title = "Agents: not available"
         elif self.thread is not None and not self.stop.is_set():
             log.border_title = "Agents: running - s to stop"
+        elif self.runner.active_ids():
+            log.border_title = "Agents: stopping - waiting for " + ", ".join(self.runner.active_ids())
         else:
             log.border_title = "Agents: stopped - s to start; agent-owned steps wait until then"
 
@@ -627,20 +630,16 @@ class Backlog(App):
             self.output_log.write(self.output_buffer.popleft())
         self.output_ready = True
 
-    def agent_loop(self):
-        while not self.stop.is_set():
-            ran = 0
-            try:
-                for record, step in self.runner.pending():
-                    if self.stop.is_set():
-                        break
-                    ran += self.runner.run_item(record, step)
-            except Exception as exc:
-                self.runner.report(f"agents stopped after an error: {exc}")
-                self.stop.set()
-            if not ran:
-                self.stop.wait(REFRESH_SECONDS)
-        self.thread = None
+    def agents_changed(self):
+        self.action_reload()
+        self.agents_title()
+
+    def agent_loop(self, stop=None):
+        stop = self.stop if stop is None else stop
+        self.runner.run(interval=REFRESH_SECONDS, stop=stop)
+        # An older loop finishing must not clear a newly started dispatcher.
+        if self.thread is threading.current_thread():
+            self.thread = None
         self.from_agents(self.agents_title)
 
     def from_agents(self, callback, *args):
@@ -657,13 +656,14 @@ class Backlog(App):
     def action_toggle_agents(self):
         if self.runner is None:
             return
-        if self.thread is not None:
+        if self.thread is not None and not self.stop.is_set():
             self.stop.set()
-            if self.runner.active:
-                self.notify(f"Stopping once the agent on {self.runner.active} finishes.")
+            ids = self.runner.active_ids()
+            if ids:
+                self.notify(f"Stopping once the agents on {', '.join(ids)} finish.")
         else:
             self.stop = threading.Event()
-            self.thread = threading.Thread(target=self.agent_loop, daemon=True)
+            self.thread = threading.Thread(target=self.agent_loop, args=(self.stop,), daemon=True)
             self.thread.start()
         self.agents_title()
 
@@ -683,8 +683,8 @@ class Backlog(App):
             self.action_reload()
 
     def action_quit(self):
-        if self.runner is not None and self.runner.active:
-            message = f"An agent is still working on {self.runner.active}. Quit and abandon that run?"
+        if self.runner is not None and self.runner.active_ids():
+            message = f"Agents are still working on {', '.join(self.runner.active_ids())}. Quit and abandon those runs?"
             self.push_screen(Confirm(message), lambda yes: self.exit() if yes else None)
         else:
             self.exit()

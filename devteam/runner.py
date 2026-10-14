@@ -3,6 +3,8 @@ import json
 import re
 import subprocess
 import time
+import threading
+from concurrent.futures import Future
 from datetime import datetime, timezone
 
 from . import check as checks
@@ -178,15 +180,72 @@ class Runner:
         if repository.guard is None:
             repository.guard = PathGuard(checkout)
         repository.notice = lambda message: self.report(message)
-        self.failed = {}
-        self.waiting = {}
-        self.active = None
-        self.runs = {}
+        self.lock = threading.RLock()
+        self._failed = {}
+        self._waiting = {}
+        self._active = set()
+        self._runs = {}
+        self.checkout_user = None
+        self.on_change = None
+
+    @property
+    def failed(self):
+        with self.lock:
+            return dict(self._failed)
+
+    @property
+    def waiting(self):
+        with self.lock:
+            return dict(self._waiting)
+
+    @property
+    def runs(self):
+        with self.lock:
+            return dict(self._runs)
+
+    @property
+    def active(self):
+        with self.lock:
+            return set(self._active)
+
+    def active_ids(self):
+        with self.lock:
+            return sorted(self._active)
+
+    def uses_checkout(self, step):
+        return step.check or (step.harness and step.action == "merged") or (
+            step.role and self.roles[step.role].branch)
+
+    def claim(self, record, step):
+        reason = None
+        with self.lock:
+            if record.id in self._active or record.id in self._failed:
+                return False
+            current = self.repository.scan().valid.get(record.id)
+            if current is None or current.metadata != record.metadata:
+                return False
+            if self.uses_checkout(step):
+                if self.checkout_user is not None:
+                    reason = f"waiting for {self.checkout_user}, which is using the checkout"
+                else:
+                    self.checkout_user = record.id
+            if reason is None:
+                self._active.add(record.id)
+                return True
+        self.note_waiting(record, step, reason)
+        return False
+
+    def note_waiting(self, record, step, reason):
+        with self.lock:
+            changed = self._waiting.get(record.id) != str(reason)
+            self._waiting[record.id] = str(reason)
+        if changed:
+            self.report(f"{record.id} {step.name}: {reason}")
 
     def pending(self):
         found = []
         for record in self.repository.scan().valid.values():
-            if record.metadata["type"] == "epic" or record.id in self.failed:
+            if record.metadata["type"] == "epic" or record.id in self.failed or record.id in self.active:
                 continue
             step = self.repository.step(record)
             if step.role or step.check or step.harness:
@@ -258,14 +317,11 @@ class Runner:
         if role.push:
             git.must(self.checkout, "push", "-q", "-u", "origin", branch)
         log.parent.mkdir(parents=True, exist_ok=True)
-        self.active = record.id
         self.report(f"{record.id} {step.name}: {role.name} started")
-        try:
-            options = {"on_line": self.on_line} if self.on_line is not None else {}
-            code, reply = self.engine(role, render(step, values, record.metadata["workflow"]),
-                                      self.checkout or root, root, log, **options)
-        finally:
-            self.active = None
+        listener = self.on_line
+        options = {"on_line": lambda line: listener(record.id, line)} if listener is not None else {}
+        code, reply = self.engine(role, render(step, values, record.metadata["workflow"]),
+                                  self.checkout or root, root, log, **options)
         if code != 0:
             raise StepFailed(f"exit {code}")
         lines = reply.strip().splitlines()
@@ -284,22 +340,19 @@ class Runner:
 
     def count_run(self, record):
         # A revise loop between two agents would otherwise run unattended without limit.
-        if self.runs.get(record.id, 0) >= self.max_runs:
-            raise StepFailed(f"already ran {self.max_runs} steps this session")
-        self.runs[record.id] = self.runs.get(record.id, 0) + 1
+        with self.lock:
+            if self._runs.get(record.id, 0) >= self.max_runs:
+                raise StepFailed(f"already ran {self.max_runs} steps this session")
+            self._runs[record.id] = self._runs.get(record.id, 0) + 1
 
     def verify(self, record, step, log):
         """Run the project's check on the item's branch; its exit code chooses the transition."""
         self.take_checkout(record)
         self.count_run(record)
-        self.active = record.id
         self.report(f"{record.id} {step.name}: check started")
         started = time.monotonic()
-        try:
-            outcome = self.check(self.checkout, log=log)
-            code, _ = outcome
-        finally:
-            self.active = None
+        outcome = self.check(self.checkout, log=log)
+        code, _ = outcome
         duration = time.monotonic() - started
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         status = getattr(outcome, "status", "finished")
@@ -314,7 +367,32 @@ class Runner:
         name = "passed" if code == 0 and status == "finished" else "failed"
         return name, self.repository.transition(record.id, name)
 
-    def run_item(self, record, step):
+    def run_item(self, record, step, claimed=False):
+        if not claimed and not self.claim(record, step):
+            return False
+        try:
+            return self.perform_item(record, step)
+        except Exception as exc:
+            # Catch unexpected worker errors too; one broken item must not stop dispatch.
+            with self.lock:
+                self._failed[record.id] = str(exc)
+            self.report(f"{record.id} {step.name}: FAILED - {type(exc).__name__}: {exc}; "
+                        "not retried until restart")
+            return True
+        finally:
+            with self.lock:
+                self._active.discard(record.id)
+                if self.checkout_user == record.id:
+                    self.checkout_user = None
+            if self.on_change is not None:
+                try:
+                    self.on_change()
+                except Exception as exc:
+                    with self.lock:
+                        self._failed[record.id] = str(exc)
+                    self.report(f"{record.id}: FAILED - state listener: {exc}; not retried until restart")
+
+    def perform_item(self, record, step):
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
         log = self.repository.root / "log" / record.id / f"{step.name}-{stamp}.log"
         if step.check:
@@ -333,32 +411,61 @@ class Runner:
             else:
                 name, updated = self.invoke(record, step, log)
         except Waiting as reason:
-            if self.waiting.get(record.id) != str(reason):
-                self.waiting[record.id] = str(reason)
-                self.report(f"{label}: {reason}")
+            self.note_waiting(record, step, reason)
             return False
         except (StepFailed, git.GitError, InvalidRecord, InvalidWorkflow, OSError) as exc:
-            self.failed[record.id] = str(exc)
+            with self.lock:
+                self._failed[record.id] = str(exc)
             self.report(f"{label}: FAILED - {exc}; still at {step.name}, not retried until restart; see {log}")
             try:
                 self.repository.commit(f"{record.id}: {step.name} failed", record.path)
             except InvalidRecord:
                 pass
             return True
-        self.waiting.pop(record.id, None)
+        with self.lock:
+            self._waiting.pop(record.id, None)
         self.report(f"{label}: {name} -> {updated.metadata['step']}")
         return True
 
     def retry(self, item_id):
-        self.failed.pop(item_id, None)
-        self.runs.pop(item_id, None)
+        with self.lock:
+            self._failed.pop(item_id, None)
+            self._runs.pop(item_id, None)
+
+    def dispatch(self, stop=None):
+        """Submit one step per runnable item, without joining workers or imposing a cap."""
+        submitted = []
+        for record, step in self.pending():
+            if stop is not None and stop.is_set():
+                break
+            if not self.claim(record, step):
+                continue
+            future = Future()
+
+            def work(record=record, step=step, future=future):
+                future.set_result(self.run_item(record, step, claimed=True))
+
+            threading.Thread(target=work, name=record.id, daemon=True).start()
+            submitted.append(future)
+        return submitted
 
     def run_pass(self):
-        return sum(self.run_item(record, step) for record, step in self.pending())
+        return sum(future.result() for future in self.dispatch())
 
-    def run(self, once=False, interval=2.0):
-        while True:
-            if self.run_pass() == 0:
-                if once:
-                    return
-                time.sleep(interval)
+    def run(self, once=False, interval=2.0, stop=None):
+        """Poll for new work even while earlier steps are running; Stop only ends dispatch."""
+        stop = stop if stop is not None else threading.Event()
+        in_flight = []
+        scan = True
+        while not stop.is_set():
+            if scan:
+                in_flight.extend(self.dispatch(stop))
+            completed = [future for future in in_flight if future.done()]
+            progressed = sum(future.result() for future in completed) > 0
+            in_flight = [future for future in in_flight if future not in completed]
+            if once and not in_flight and not progressed:
+                return
+            # In once mode a waiting item is retried only after another step progresses.
+            scan = not once or progressed
+            if not progressed:
+                stop.wait(min(interval, 0.05) if in_flight else interval)

@@ -167,6 +167,9 @@ may edit its body (questions, findings, implementation notes) but not its front
 matter, and ends its reply with `TRANSITION: <name>`. The runner checks the name
 against the step's transitions and moves the item.
 
+Non-branch agents run in parallel, with one running step per item. Analysis
+agents read the current checkout and may see its branch change mid-step.
+
 A nonzero exit, a missing or unknown transition, or changed front matter leaves
 the item where it is; the failure is printed with the path of the transcript
 under `backlog/log/<item id>/`, and the item is not retried until the runner is
@@ -179,7 +182,9 @@ Roles marked `branch = true` change code, so the runner first puts your
 checkout on `devteam/<item id>`, created from the branch you were on. You see
 the work happen in the repository you have open. When the agent finishes, the
 runner commits whatever it changed to that branch; agents are not expected to
-commit, since their sandboxes often cannot write `.git`.
+commit, since their sandboxes often cannot write `.git`. A stray file written
+by a parallel non-branch agent can be included in that commit on the running
+branch-role item's branch.
 
 One item holds the checkout at a time: until it reaches a terminal step, any
 other item that needs a code-changing role waits, while steps such as analysis

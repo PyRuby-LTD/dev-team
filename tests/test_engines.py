@@ -124,9 +124,9 @@ pathlib.Path("exited").touch()
             return 0, 'TRANSITION: ready'
 
         runner = Runner(repo, roles, engine, report=lambda message: None)
-        runner.on_line = received.append
+        runner.on_line = lambda item_id, line: received.append((item_id, line))
         runner.run(once=True)
-        self.assertEqual(['live'], received)
+        self.assertEqual([(story.id, 'live')], received)
         self.assertEqual('ready', repo.scan().valid[story.id].metadata['step'])
 
 
