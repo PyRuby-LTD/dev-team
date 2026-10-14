@@ -2,6 +2,7 @@ import asyncio
 import json
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 
 from textual.app import App
@@ -302,6 +303,7 @@ class Acting(Fixture):
         super().setUp()
         self.calls = []
         self.replies = []
+        self.item_replies = {}
         role = Role("analyst", "fake", "m", 5, ["fake"], "w")
         self.runner = Runner(Repository(self.repo.root, self.workflows, {"analyst"}), {"analyst": role}, self.engine,
                              lambda message: None)
@@ -309,7 +311,8 @@ class Acting(Fixture):
     def engine(self, role, prompt, cwd, extra_dir, log, on_line=None):
         self.calls.append(prompt)
         log.write_text("transcript")
-        return self.replies.pop(0)
+        replies = self.item_replies.get(log.parent.name, self.replies)
+        return replies.pop(0)
 
     def step(self, record):
         return self.repo.scan().valid[record.id].metadata["step"]
@@ -513,7 +516,10 @@ class Acting(Fixture):
 
     async def test_failed_agent_is_shown_and_can_be_retried(self):
         self.repo.transition(self.waiting.id, "analyse")
-        self.replies = [(2, ""), (0, "TRANSITION: ready"), (0, "TRANSITION: ready")]
+        self.item_replies = {
+            self.waiting.id: [(2, ""), (0, "TRANSITION: ready")],
+            self.agent.id: [(0, "TRANSITION: ready")],
+        }
         app = tui.Backlog(self.repo, self.runner)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
@@ -572,13 +578,13 @@ class AgentOutput(Fixture):
             buffered = list(output.lines)
             self.assertGreater(len(buffered), 1)
             self.assertTrue(all(strip.cell_length <= output.scrollable_content_region.width for strip in buffered))
-            self.assertEqual(line, "".join(strip.text for strip in buffered))
+            self.assertEqual("STORY-004 | " + line, "".join(strip.text for strip in buffered))
             await self.emit([line])
             await pilot.pause()
             live = output.lines[len(buffered):]
             self.assertEqual([strip.cell_length for strip in buffered], [strip.cell_length for strip in live])
-            self.assertEqual(line, "".join(strip.text for strip in live))
-        self.runner.on_line("after shutdown")
+            self.assertEqual("STORY-005 | " + line, "".join(strip.text for strip in live))
+        self.runner.on_line("STORY-001", "after shutdown")
 
     async def test_hidden_buffer_is_bounded_and_preserves_order_across_runs(self):
         app = tui.Backlog(self.repo, self.runner)
@@ -589,14 +595,14 @@ class AgentOutput(Fixture):
             await self.emit(["second"])
             await pilot.press("l")
             await pilot.pause()
-            self.assertEqual(["first", "[red]x[/red]", "second"], [strip.text for strip in output.lines])
+            self.assertEqual(["first", "[red]x[/red]", "second"], self.texts(output))
             await pilot.press("l")
             previous = list(output.lines)
             await self.emit([f"line {index}" for index in range(2001)])
             self.assertEqual(previous, output.lines)
             await pilot.press("l")
             await pilot.pause()
-            self.assertEqual([f"line {index}" for index in range(1, 2001)], [strip.text for strip in output.lines])
+            self.assertEqual([f"line {index}" for index in range(1, 2001)], self.texts(output))
 
     async def run_exiting(self, lines, code):
         self.code = code
@@ -604,7 +610,10 @@ class AgentOutput(Fixture):
         self.code = 0
 
     def texts(self, output):
-        return [strip.text for strip in output.lines]
+        lines = [strip.text for strip in output.lines]
+        for line in lines:
+            self.assertRegex(line, r"^STORY-\d{3} \| ")
+        return [line.split(" | ", 1)[1] for line in lines]
 
     async def test_output_pane_is_a_plain_log_below_detail_outside_its_scroll_content(self):
         app = tui.Backlog(self.repo, self.runner)
@@ -696,8 +705,8 @@ class AgentOutput(Fixture):
             await pilot.pause()
             record = self.repo.create("story", "Crash", parent=self.first.id)
             record = self.repo.transition(record.id, "analyse")
-            with self.assertRaises(RuntimeError):
-                await asyncio.to_thread(self.runner.run_item, record, self.repo.step(record))
+            await asyncio.to_thread(self.runner.run_item, record, self.repo.step(record))
+            self.assertIn("engine crashed", self.runner.failed[record.id])
             await pilot.pause()
             self.assertTrue(output.display)
             self.assertEqual(["before the crash"], self.texts(output))
@@ -838,6 +847,69 @@ class QuestionsNotice(Fixture):
         self.assertIn('No questions found in the body.', row.questions_notice)
         self.repo.write_body(self.waiting.id, '## Questions\n1. A?\n', 'questions')
         self.assertEqual('', self.by_key()[self.waiting.id].questions_notice)
+
+
+class ParallelAgents(Fixture):
+    async def test_tui_dispatches_new_work_during_a_run_and_can_restart_while_draining(self):
+        release = threading.Event()
+        calls = []
+        roles = {"analyst": Role("analyst", "fake", "m", 5, ["fake"], "w")}
+
+        def engine(role, prompt, cwd, extra_dir, log, on_line=None):
+            calls.append(log.parent.name)
+            on_line("live")
+            if not release.wait(15):
+                raise RuntimeError("test did not release engine")
+            return 0, "TRANSITION: ready"
+
+        runner = Runner(self.repo, roles, engine, lambda message: None)
+        app = tui.Backlog(self.repo, runner)
+
+        async def settle(pilot, condition):
+            for _ in range(100):
+                await pilot.pause(.02)
+                if condition():
+                    return
+            self.fail("parallel TUI did not reach the expected state")
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            try:
+                await pilot.press("l", "s")
+                await settle(pilot, lambda: self.agent.id in calls)
+                self.repo.transition(self.waiting.id, "analyse")
+                await settle(pilot, lambda: self.waiting.id in calls)
+                ids = sorted([self.agent.id, self.waiting.id])
+                self.assertEqual(ids, runner.active_ids())
+                rows = {row.key: row for row in tui.rows(self.repo, runner)}
+                self.assertTrue(all(rows[item_id].running for item_id in ids))
+                await settle(pilot, lambda: len(app.output_log.lines) == 2)
+                self.assertCountEqual([f"{item_id} | live" for item_id in ids],
+                                      [strip.text for strip in app.output_log.lines])
+                await pilot.press("s")
+                await settle(pilot, lambda: app.thread is None)
+                self.assertEqual(ids, runner.active_ids())
+                self.assertIn("stopping - waiting for " + ", ".join(ids), app.agent_log.border_title)
+                later = self.repo.create("story", "Later", parent=self.first.id)
+                self.repo.transition(later.id, "analyse")
+                await pilot.pause(.1)
+                self.assertNotIn(later.id, calls)
+                await pilot.press("q")
+                self.assertIsInstance(app.screen, tui.Confirm)
+                self.assertTrue(all(item_id in app.screen.message for item_id in ids))
+                await pilot.press("n", "s")
+                await settle(pilot, lambda: later.id in calls)
+                self.assertEqual(1, calls.count(self.agent.id))
+                self.assertEqual(1, calls.count(self.waiting.id))
+                await pilot.press("s")
+                await settle(pilot, lambda: app.thread is None)
+                release.set()
+                await settle(pilot, lambda: not runner.active_ids() and
+                             "stopped - s to start" in app.agent_log.border_title)
+                self.assertEqual({}, runner.failed)
+            finally:
+                app.stop.set()
+                release.set()
+                await settle(pilot, lambda: not runner.active_ids() and app.thread is None)
 
 
 if __name__ == "__main__":

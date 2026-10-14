@@ -177,7 +177,7 @@ class EmptyRepository(Launcher):
         asyncio.run(drive())
         self.assertEqual([], calls)
         self.assertEqual({}, runner.runs)
-        self.assertIsNone(runner.active)
+        self.assertEqual([], runner.active_ids())
 
 
 class Isolation(Launcher):
