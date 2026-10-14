@@ -43,16 +43,16 @@ class PathGuard:
                 lines[index] = line
         return "".join(lines), tripped
 
-    def __call__(self, root, notice):
+    def __call__(self, root, notice, *paths):
         # Include staged changes, unstaged changes and untracked, non-ignored files.
-        changed = git.run(root, "diff", "--name-only", "--no-renames", "-z", "HEAD")
+        changed = git.run(root, "diff", "--name-only", "--no-renames", "-z", "HEAD", "--", *paths)
         if changed.returncode:
             # An unborn branch has no HEAD; all tracked files are new.
             git.must(root, "rev-parse", "--git-dir")
             if git.has_ref(root, "HEAD"):
                 raise git.GitError(changed.stderr.strip())
-            changed = git.run(root, "ls-files", "-z", "--cached")
-        untracked = git.run(root, "ls-files", "-z", "--others", "--exclude-standard")
+            changed = git.run(root, "ls-files", "-z", "--cached", "--", *paths)
+        untracked = git.run(root, "ls-files", "-z", "--others", "--exclude-standard", "--", *paths)
         names = set(changed.stdout.split("\0")) | set(untracked.stdout.split("\0"))
         for name in sorted(names - {""}):
             path = root / name

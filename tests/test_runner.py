@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -8,6 +9,7 @@ from devteam import engines, git, tui, workflow
 from devteam import runner as runners
 from devteam.backlog import Repository
 from devteam.config import Role
+from devteam.evidence import PathGuard
 from devteam.runner import Runner, StepFailed, Waiting
 
 WORKFLOW = {
@@ -103,6 +105,41 @@ class RunnerAcceptance(unittest.TestCase):
                 self.assertEqual(before, self.story.path.read_bytes())
                 self.assertIn("FAILED", self.messages[-1])
                 self.assertIn(str(self.root / "log" / "STORY-001"), self.messages[-1])
+
+    def test_failure_commit_leaves_other_items_uncommitted_and_unmasked(self):
+        with patch.dict(os.environ, {
+            "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "test@example.com",
+            "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "test@example.com",
+        }):
+            git.must(self.root, "init", "-q", "-b", "devteam-backlog")
+            (self.root / ".gitignore").write_text("log/\n")
+            git.commit_all(self.root, "baseline")
+            self.repo.guard = PathGuard()
+            self.repo.transition(self.story.id, "analyse")
+            leak = "/home/" + "fixtureperson" + "/record"
+            before = {}
+            for record in (self.epic, self.other):
+                with record.path.open("a") as handle:
+                    handle.write(leak)
+                before[record.path] = record.path.read_bytes()
+
+            def fail(prompt):
+                with self.story.path.open("a") as handle:
+                    handle.write(leak)
+                return 3, "failed"
+
+            runner = self.runner({self.story.id: [fail]})
+            runner.run(once=True)
+            self.assertIn(self.story.id, runner.failed)
+            self.assertEqual(f"{self.story.id}: analysis failed",
+                             git.must(self.root, "show", "-s", "--format=%s"))
+            self.assertEqual("stories/STORY-001.md",
+                             git.must(self.root, "show", "--format=", "--name-only", "HEAD"))
+            self.assertNotIn(leak, self.story.path.read_text())
+            for path, text in before.items():
+                self.assertEqual(text, path.read_bytes())
+            self.assertEqual({"epics/EPIC-001.md", "stories/STORY-002.md"},
+                             set(git.must(self.root, "diff", "--name-only").splitlines()))
 
     def test_agent_editing_front_matter_is_a_failure(self):
         self.repo.transition(self.story.id, "analyse")

@@ -149,6 +149,15 @@ class ChangedFiles(unittest.TestCase):
         self.assertEqual("<path>", (self.root / "staged").read_text())
         self.assertEqual("<path>", (self.root / "untracked").read_text())
 
+    def test_path_scope_on_unborn_branch_leaves_other_files_unmasked(self):
+        for name in ["chosen", "staged", "untracked"]:
+            (self.root / name).write_text(self.leak)
+        git.must(self.root, "add", "staged")
+        self.guard(self.root, self.notices.append, self.root / "chosen")
+        self.assertEqual("<path>", (self.root / "chosen").read_text())
+        for name in ["staged", "untracked"]:
+            self.assertEqual(self.leak, (self.root / name).read_text())
+
     def test_notice_when_backlog_is_outside_checkout(self):
         git.commit_all(self.root, "baseline")
         (self.root / "new").write_text(self.leak)
