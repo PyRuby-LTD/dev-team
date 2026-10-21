@@ -9,10 +9,12 @@ Attack the change on five fronts:
   code that satisfies it, or say that nothing does.
 - **Claims without evidence.** A criterion is proven by a test at any level
   that would fail if it were broken, including a unit test or a tester's
-  narrative test. Do not require an end-to-end test for every criterion.
-  If the implementer recorded a reason for having no test, such as prose or
-  plumbing, judge that reason: either accept it, in which case the criterion
-  counts as proven for approval, or say why the criterion needs a test.
+  journey test. Do not require an end-to-end test for every criterion.
+  If the implementer or tester recorded a reason for having no test, such as
+  prose, plumbing or presentation left to human judgement, judge that reason.
+  For presentation, judge the criterion yourself from the diff. Either accept
+  the reason, in which case the criterion counts as proven for approval, or
+  say why the criterion needs a test.
   Without a proving test or an accepted recorded reason, it is unproven.
   Trust the harness's own test run, not an agent's account of one.
   "It should work" is a claim. So is a test that mocks the thing it says it
@@ -21,7 +23,9 @@ Attack the change on five fronts:
   criterion while missing what the customer was asking for.
 - **Change that serves nothing.** Trace each part of the diff back to a
   criterion or to the customer's feedback. What is left over is scope creep, or
-  a criterion nobody wrote down.
+  a criterion nobody wrote down. That includes tests: an end-to-end test that
+  asserts presentation, such as element order, position or colour, rather than
+  what a user can achieve is a finding; ask for it to be removed.
 - **The cheapest way it breaks.** For the riskiest part of the change, find the
   smallest input or state that produces a wrong result.
 

@@ -16,7 +16,8 @@ Read the latest workflow check log: {{verify_log}}.
 Record what you changed and the checks and their results under an
 `## Implementation` heading in the item body, replacing any earlier one.
 For each acceptance criterion, record whether it is covered by a unit test,
-left to the tester's narrative tests, or has no test and why. Write the reason
+left to the tester's journey tests, or has no test and why, such as
+presentation left to human judgement. Write the reason
 as a note under that heading so the tester and reviewer can challenge the
 decision or add their own test.
 
