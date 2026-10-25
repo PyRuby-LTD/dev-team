@@ -197,12 +197,7 @@ class DependencyScheduling(unittest.TestCase):
 
 
 class DependencyMerge(unittest.TestCase):
-    def setUp(self):
-        test_merged.Merged.setUp(self)
-        # STORY-027 is marked done but its code is absent from this checkout.
-        # Model its terminal step without changing the product workflow here.
-        from devteam.workflow import Step
-        self.repo.workflow('default').steps['abandoned'] = Step('abandoned', 'human', {})
+    setUp = test_merged.Merged.setUp
     no_engine = test_merged.Merged.no_engine
     advance = test_merged.Merged.advance
 
@@ -223,7 +218,11 @@ class DependencyMerge(unittest.TestCase):
         self.assertTrue((self.product / 'merged-work.txt').exists())
 
     def test_abandoned_blocks_until_customer_removes_dependency(self):
-        self.item.path.write_text(self.item.path.read_text().replace('step: merged', 'step: abandoned'))
+        self.item.path.write_text(self.item.path.read_text().replace('step: merged', 'step: accept'))
+        self.repo.transition(self.item.id, 'abandon')
+        self.assertEqual(1, self.runner.run_pass())
+        self.assertEqual('abandoned', self.repo.scan().valid[self.item.id].metadata['step'])
+        self.assertEqual('main', git.current_branch(self.product))
         self.repo.set_dependencies(self.other.id, [self.item.id])
         self.other.path.write_text(self.other.path.read_text().replace('step: captured', 'step: implement'))
         other = self.repo.scan().valid[self.other.id]
