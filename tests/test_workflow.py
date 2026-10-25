@@ -50,8 +50,8 @@ class WorkflowDefinition(unittest.TestCase):
         steps = load("default").steps
         self.assertEqual({"published": "pull-request"}, steps["publish"].transitions)
         self.assertTrue(steps["pull-request"].human)
-        self.assertEqual({"merged": "merged", "rejected": "rejected"}, steps["pull-request"].transitions)
-        self.assertEqual({"accept": "done", "pr": "publish", "revise": "implement"}, steps["accept"].transitions)
+        self.assertEqual({"merged": "merged", "rejected": "rejected", "abandon": "abandoning"}, steps["pull-request"].transitions)
+        self.assertEqual({"pr": "publish", "revise": "implement", "abandon": "abandoning"}, steps["accept"].transitions)
         for action, target in (("merged", "done"), ("rejected", "implement")):
             self.assertTrue(steps[action].harness)
             self.assertIsNone(steps[action].role)
