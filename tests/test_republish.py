@@ -16,7 +16,7 @@ from devteam.runner import Runner
 IDENTITY = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
 PUBLISHED = '{"type":"result","subtype":"success","result":"Done.\\nTRANSITION: published"}\n'
 FIRST_PR = "https://github.com/example/product/pull/7"
-HAPPY_PATH = ["analyse", "analysed", "sound", "play", "implemented", "written", "passed", "approve", "pr"]
+HAPPY_PATH = ["analyse", "analysed", "sound", "play", "implemented", "written", "completed", "passed", "approve", "pr", "completed", "passed"]
 
 
 class RepublishAfterRejection(unittest.TestCase):
@@ -73,7 +73,7 @@ class RepublishAfterRejection(unittest.TestCase):
         self.repo.transition(self.story.id, "completed")
         (self.product / "rework.txt").write_text("after review\n")
         git.commit_all(self.product, "rework after rejection")
-        return self.publish(["implemented", "written", "passed", "approve", "pr"])
+        return self.publish(["implemented", "written", "completed", "passed", "approve", "pr", "completed", "passed"])
 
     def test_second_publish_pushes_new_commits_before_the_publisher_runs(self):
         self.publish(HAPPY_PATH)
@@ -82,7 +82,7 @@ class RepublishAfterRejection(unittest.TestCase):
         self.repo.transition(self.story.id, "completed")
         (self.product / "rework.txt").write_text("after review\n")
         git.commit_all(self.product, "rework after rejection")
-        self.publish(["implemented", "written", "passed", "approve", "pr"])
+        self.publish(["implemented", "written", "completed", "passed", "approve", "pr", "completed", "passed"])
         self.assertIn("rework after rejection", self.remote_branch_log())
 
     def test_second_publish_prompt_looks_up_the_open_pr_before_creating_one(self):

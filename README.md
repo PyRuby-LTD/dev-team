@@ -140,10 +140,15 @@ beside the code; the first command creates it. See
 | answering | you | `answered` (back to analysis) |
 | ready | you | `play`, `rework` |
 | implement | implementer, on the item's branch | `implemented` (to test), `blocked` (back to you at ready) |
-| test | tester, on the item's branch | `written` (to verify), `defect` (back to implement) |
+| test | tester, on the item's branch | `written` (to sync), `defect` (back to implement) |
+| sync | harness | `completed` (to verify), `conflicted` (to resolve) |
+| resolve | implementer | `resolved` (to verify), `blocked` (to ready) |
 | verify | the harness runs `make regression` | `passed` (to review), `failed` (back to test) |
 | review | reviewer, on the item's branch | `approve`, `revise` |
-| accept | you | `pr` (to publish), `revise`, `abandon` (to abandoning) |
+| accept | you | `pr` (to sync-publish), `revise`, `abandon` (to abandoning) |
+| sync-publish | harness | `completed` (to verify-publish), `conflicted` (to resolve-publish) |
+| resolve-publish | implementer | `resolved` (to verify-publish), `blocked` (to ready) |
+| verify-publish | harness check | `passed` (to publish), `failed` (to implement) |
 | publish | publisher, on the item's branch | `published` (to pull-request) |
 | pull-request | you | `merged` (to merged), `rejected` (to rejected), `abandon` (to abandoning) |
 | merged | harness | `completed` (to done) |
@@ -211,8 +216,32 @@ Use repeatable `--depends-on ID` options with `dev-team backlog capture`, or
 writing and commit successful edits to the backlog branch. See
 [the field and validation rules](docs/backlog.md).
 
-At `accept`, look at the result in place. `pr` makes the runner push the branch to
-`origin` and hands the item to the publisher, which opens a pull request against
+After `test`, `sync` fetches origin and rebases the item onto its recorded
+`origin/<base>` before `verify -> review -> accept`. Choosing `pr` at `accept`
+needs no note and runs `sync-publish -> verify-publish -> publish`; a failure
+at `verify` returns to `test`, while `verify-publish` returns to `implement`.
+Both sync steps hold the checkout. Missing bases, fetch failures and dirty
+checkouts fail the step without switching or rewriting the branch.
+
+If rebasing conflicts, the harness aborts the rebase and merges the base without
+committing. `resolve` or `resolve-publish` asks the implementer to resolve all
+conflicted files in one round without committing. The harness rejects remaining
+markers and commits the merge after `resolved`. `blocked` aborts the merge and
+returns to `ready`. A clean merge fallback goes straight to verification. Later
+syncs preserve an earlier merge from the base instead of replaying its conflict.
+
+Publishing uses `git push --force-with-lease` pinned to the recorded remote head,
+so rebased branches can be republished. `branch.<branch>.pushed` records remote
+history accounted for at each passing sync and each successful push. Remote
+commits reachable from neither that record nor the local branch stop sync or
+publication with a message naming the commits. To recover, on the item's branch
+fetch and run `git merge origin/<branch>` to incorporate them, then replay the
+step; alternatively reset the remote branch to the last published head to
+discard them, then replay. Remote changes after sync are also protected by the
+publication check and lease.
+
+At `accept`, look at the result in place. `pr` runs `sync-publish` and
+`verify-publish`, then pushes the branch to `origin` and hands it to the publisher, which opens a pull request against
 the base branch with `gh`. Re-publishing after a rejection updates the existing
 open PR's body and commits, preserving its title and URL. If no open PR exists,
 the publisher creates one. The item then waits at `pull-request` for your decision

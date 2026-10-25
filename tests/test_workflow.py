@@ -33,7 +33,7 @@ class WorkflowDefinition(unittest.TestCase):
         self.assertEqual("analyst", workflow.steps["analysis"].role)
         # Implementation cannot reach review without passing the tester; a stuck implementer has a way out.
         self.assertEqual({"implemented": "test", "blocked": "ready"}, workflow.steps["implement"].transitions)
-        self.assertEqual({"written": "verify", "defect": "implement"}, workflow.steps["test"].transitions)
+        self.assertEqual({"written": "sync", "defect": "implement"}, workflow.steps["test"].transitions)
         # Only the harness's own run of the suite lets an item reach review.
         self.assertTrue(workflow.steps["verify"].check)
         self.assertEqual({"passed": "review", "failed": "test"}, workflow.steps["verify"].transitions)
@@ -51,7 +51,7 @@ class WorkflowDefinition(unittest.TestCase):
         self.assertEqual({"published": "pull-request"}, steps["publish"].transitions)
         self.assertTrue(steps["pull-request"].human)
         self.assertEqual({"merged": "merged", "rejected": "rejected", "abandon": "abandoning"}, steps["pull-request"].transitions)
-        self.assertEqual({"pr": "publish", "revise": "implement", "abandon": "abandoning"}, steps["accept"].transitions)
+        self.assertEqual({"pr": "sync-publish", "revise": "implement", "abandon": "abandoning"}, steps["accept"].transitions)
         for action, target in (("merged", "done"), ("rejected", "implement")):
             self.assertTrue(steps[action].harness)
             self.assertIsNone(steps[action].role)

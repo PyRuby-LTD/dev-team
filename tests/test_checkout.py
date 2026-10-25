@@ -189,7 +189,7 @@ class CheckoutAcceptance(unittest.TestCase):
         self.assertEqual("publish", self.steps()["STORY-001"])
         self.assertNotEqual("publisher", self.calls[-1][1])
         self.assertIn("FAILED", self.messages[-1])
-        self.assertIn("push", self.messages[-1])
+        self.assertIn("git fetch", self.messages[-1])
 
 
 if __name__ == "__main__":

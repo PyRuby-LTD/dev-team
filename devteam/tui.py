@@ -549,7 +549,7 @@ class Backlog(App):
             name, target, owner = next(move for move in row.transitions if move[0] == choice.removeprefix("move:"))
             steps = self.repository.workflow(self.repository.scan().valid[row.key].metadata["workflow"]).steps
             # Finishing decisions skip the note; a rejected PR keeps the feedback prompt.
-            if owner in ("YOU", "finished", "checks") or steps[target].action in {"merged", "abandon"}:
+            if owner in ("YOU", "finished", "checks") or steps[target].action in {"merged", "abandon", "sync"}:
                 self.move(row, name, "")
             else:
                 self.push_screen(Note(row, name, target, owner),

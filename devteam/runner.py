@@ -68,6 +68,24 @@ def merged(runner, record):
     return "completed"
 
 
+def sync(runner, record):
+    if runner.checkout is None:
+        raise StepFailed("the sync step needs a git repository")
+    branch = f"devteam/{record.id}"
+    base = git.base_of(runner.checkout, branch)
+    if base is None:
+        raise StepFailed(f"no base branch is recorded for {branch}")
+    if not git.clean(runner.checkout):
+        raise StepFailed(f"the checkout has uncommitted changes on {git.current_branch(runner.checkout)}")
+    # Check ownership before fetching or switching, without creating a branch.
+    current = git.current_branch(runner.checkout)
+    if current and current.startswith("devteam/") and current != branch:
+        holder = runner.repository.scan().valid.get(current.removeprefix("devteam/"))
+        if holder and not runner.repository.step(holder).terminal:
+            raise Waiting(f"waiting for {holder.id}, which holds the checkout")
+    return git.sync_branch(runner.checkout, branch, base)
+
+
 def abandon(runner, record):
     """Return the item's checkout to its base, keeping its branch for recovery."""
     if runner.checkout is None:
@@ -192,7 +210,7 @@ def render_pr_feedback(reviews, inline, conversation):
     return "\n\n".join(entries) if entries else "There are no comments on this pull request."
 
 
-HARNESS_ACTIONS = {"merged": merged, "rejected": rejected, "abandon": abandon}
+HARNESS_ACTIONS = {"merged": merged, "rejected": rejected, "abandon": abandon, "sync": sync}
 
 
 def render(step, values, workflow="default"):
@@ -257,7 +275,7 @@ class Runner:
             return sorted(self._active)
 
     def uses_checkout(self, step):
-        return step.check or (step.harness and step.action in {"merged", "abandon"}) or (
+        return step.check or (step.harness and step.action in {"merged", "abandon", "sync"}) or (
             step.role and self.roles[step.role].branch)
 
     def dependency_wait(self, record, step, snapshot):
@@ -366,6 +384,11 @@ class Runner:
             if base is None:
                 raise StepFailed(f"no base branch is recorded for {branch}")
             values.update(checkout=str(self.checkout), branch=branch, base=base)
+        merge_files = None
+        if role.branch and step.name in {"resolve", "resolve-publish"} and git.merging(self.checkout):
+            stored = git.run(self.checkout, "config", "--get", f"branch.{branch}.conflicts").stdout.strip()
+            merge_files = json.loads(stored) if stored else git.conflicted_files(self.checkout)
+            values["conflicted_files"] = "\n".join(f"- {name}" for name in merge_files)
         self.count_run(record)
         if role.record:
             copy = self.checkout / RECORDS / f"{record.id}.md"
@@ -379,7 +402,7 @@ class Runner:
                 self.report(f"{record.id}: copy masked lines {', '.join(str(offset + n) for n in numbers)}")
             git.commit_all(self.checkout, f"{record.id}: record the work item", str(copy))
         if role.push:
-            git.must(self.checkout, "push", "-q", "-u", "origin", branch)
+            git.push_branch(self.checkout, branch)
         log.parent.mkdir(parents=True, exist_ok=True)
         self.report(f"{record.id} {step.name}: {role.name} started")
         listener = self.on_line
@@ -399,7 +422,16 @@ class Runner:
                                {k: v for k, v in record.metadata.items() if k != "depends_on"}):
             raise StepFailed("the agent changed or broke the item's front matter")
         # Agents often cannot write .git from their sandbox, so the runner commits their work.
-        if role.branch and not git.clean(self.checkout):
+        if merge_files is not None:
+            if match.group(1) == "blocked":
+                git.must(self.checkout, "merge", "--abort")
+                # Sync started clean; discard any extra resolution work as well.
+                git.must(self.checkout, "reset", "--hard", "HEAD")
+                git.must(self.checkout, "clean", "-fd")
+            else:
+                git.finish_merge(self.checkout, merge_files)
+            git.run(self.checkout, "config", "--unset", f"branch.{branch}.conflicts")
+        elif role.branch and not git.clean(self.checkout):
             git.commit_all(self.checkout, f"{record.id}: {step.name} by {role.name}")
         return match.group(1), self.repository.transition(record.id, match.group(1))
 
