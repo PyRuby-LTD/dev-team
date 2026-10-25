@@ -29,9 +29,9 @@ STUBS = ROOT / "tests" / "stubs"
 FIXTURES = ROOT / "tests" / "fixtures" / "gh"
 IDENTITY = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
 ISOLATED_GIT = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
-TO_VERIFY = ("analyse", "analysed", "sound", "play", "implemented", "written")
+TO_VERIFY = ("analyse", "analysed", "sound", "play", "implemented", "written", "completed")
 TO_ACCEPT = TO_VERIFY + ("passed", "approve")
-TO_PULL_REQUEST = TO_ACCEPT + ("pr", "published")
+TO_PULL_REQUEST = TO_ACCEPT + ("pr", "completed", "passed", "published")
 # Built at run time so that this file does not hold a home-style path itself.
 NAME = "fixture" + "person"
 HOME = "/home/" + NAME
@@ -201,7 +201,7 @@ class TestRunRecord(Product):
                 self.assertNotIn("timed out", record)
                 self.assertNotIn("could not be started", record)
                 self.assertEqual("test", self.step())
-                self.move("written")
+                self.move("written", "completed")
 
     def test_failure_words_in_the_output_of_a_passing_check_do_not_change_the_verdict(self):
         self.verify(0, "Traceback (most recent call last):\nFAILED (errors=1)\nFAILED")
@@ -302,7 +302,7 @@ class TestStoryFromStartToPublication(Product):
                 self.assertNotIn("{{", prompt)
                 self.assertNotIn("actual output", prompt)
                 self.assertNotIn("under `## Test run`", prompt)
-        [log] = self.logs()
+        log, _publication_log = self.logs()
         self.assertIn("No workflow check has run yet.", self.prompt(3))
         self.assertIn("No workflow check has run yet.", self.prompt(4))
         self.assertIn(str(log), self.prompt(5))
@@ -336,7 +336,7 @@ class TestStoryFromStartToPublication(Product):
 class TestPublicationCopy(Product):
     def test_a_body_that_trips_nothing_is_copied_unchanged(self):
         self.move(*TO_ACCEPT)
-        self.move("pr")
+        self.move("pr", "completed", "passed")
         self.plan({"reply": "published"})
         self.run_once()
         copy = self.git(self.product, "show", "devteam/STORY-001:docs/work-items/STORY-001.md")
@@ -345,7 +345,7 @@ class TestPublicationCopy(Product):
 
     def test_a_tripping_body_is_masked_in_the_copy_and_the_step_carries_on(self):
         self.move(*TO_ACCEPT)
-        self.move("pr")
+        self.move("pr", "completed", "passed")
         with self.item.open("a") as fh:
             fh.write(f"\nOutput kept in `{HOME}/out/log.txt` and {self.product}/src/app.py.\n")
         number = len(self.item.read_text().splitlines())

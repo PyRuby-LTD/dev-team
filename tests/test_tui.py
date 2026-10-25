@@ -436,6 +436,25 @@ class Acting(Fixture):
             self.assertEqual("harness", next(row for row in tui.rows(self.repo) if row.key == self.waiting.id).waiting_on)
         self.assertEqual([], self.calls)
 
+    async def test_choosing_pr_at_accept_moves_to_sync_publish_without_a_note(self):
+        data = json.loads((self.workflows / "default.json").read_text())
+        data["steps"].update({
+            "accept": {"owner": "human", "transitions": {"pr": "sync-publish"}},
+            "sync-publish": {"owner": "harness:sync", "transitions": {"completed": "done", "conflicted": "done"}},
+        })
+        (self.workflows / "default.json").write_text(json.dumps(data))
+        self.repo = Repository(self.repo.root, self.workflows, {"analyst"})
+        self.waiting.path.write_text(self.waiting.path.read_text().replace("step: captured", "step: accept"))
+        app = tui.Backlog(self.repo, self.runner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await self.select(app, pilot, self.waiting.id)
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertEqual(1, len(app.screen_stack))
+            self.assertEqual("sync-publish", self.step(self.waiting))
+        self.assertEqual([], self.calls)
+
     async def test_customer_can_leave_a_note_on_an_agent_owned_step(self):
         app = tui.Backlog(self.repo, self.runner)
         async with app.run_test(size=(120, 40)) as pilot:
