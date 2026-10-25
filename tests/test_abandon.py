@@ -165,3 +165,69 @@ class Abandon(unittest.TestCase):
                 self.at(self.item, step)
                 self.assertFalse(self.repo.scan().errors)
                 self.assertEqual(step, self.repo.scan().valid[self.item.id].metadata['step'])
+
+
+class AbandonThroughTheScreen(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        identity = patch.dict(os.environ, IDENTITY)
+        identity.start()
+        self.addCleanup(identity.stop)
+        self.product = Path(self.temp.name) / 'product'
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(self.product)], check=True)
+        (self.product / 'app.txt').write_text('initial\n')
+        git.commit_all(self.product, 'initial')
+        self.repo = Repository(git.ensure_backlog(self.product))
+        epic = self.repo.create('epic', 'Delivery')
+        self.item = self.repo.create('story', 'Abandon me', parent=epic.id)
+        self.runner = Runner(self.repo, engine=self.no_engine, report=lambda message: None,
+                             checkout=self.product)
+        self.branch = self.runner.take_checkout(self.item)
+        (self.product / 'app.txt').write_text('recoverable work\n')
+        git.commit_all(self.product, 'work to preserve')
+        self.tip = git.must(self.product, 'rev-parse', 'HEAD')
+
+    def no_engine(self, *args, **kwargs):
+        self.fail('abandoning must not invoke an engine')
+
+    def step(self):
+        return self.repo.scan().valid[self.item.id].metadata['step']
+
+    async def test_customer_abandons_at_either_step_without_a_note_and_the_branch_is_kept(self):
+        from devteam import tui
+        for step in ('accept', 'pull-request'):
+            with self.subTest(step=step):
+                current = self.repo.scan().valid[self.item.id]
+                self.item.path.write_text(self.item.path.read_text().replace(
+                    f"step: {current.metadata['step']}\n", f'step: {step}\n', 1))
+                app = tui.Backlog(self.repo, self.runner)
+                async with app.run_test(size=(120, 40)) as pilot:
+                    await pilot.pause()
+                    tree = app.query_one('#items')
+                    nodes, queue = [], [tree.root]
+                    while queue:
+                        node = queue.pop(0)
+                        nodes.append(node)
+                        queue.extend(node.children)
+                    tree.move_cursor(next(n for n in nodes if getattr(n.data, 'key', None) == self.item.id))
+                    await pilot.pause()
+                    await pilot.press('enter')
+                    await pilot.pause()
+                    self.assertIsInstance(app.screen, tui.Actions)
+                    menu = app.screen.query_one('OptionList')
+                    options = [str(o.prompt).split('  ')[0] for o in menu.options]
+                    self.assertIn('abandon', options)
+                    self.assertNotIn('accept', options)
+                    menu.highlighted = options.index('abandon')
+                    await pilot.press('enter')
+                    await pilot.pause()
+                    self.assertEqual(1, len(app.screen_stack))
+                    self.assertEqual('abandoning', self.step())
+                    self.assertNotIn('## Feedback', self.repo.scan().valid[self.item.id].body)
+                current = self.repo.scan().valid[self.item.id]
+                self.assertTrue(self.runner.run_item(current, self.repo.step(current)))
+                self.assertEqual('abandoned', self.step())
+                self.assertEqual('main', git.current_branch(self.product))
+                self.assertEqual(self.tip, git.must(self.product, 'rev-parse', self.branch))
+                git.must(self.product, 'checkout', '-q', self.branch)
