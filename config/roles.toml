@@ -41,6 +41,9 @@ command = ["make", "regression"]
 one = "TEST={name}"   # appended to run a single test
 timeout = 1800        # seconds; a run that exceeds it has failed
 
+[run]
+command = ["make", "run"]
+
 # One entry per role. Swap engine/model freely; that is the point of the file.
 # branch = true puts the checkout on branch devteam/<item id> before the role runs;
 # only one item at a time holds the checkout. record = true first commits a copy

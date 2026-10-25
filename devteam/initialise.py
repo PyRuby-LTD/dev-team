@@ -9,10 +9,14 @@ GITHUB_ORIGIN = re.compile(
     r"(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)"
     r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"
 )
-PLACEHOLDER = '''.PHONY: regression
+PLACEHOLDER = '''.PHONY: regression run
 
 regression:
 	@echo "regression unimplemented: wire up the product's checks" >&2
+	@exit 1
+
+run:
+	@echo "run unimplemented: wire up the product's start command" >&2
 	@exit 1
 '''
 
@@ -22,13 +26,17 @@ def github_origin(url: str) -> bool:
 
 
 def has_regression(text: str) -> bool:
+    return has_target(text, "regression")
+
+
+def has_target(text: str, target: str) -> bool:
     # Look at target declarations, not recipes, comments or variable assignments.
     for line in text.splitlines():
         if not line or line[0].isspace():
             continue
         targets, separator, recipe = line.split("#", 1)[0].partition(":")
         if separator and "=" not in targets and not recipe.startswith("="):
-            if "regression" in targets.split():
+            if target in targets.split():
                 return True
     return False
 

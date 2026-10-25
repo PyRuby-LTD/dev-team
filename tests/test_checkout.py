@@ -19,7 +19,7 @@ WORKFLOW = {
         "analysis": {"owner": "agent:analyst", "transitions": {"ready": "ready"}},
         "implement": {"owner": "agent:implementer", "transitions": {"implemented": "review"}},
         "review": {"owner": "agent:reviewer", "transitions": {"approve": "accept"}},
-        "accept": {"owner": "human", "transitions": {"pr": "publish", "accept": "done"}},
+        "accept": {"owner": "human", "transitions": {"pr": "publish", "accept": "done", "revise": "implement"}},
         "publish": {"owner": "agent:publisher", "transitions": {"published": "done"}},
         "done": {"owner": "human", "transitions": {}},
     },
@@ -132,17 +132,16 @@ class CheckoutAcceptance(unittest.TestCase):
         self.calls.clear()
         self.runner.run(once=True)
         self.runner.run(once=True)
-        self.assertEqual(["analyst"], [call[1] for call in self.calls])
-        self.assertEqual("implement", self.steps()["STORY-002"])
-        waiting = [m for m in self.messages if "waiting for STORY-001" in m]
-        self.assertEqual(1, len(waiting))
-        self.assertEqual("devteam/STORY-001", git.current_branch(self.product))
+        self.assertCountEqual(["analyst", "implementer", "reviewer"], [call[1] for call in self.calls])
+        self.assertEqual("accept", self.steps()["STORY-002"])
+        self.assertFalse(any("waiting for STORY-001" in m for m in self.messages))
+        self.assertEqual("devteam/STORY-002", git.current_branch(self.product))
 
     def test_next_item_branches_from_the_base_once_the_holder_is_terminal(self):
         self.repo.transition(self.first.id, "play")
-        self.repo.transition(self.second.id, "play")
         self.runner.run(once=True)
         self.repo.transition(self.first.id, "accept")
+        self.repo.transition(self.second.id, "play")
         before = self.steps()
         self.runner.run(once=True)
         self.assertEqual("devteam/STORY-002", git.current_branch(self.product))

@@ -215,7 +215,7 @@ class Dispatch(unittest.TestCase):
                 self.release.set()
                 self.assertEqual(1, sum(f.result(timeout=3) for f in submitted))
                 self.assertEqual(1, self.runner.run_pass())
-                self.assertEqual("main", git.current_branch(self.product))
+                self.assertEqual(f"devteam/{holder.id}", git.current_branch(self.product))
 
     def test_running_merged_excludes_branch_and_check_but_not_rejected(self):
         for transition in ("play", "check"):
@@ -330,14 +330,15 @@ class Dispatch(unittest.TestCase):
         thread.join(3)
         self.assertFalse(thread.is_alive())
         self.assertEqual("done", self.repo.scan().valid[waiting.id].metadata["step"])
-        # An unfinished branch holder leaves the next item waiting, and once returns.
+        # A human step releases its branch even though it is unfinished.
         holder = self.repo.create("story", "Human holder", parent=self.epic.id)
         self.runner.take_checkout(holder)
         blocked = self.item("play")
         stop, thread = self.loop(once=True)
         thread.join(3)
         self.assertFalse(thread.is_alive())
-        self.assertIn(blocked.id, self.runner.waiting)
+        self.assertNotIn(blocked.id, self.runner.waiting)
+        self.assertEqual("done", self.repo.scan().valid[blocked.id].metadata["step"])
 
     def test_once_dispatches_work_unlocked_by_a_completion_while_another_worker_runs(self):
         first = self.item("analyse")

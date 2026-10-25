@@ -42,7 +42,9 @@ dependencies from `uv.lock`. You also need:
   `origin`.
 - From the `test` step onwards, a product `Makefile` with a `regression` target
   (`make regression`, optionally `TEST=<name>`). `init` creates a placeholder
-  that fails with an "unimplemented" message until you replace it.
+  that fails with an "unimplemented" message until you replace it. For customer
+  try-outs, provide `make run` to start the product; `init` includes that
+  placeholder too.
 
 Makefile targets must select the product's own environment (for a uv product,
 use `uv run ...`), because `dev-team` runs `make` with the checkout's virtual
@@ -94,7 +96,8 @@ origin. A rerun completes a failed commit or push; an existing different origin
 commit produces a warning and no push. In an existing codebase it makes no
 commit or push: it leaves a new placeholder uncommitted and asks you to wire up
 `make regression` and commit before opening the TUI. Existing Makefiles are
-preserved, with a warning if they lack a regression target.
+preserved, with a warning if they lack a regression target. The placeholder also
+contains `run`; wire it up to start the product for customer try-outs.
 
 ```bash
 cd /path/to/product
@@ -193,10 +196,10 @@ commit, since their sandboxes often cannot write `.git`. A stray file written
 by a parallel non-branch agent can be included in that commit on the running
 branch-role item's branch.
 
-One item holds the checkout at a time: until it reaches a terminal step, any
-other item that needs a code-changing role waits, while steps such as analysis
-carry on. When the holder is finished, the runner returns to its base branch
-and creates the next item's branch from there. It never switches branch over
+One checkout step runs at a time, while steps such as analysis carry on. An
+item keeps its place through checkout steps, but releases it at human review
+steps such as `accept` and `pull-request`. The runner returns to its base branch
+and switches to or creates the next item's branch from there. It never switches branch over
 uncommitted changes; it waits and says so.
 
 Stories, tasks and bugs can declare `depends_on: [STORY-001, BUG-002]`.
@@ -245,7 +248,7 @@ At `accept`, look at the result in place. `pr` runs `sync-publish` and
 the base branch with `gh`. Re-publishing after a rejection updates the existing
 open PR's body and commits, preserving its title and URL. If no open PR exists,
 the publisher creates one. The item then waits at `pull-request` for your decision
-and continues to hold the checkout. Merging is yours to do; the tool does not
+and releases the checkout. Merging is yours to do; the tool does not
 merge or close the PR. Choose `merged` to finish or `rejected` to return to
 implementation, with an optional feedback note. At `merged`, the harness fetches
 `origin`, switches to the recorded base branch, and fast-forwards it before
@@ -284,6 +287,23 @@ which runs the target, prints a short result and keeps the full output under
 itself: the exit code chooses `passed` or `failed`, and the result is written
 into the item under `## Test run`. That run, not any agent's account, is what
 the reviewer is given.
+
+Products can also provide `make run`, named by `command = ["make", "run"]`
+under `[run]` in `config/roles.toml`. At `accept` or `pull-request`, select the
+item in the TUI and press `x` to try it out. The harness waits for the current
+checkout step, switches to the item's branch and starts the product, keeping
+output under `backlog/log/<id>/run-*.log`. The status shows a waiting request,
+the item being tried out, or a product that has exited. Missing targets are
+reported and release the checkout.
+
+Press `e` to cancel a request or release a try-out. Any transition on that item,
+or quitting the TUI, also stops the product's whole process group. After five
+seconds a process that has not stopped is killed. Checkout steps resume after
+the group exits; an interrupted story keeps its place ahead of queued stories.
+Starting or stopping agents does not stop a try-out. Human review steps release
+the checkout when no try-out is claimed. Uncommitted changes are preserved:
+requests and checkout steps wait until the customer cleans the tree. Existing
+Makefiles are never rewritten to add `run`.
 
 ## Choosing models per role
 

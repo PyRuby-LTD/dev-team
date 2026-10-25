@@ -1,4 +1,5 @@
 """Terminal view of the backlog: every work item, its step and who that step is waiting on."""
+import asyncio
 import threading
 from collections import deque
 from dataclasses import dataclass
@@ -392,6 +393,8 @@ class Backlog(App):
         ("s", "toggle_agents", "Start / stop agents"),
         ("l", "toggle_output", "Agent output"),
         ("t", "retry", "Retry failed"),
+        ("x", "tryout", "Try out item"),
+        ("e", "release", "Release checkout"),
         ("tab", "switch_pane", "Switch pane"),
         ("r", "reload", "Refresh"),
         ("q", "quit", "Quit"),
@@ -418,6 +421,7 @@ class Backlog(App):
     def compose(self):
         yield Header()
         yield Static(id="summary")
+        yield Static(id="tryout-status", markup=False)
         with Horizontal():
             yield ItemTree("Backlog", id="items")
             with Vertical(id="right"):
@@ -435,6 +439,7 @@ class Backlog(App):
         # Looked up once: while a dialog is open, queries run against the dialog instead.
         self.item_tree = self.query_one("#items", Tree)
         self.summary_bar = self.query_one("#summary", Static)
+        self.tryout_status = self.query_one("#tryout-status", Static)
         self.detail_pane = self.query_one("#detail", VerticalScroll)
         self.card_view = self.query_one("#card", Static)
         self.body_view = self.query_one("#body", Markdown)
@@ -454,6 +459,9 @@ class Backlog(App):
         self.set_interval(REFRESH_SECONDS, self.action_reload)
 
     def action_reload(self):
+        if self.runner is not None:
+            self.runner.tryout.tick()
+            self.tryout_status.update(self.runner.tryout.status)
         try:
             data, error = rows(self.repository, self.runner), None
         except (InvalidRecord, InvalidWorkflow, OSError) as exc:
@@ -608,6 +616,9 @@ class Backlog(App):
 
     def agent_report(self, message):
         self.agent_log.write(message)
+        if any(notice in message for notice in ("cannot run product", "release it first", "available only",
+                                                "uncommitted changes; checkout steps", "product exited")):
+            self.notify(message)
         self.action_reload()
 
     def agent_output(self, line):
@@ -646,12 +657,16 @@ class Backlog(App):
         # The agent thread can outlive the screen; a report after shutdown has nowhere to go.
         if self.is_running:
             try:
-                self.call_from_thread(callback, *args)
+                self.call_later(callback, *args)
             except RuntimeError:
                 pass
 
-    def on_unmount(self):
+    async def on_unmount(self):
         self.stop.set()
+        if self.runner is not None:
+            worker = self.runner.tryout.release()
+            if worker is not None:
+                await asyncio.to_thread(worker.join)
 
     def action_toggle_agents(self):
         if self.runner is None:
@@ -682,12 +697,30 @@ class Backlog(App):
             self.runner.retry(row.key)
             self.action_reload()
 
+    def action_tryout(self):
+        if self.runner is not None and self.shown is not None:
+            self.runner.tryout.request(self.shown.key)
+            self.action_reload()
+
+    def action_release(self):
+        if self.runner is not None:
+            self.runner.tryout.release()
+            self.action_reload()
+
+    async def finish_quit(self):
+        self.stop.set()
+        if self.runner is not None:
+            worker = self.runner.tryout.release()
+            if worker is not None:
+                await asyncio.to_thread(worker.join)
+        self.exit()
+
     def action_quit(self):
         if self.runner is not None and self.runner.active_ids():
             message = f"Agents are still working on {', '.join(self.runner.active_ids())}. Quit and abandon those runs?"
-            self.push_screen(Confirm(message), lambda yes: self.exit() if yes else None)
+            self.push_screen(Confirm(message), lambda yes: self.run_worker(self.finish_quit()) if yes else None)
         else:
-            self.exit()
+            self.run_worker(self.finish_quit())
 
     def action_toggle_mine(self):
         self.only_mine = not self.only_mine

@@ -13,6 +13,7 @@ from .backlog import InvalidRecord, mutation
 from .config import ROOT, harness_command, load_roles
 from .workflow import InvalidWorkflow
 from .evidence import PathGuard
+from .tryout import Tryout
 
 REPLY = re.compile(r"TRANSITION:\s*([A-Za-z0-9_-]+)\W*\Z")
 RECORDS = "docs/work-items"
@@ -60,11 +61,15 @@ def merged(runner, record):
     base = git.base_of(runner.checkout, branch)
     if base is None:
         raise StepFailed(f"no base branch is recorded for {branch}")
+    current = git.current_branch(runner.checkout)
     if not git.clean(runner.checkout):
-        current = git.current_branch(runner.checkout)
-        raise StepFailed(f"the checkout has uncommitted changes on {current}")
+        foreign = current != branch and (current == base or (current and current.startswith("devteam/")))
+        error = Waiting if foreign else StepFailed
+        raise error(f"the checkout has uncommitted changes on {current}")
     git.fetch(runner.checkout, "origin")
     git.fast_forward(runner.checkout, base, f"origin/{base}")
+    if current and current.startswith("devteam/") and current != branch:
+        git.must(runner.checkout, "switch", "-q", current)
     return "completed"
 
 
@@ -81,7 +86,7 @@ def sync(runner, record):
     current = git.current_branch(runner.checkout)
     if current and current.startswith("devteam/") and current != branch:
         holder = runner.repository.scan().valid.get(current.removeprefix("devteam/"))
-        if holder and not runner.repository.step(holder).terminal:
+        if holder and runner.uses_checkout(runner.repository.step(holder)):
             raise Waiting(f"waiting for {holder.id}, which holds the checkout")
     return git.sync_branch(runner.checkout, branch, base)
 
@@ -249,6 +254,14 @@ class Runner:
         self._pr_problems = {}
         self.checkout_user = None
         self.on_change = None
+        self.checkout_priority = None
+        self.tryout = Tryout(self)
+        repository.on_transition = self.transitioned
+
+    def transitioned(self, item_id):
+        with self.lock:
+            if self.tryout.item_id == item_id:
+                self.tryout.release()
 
     @property
     def failed(self):
@@ -296,6 +309,13 @@ class Runner:
             return f"waiting for {names} to be done"
         return None
 
+    def checkout_holder(self, branch):
+        if branch and branch.startswith("devteam/"):
+            holder = self.repository.scan().valid.get(branch.removeprefix("devteam/"))
+            if holder is not None and self.uses_checkout(self.repository.step(holder)):
+                return holder
+        return None
+
     def claim(self, record, step):
         reason = None
         with self.lock:
@@ -307,10 +327,22 @@ class Runner:
                 return False
             reason = self.dependency_wait(record, step, snapshot)
             if reason is None and self.uses_checkout(step):
-                if self.checkout_user is not None:
+                if self.tryout.item_id is not None:
+                    reason = f"waiting for try-out of {self.tryout.item_id}"
+                elif self.tryout.dirty_release and self.checkout is not None and not git.clean(self.checkout):
+                    reason = "waiting: the checkout has uncommitted changes after try-out"
+                elif (self.checkout_priority and self.checkout_priority != record.id
+                      and self.checkout_priority not in self._failed
+                      and self._runs.get(self.checkout_priority, 0) < self.max_runs
+                      and any(r.id == self.checkout_priority and self.uses_checkout(s)
+                              for r, s in self.pending())):
+                    reason = f"waiting for interrupted {self.checkout_priority}"
+                elif self.checkout_user is not None:
                     reason = f"waiting for {self.checkout_user}, which is using the checkout"
                 else:
                     self.checkout_user = record.id
+                    if self.checkout_priority == record.id:
+                        self.checkout_priority = None
             if reason is None:
                 self._active.add(record.id)
                 return True
@@ -332,10 +364,10 @@ class Runner:
             step = self.repository.step(record)
             if step.role or step.check or step.harness:
                 found.append((record, step))
-        return found
+        return sorted(found, key=lambda pair: pair[0].id != self.checkout_priority)
 
-    def take_checkout(self, record):
-        """Put the checkout on the item's branch; one unfinished item holds it at a time."""
+    def take_checkout(self, record, tryout=False):
+        """Put the checkout on the item's branch, preserving another checkout step's place."""
         if self.checkout is None:
             raise StepFailed("this role works on a branch, which needs a git repository")
         branch = f"devteam/{record.id}"
@@ -346,7 +378,7 @@ class Runner:
             raise StepFailed("the checkout is not on a branch")
         if current.startswith("devteam/"):
             holder = self.repository.scan().valid.get(current.removeprefix("devteam/"))
-            if holder is not None and not self.repository.step(holder).terminal:
+            if not tryout and self.checkout_holder(current) is not None:
                 raise Waiting(f"waiting for {holder.id}, which holds the checkout at step {holder.metadata['step']}")
         if not git.clean(self.checkout):
             raise Waiting(f"waiting: the checkout has uncommitted changes on {current}")
@@ -379,6 +411,7 @@ class Runner:
             "transitions": "\n".join(f"- `{name}` moves the item to `{target}`" for name, target in step.transitions.items()),
         }
         if role.branch:
+            self.check_run_limit(record)
             branch = self.take_checkout(record)
             base = git.base_of(self.checkout, branch)
             if base is None:
@@ -435,15 +468,20 @@ class Runner:
             git.commit_all(self.checkout, f"{record.id}: {step.name} by {role.name}")
         return match.group(1), self.repository.transition(record.id, match.group(1))
 
-    def count_run(self, record):
-        # A revise loop between two agents would otherwise run unattended without limit.
+    def check_run_limit(self, record):
         with self.lock:
             if self._runs.get(record.id, 0) >= self.max_runs:
                 raise StepFailed(f"already ran {self.max_runs} steps this session")
+
+    def count_run(self, record):
+        # A revise loop between two agents would otherwise run unattended without limit.
+        with self.lock:
+            self.check_run_limit(record)
             self._runs[record.id] = self._runs.get(record.id, 0) + 1
 
     def verify(self, record, step, log):
         """Run the project's check on the item's branch; its exit code chooses the transition."""
+        self.check_run_limit(record)
         self.take_checkout(record)
         self.count_run(record)
         self.report(f"{record.id} {step.name}: check started")
@@ -481,6 +519,7 @@ class Runner:
                 self._active.discard(record.id)
                 if self.checkout_user == record.id:
                     self.checkout_user = None
+                self.tryout.tick()
             if self.on_change is not None:
                 try:
                     self.on_change()
@@ -531,6 +570,7 @@ class Runner:
 
     def dispatch(self, stop=None):
         """Submit one step per runnable item, without joining workers or imposing a cap."""
+        self.tryout.tick()
         submitted = []
         for record, step in self.pending():
             if stop is not None and stop.is_set():

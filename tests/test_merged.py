@@ -179,3 +179,113 @@ class Merged(unittest.TestCase):
                     git.must(self.product, 'branch', base)
                 self.runner.retry(self.item.id)
                 self.failed(expected)
+
+    def test_dirty_foreign_item_or_base_waits_then_runs_without_failing(self):
+        for branch in (f'devteam/{self.other.id}', 'main'):
+            with self.subTest(branch=branch):
+                if branch.startswith('devteam/'):
+                    git.must(self.product, 'switch', '-q', '-c', branch)
+                    git.must(self.product, 'config', f'branch.{branch}.base', 'main')
+                else:
+                    git.must(self.product, 'switch', '-q', branch)
+                self.item.path.write_text(self.item.path.read_text().replace('step: done\n', 'step: merged\n'))
+                (self.product / 'untracked.txt').write_text('preserve this')
+                before = self.snapshot()
+                self.assertEqual(0, self.runner.run_pass())
+                self.assertEqual(before, self.snapshot())
+                self.assertNotIn(self.item.id, self.runner.failed)
+                self.assertIn('uncommitted changes', self.runner.waiting[self.item.id])
+                (self.product / 'untracked.txt').unlink()
+                self.assertEqual(1, self.runner.run_pass())
+                self.assertEqual('done', self.repo.scan().valid[self.item.id].metadata['step'])
+                self.assertEqual(branch, git.current_branch(self.product))
+
+    def test_merged_restores_interrupted_story_and_its_tryout_priority(self):
+        self.runner.max_runs = 16
+        self.other.path.write_text(self.other.path.read_text().replace('step: captured\n', 'step: implement\n'))
+        # Create the other branch directly because merged currently holds the checkout.
+        other_branch = f'devteam/{self.other.id}'
+        git.must(self.product, 'switch', '-q', '-c', other_branch, 'main')
+        git.must(self.product, 'config', f'branch.{other_branch}.base', 'main')
+        self.advance(self.product, 'other-work')
+        tip = git.must(self.product, 'rev-parse', 'HEAD')
+        self.assertEqual('completed', merged(self.runner, self.item))
+        self.assertEqual(other_branch, git.current_branch(self.product))
+        self.assertEqual(tip, git.must(self.product, 'rev-parse', 'HEAD'))
+        self.item.path.write_text(self.item.path.read_text().replace('step: merged\n', 'step: accept\n'))
+        import sys
+        self.runner.tryout.command = [sys.executable, '-c', 'pass']
+        self.runner.tryout.request(self.item.id)
+        self.assertEqual(self.other.id, self.runner.tryout.interrupted)
+        worker = self.runner.tryout.release()
+        worker.join(8)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(self.other.id, self.runner.checkout_priority)
+
+    def test_running_merged_serialises_other_checkout_steps(self):
+        import threading
+        entered, resume = threading.Event(), threading.Event()
+        real_fetch = git.fetch
+
+        def fetch(*args):
+            entered.set()
+            self.assertTrue(resume.wait(5))
+            real_fetch(*args)
+
+        self.other.path.write_text(self.other.path.read_text().replace('step: captured\n', 'step: merged\n'))
+        with patch.object(git, 'fetch', side_effect=fetch):
+            record = self.repo.scan().valid[self.item.id]
+            thread = threading.Thread(target=self.runner.run_item, args=(record, self.repo.step(record)))
+            thread.start()
+            try:
+                self.assertTrue(entered.wait(5))
+                other = self.repo.scan().valid[self.other.id]
+                self.assertFalse(self.runner.claim(other, self.repo.step(other)))
+                self.assertIn(self.item.id, self.runner.waiting[self.other.id])
+            finally:
+                resume.set()
+                thread.join(8)
+            self.assertFalse(thread.is_alive())
+
+    def test_dirty_tryout_release_holds_even_merged_on_its_own_branch(self):
+        import sys
+        self.item.path.write_text(self.item.path.read_text().replace('step: merged\n', 'step: accept\n'))
+        self.runner.tryout.command = [sys.executable, '-c', "open('product-output', 'w').write('keep')"]
+        self.runner.tryout.request(self.item.id)
+        self.runner.tryout.process.wait(timeout=5)
+        worker = self.runner.tryout.release()
+        worker.join(8)
+        self.assertFalse(worker.is_alive())
+        self.item.path.write_text(self.item.path.read_text().replace('step: accept\n', 'step: merged\n'))
+        self.assertEqual(0, self.runner.run_pass())
+        self.assertNotIn(self.item.id, self.runner.failed)
+        self.assertIn('uncommitted', self.runner.waiting[self.item.id])
+        self.assertEqual('keep', (self.product / 'product-output').read_text())
+        (self.product / 'product-output').unlink()
+        self.done()
+
+    def test_dirty_unrelated_branch_still_fails(self):
+        git.must(self.product, 'switch', '-q', '-c', 'unrelated')
+        (self.product / 'app.txt').write_text('dirty')
+        self.failed('uncommitted changes on unrelated')
+
+    def test_automatic_merge_transition_stops_tryout_before_dispatch(self):
+        import sys
+        self.item.path.write_text(self.item.path.read_text().replace('step: merged\n', 'step: pull-request\n'))
+        self.repo.write_body(self.item.id, '## Pull request\nhttps://github.com/acme/product/pull/2\n', 'fixture')
+        stub = self.gh_calls.parent / 'bin' / 'gh'
+        stub.write_text('#!/bin/sh\necho \'{"state":"MERGED"}\'\n')
+        self.runner.tryout.command = [sys.executable, '-c', 'import time; time.sleep(60)']
+        self.runner.tryout.request(self.item.id)
+        process = self.runner.tryout.process
+        self.runner.poll_pull_requests()
+        _, unfinished = wait([future for _, future in self.runner._pr_lookups.values()], timeout=5)
+        self.assertFalse(unfinished)
+        self.runner.poll_pull_requests()
+        worker = self.runner.tryout.stopping
+        if worker is not None:
+            worker.join(8)
+            self.assertFalse(worker.is_alive())
+        self.assertIsNone(self.runner.tryout.item_id)
+        self.assertIsNotNone(process.poll())
+        self.done()
