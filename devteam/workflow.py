@@ -8,7 +8,7 @@ from .config import ROOT, load_roles
 
 CHECK = "check"
 CHECK_OUTCOMES = {"passed", "failed"}
-HARNESS_ACTIONS = {"merged", "rejected", "abandon"}
+HARNESS_ACTIONS = {"merged", "rejected", "abandon", "sync"}
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 
 
@@ -85,8 +85,10 @@ def build(name, data, roles):
                 raise InvalidWorkflow(f"step {step_name!r}: transition {transition!r} targets undefined step {target!r}")
         if owner == CHECK and set(transitions) != CHECK_OUTCOMES:
             raise InvalidWorkflow(f"step {step_name!r}: a check step has exactly the transitions 'passed' and 'failed'")
-        if owner.startswith("harness:") and set(transitions) != {"completed"}:
-            raise InvalidWorkflow(f"step {step_name!r}: a harness step has exactly the transition 'completed'")
+        outcomes = {"completed", "conflicted"} if owner == "harness:sync" else {"completed"}
+        if owner.startswith("harness:") and set(transitions) != outcomes:
+            expected = "the transitions 'completed' and 'conflicted'" if owner == "harness:sync" else "the transition 'completed'"
+            raise InvalidWorkflow(f"step {step_name!r}: a harness step has exactly {expected}")
         steps[step_name] = Step(step_name, owner, dict(transitions))
     if data.get("initial") not in steps:
         raise InvalidWorkflow(f"initial step {data.get('initial')!r} is not defined")

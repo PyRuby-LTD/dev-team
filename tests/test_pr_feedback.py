@@ -166,8 +166,8 @@ class RejectedThroughTheCommandLine(unittest.TestCase):
         shutil.copytree(ROOT / "tests/fixtures/gh", self.fixtures)
         self.devteam("backlog", "capture", "epic", "Epic", "--id", "EPIC-001")
         self.devteam("backlog", "capture", "story", "Story", "--id", "STORY-001", "--parent", "EPIC-001")
-        for name in ("analyse", "analysed", "sound", "play", "implemented", "written", "passed",
-                     "approve", "pr", "published"):
+        for name in ("analyse", "analysed", "sound", "play", "implemented", "written", "completed", "passed",
+                     "approve", "pr", "completed", "passed", "published"):
             self.devteam("backlog", "move", "STORY-001", name)
 
     def devteam(self, *args, path=None, env=None):

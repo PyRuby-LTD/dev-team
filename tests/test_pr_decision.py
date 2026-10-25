@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STUBS = ROOT / "tests" / "stubs"
 STREAMS = ROOT / "tests" / "fixtures" / "streams"
 DEFAULT = ROOT / "workflows" / "default.json"
-TO_ACCEPT = ("analyse", "analysed", "sound", "play", "implemented", "written", "passed", "approve")
+TO_ACCEPT = ("analyse", "analysed", "sound", "play", "implemented", "written", "completed", "passed", "approve")
 
 
 class PullRequestDecision(unittest.TestCase):
@@ -59,10 +59,10 @@ class PullRequestDecision(unittest.TestCase):
         return self.devteam("run", "--once", env=env)
 
     def at_pull_request(self, item="STORY-001"):
-        self.move(*TO_ACCEPT, "pr", "published", item=item)
+        self.move(*TO_ACCEPT, "pr", "completed", "passed", "published", item=item)
 
     def test_published_item_waits_for_the_customer_instead_of_reaching_done(self):
-        self.move(*TO_ACCEPT, "pr")
+        self.move(*TO_ACCEPT, "pr", "completed", "passed")
         self.assertEqual(["STORY-001", "publish", "agent:publisher"], self.listing()[:3])
         moved = self.devteam("backlog", "move", "STORY-001", "published").stdout
         self.assertIn("pull-request (human)", moved)
@@ -123,7 +123,7 @@ class PullRequestDecision(unittest.TestCase):
         refused = self.devteam("backlog", "move", "STORY-001", "accept", check=False)
         self.assertNotEqual(0, refused.returncode)
         self.assertIn("not a transition", refused.stderr)
-        self.move(*TO_ACCEPT, "pr", item="STORY-002")
+        self.move(*TO_ACCEPT, "pr", "completed", "passed", item="STORY-002")
         self.assertEqual("accept", self.listing()[1])
         self.assertEqual("publish", self.listing("STORY-002")[1])
 
@@ -164,7 +164,7 @@ class DefaultWorkflowShape(unittest.TestCase):
         self.assertEqual({"owner": "harness:rejected", "transitions": {"completed": "implement"}}, self.steps["rejected"])
 
     def test_accept_keeps_its_three_transitions(self):
-        self.assertEqual({"owner": "human", "transitions": {"pr": "publish", "revise": "implement", "abandon": "abandoning"}},
+        self.assertEqual({"owner": "human", "transitions": {"pr": "sync-publish", "revise": "implement", "abandon": "abandoning"}},
                          self.steps["accept"])
 
 
@@ -189,7 +189,7 @@ class PullRequestHoldsTheCheckout(unittest.TestCase):
             self.devteam("backlog", "capture", "story", "Story", "--id", item, "--parent", "EPIC-001")
         for transition in TO_ACCEPT[:4]:
             self.devteam("backlog", "move", "STORY-002", transition)
-        for transition in (*TO_ACCEPT, "pr", "published"):
+        for transition in (*TO_ACCEPT, "pr", "completed", "passed", "published"):
             self.devteam("backlog", "move", "STORY-001", transition)
         # STORY-001 has the checkout, as it would after its implement step.
         subprocess.run(["git", "-C", str(self.product), "switch", "-q", "-c", "devteam/STORY-001"], check=True)

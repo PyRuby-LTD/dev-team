@@ -95,6 +95,30 @@ its IDs in the request body and validates it. Epics remain grouping items;
 stories, tasks and bugs stay at their workflow's initial step. At request
 review, `revise` returns to the product owner and `approve` ends the request.
 
+After `test`, `sync` fetches origin and rebases the item onto its recorded
+`origin/<base>` before `verify -> review -> accept`. Choosing `pr` at `accept`
+needs no note and runs `sync-publish -> verify-publish -> publish`; a failure
+at `verify` returns to `test`, while `verify-publish` returns to `implement`.
+Both sync steps hold the checkout. Missing bases, fetch failures and dirty
+checkouts fail the step without switching or rewriting the branch.
+
+If rebasing conflicts, the harness aborts the rebase and merges the base without
+committing. `resolve` or `resolve-publish` asks the implementer to resolve all
+conflicted files in one round without committing. The harness rejects remaining
+markers and commits the merge after `resolved`. `blocked` aborts the merge and
+returns to `ready`. A clean merge fallback goes straight to verification. Later
+syncs preserve an earlier merge from the base instead of replaying its conflict.
+
+Publishing uses `git push --force-with-lease` pinned to the recorded remote head,
+so rebased branches can be republished. `branch.<branch>.pushed` records remote
+history accounted for at each passing sync and each successful push. Remote
+commits reachable from neither that record nor the local branch stop sync or
+publication with a message naming the commits. To recover, on the item's branch
+fetch and run `git merge origin/<branch>` to incorporate them, then replay the
+step; alternatively reset the remote branch to the last published head to
+discard them, then replay. Remote changes after sync are also protected by the
+publication check and lease.
+
 ## Where the backlog lives
 
 `backlog/` is a git worktree of the `devteam-backlog` branch, which shares no

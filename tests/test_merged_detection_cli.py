@@ -11,8 +11,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 STUBS = ROOT / "tests" / "stubs"
-TO_PULL_REQUEST = ("analyse", "analysed", "sound", "play", "implemented", "written", "passed", "approve",
-                   "pr", "published")
+TO_PULL_REQUEST = ("analyse", "analysed", "sound", "play", "implemented", "written", "completed", "passed", "approve",
+                   "pr", "completed", "passed", "published")
 IDENTITY = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
             "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
 
