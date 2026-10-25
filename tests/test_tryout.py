@@ -163,6 +163,46 @@ class Tryout(unittest.TestCase):
         self.assertIsNotNone(self.claim.item_id)
         self.assertFalse(any("cannot run product" in m for m in self.messages))
 
+    def test_invalid_checkout_releases_claim_and_allows_queued_work_after_repair(self):
+        for checkout in ("detached", "missing base"):
+            with self.subTest(checkout=checkout):
+                git.must(self.product, "switch", "-q", "main")
+                if checkout == "detached":
+                    git.must(self.product, "checkout", "-q", "--detach")
+                    reason = "the checkout is not on a branch"
+                else:
+                    git.must(self.product, "switch", "-q", "-c", "devteam/unrecorded")
+                    reason = "no base branch is recorded for devteam/unrecorded"
+                self.claim.request(self.first.id)
+                self.assertIsNone(self.claim.item_id)
+                self.assertIsNone(self.claim.process)
+                self.assertIn("cannot run product", self.messages[-1])
+                self.assertIn(reason, self.messages[-1])
+                self.claim.tick()
+                git.must(self.product, "switch", "-q", "main")
+        self.repo.transition(self.second.id, "play")
+        self.assertEqual(1, self.runner.run_pass())
+        self.assertEqual(f"devteam/{self.second.id}", git.current_branch(self.product))
+
+    def test_checkout_becoming_dirty_during_grant_keeps_request_waiting(self):
+        take_checkout = self.runner.take_checkout
+
+        def dirty_then_take(record, tryout=False):
+            (self.product / "app.txt").write_text("customer work")
+            return take_checkout(record, tryout=tryout)
+
+        git.must(self.product, "switch", "-q", "main")
+        self.runner.take_checkout = dirty_then_take
+        self.claim.request(self.first.id)
+        self.assertEqual(self.first.id, self.claim.item_id)
+        self.assertIsNone(self.claim.process)
+        self.assertIn("uncommitted changes", self.claim.status)
+        self.assertEqual("customer work", (self.product / "app.txt").read_text())
+        self.runner.take_checkout = take_checkout
+        git.must(self.product, "restore", "app.txt")
+        self.claim.tick()
+        self.assertIsNotNone(self.claim.process)
+
     def test_transition_cancels_pending_request_and_releases_running_product(self):
         (self.product / "app.txt").write_text("dirty")
         self.claim.request(self.first.id)

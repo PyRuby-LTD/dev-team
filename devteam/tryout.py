@@ -71,6 +71,9 @@ class Tryout:
             return True
 
     def tick(self):
+        # Runner owns these errors and imports Tryout during module loading.
+        from .runner import StepFailed, Waiting
+
         with self.runner.lock:
             if not self.item_id:
                 if self.dirty_release and git.clean(self.runner.checkout):
@@ -122,7 +125,9 @@ class Tryout:
                                                     stderr=subprocess.STDOUT, start_new_session=True)
                 self.status = f"Trying out {self.item_id}; output: {log}"
                 self.say(self.status)
-            except (OSError, ValueError, KeyError, git.GitError) as exc:
+            except Waiting as exc:
+                self.status = f"{self.item_id}: try-out {exc}"
+            except (StepFailed, OSError, ValueError, KeyError, git.GitError) as exc:
                 self.cannot_run(str(exc))
 
     def cannot_run(self, reason):
