@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from . import check as checks
 from . import engines, git, questions
-from .backlog import InvalidRecord
+from .backlog import InvalidRecord, mutation
 from .config import ROOT, harness_command, load_roles
 from .workflow import InvalidWorkflow
 from .evidence import PathGuard
@@ -17,6 +17,7 @@ from .evidence import PathGuard
 REPLY = re.compile(r"TRANSITION:\s*([A-Za-z0-9_-]+)\W*\Z")
 RECORDS = "docs/work-items"
 GH_TIMEOUT = 60
+PR_POLL_SECONDS = 60
 PR_URL = re.compile(r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/pull/([0-9]+)\b")
 
 PROTOCOL = """
@@ -67,8 +68,8 @@ def merged(runner, record):
     return "completed"
 
 
-def rejected(runner, record):
-    """Copy the PR's full submitted feedback before returning to implementation."""
+def pull_request(record):
+    """Use the last PR URL in the publisher's section, excluding later feedback."""
     lines = record.body.splitlines()
     start = next((i for i, line in enumerate(lines)
                   if re.fullmatch(r"##\s+Pull request\s*", line, re.IGNORECASE)), None)
@@ -78,7 +79,31 @@ def rejected(runner, record):
         urls = PR_URL.findall("\n".join(lines[start + 1:end]))
     if not urls:
         raise StepFailed("PR URL is missing from ## Pull request (expected https://github.com/<owner>/<repo>/pull/<n>)")
-    owner, repo, number = urls[-1]
+    return urls[-1]
+
+
+def pr_state(record):
+    owner, repo, number = pull_request(record)
+    argv = ["gh", "pr", "view", f"https://github.com/{owner}/{repo}/pull/{number}", "--json", "state"]
+    call = " ".join(argv)
+    try:
+        result = subprocess.run(argv, capture_output=True, text=True, errors="replace", timeout=GH_TIMEOUT)
+    except subprocess.TimeoutExpired as exc:
+        raise StepFailed(f"{call}: timed out after {GH_TIMEOUT} seconds") from exc
+    if result.returncode:
+        raise StepFailed(f"{call}: exit {result.returncode}: {result.stderr.strip()}")
+    try:
+        data = json.loads(result.stdout)
+        if not isinstance(data, dict) or data.get("state") not in ("OPEN", "CLOSED", "MERGED"):
+            raise ValueError("expected state OPEN, CLOSED or MERGED")
+    except ValueError as exc:
+        raise StepFailed(f"{call}: invalid JSON response: {exc}") from exc
+    return data["state"]
+
+
+def rejected(runner, record):
+    """Copy the PR's full submitted feedback before returning to implementation."""
+    owner, repo, number = pull_request(record)
     base = f"repos/{owner}/{repo}"
     reviews = pr_comments(f"{base}/pulls/{number}/reviews")
     inline = pr_comments(f"{base}/pulls/{number}/comments")
@@ -185,6 +210,9 @@ class Runner:
         self._waiting = {}
         self._active = set()
         self._runs = {}
+        self._pr_started = {}
+        self._pr_lookups = {}
+        self._pr_problems = {}
         self.checkout_user = None
         self.on_change = None
 
@@ -452,12 +480,62 @@ class Runner:
     def run_pass(self):
         return sum(future.result() for future in self.dispatch())
 
+    def poll_pull_requests(self):
+        """Collect completed lookups and start due ones without waiting for GitHub."""
+        for item_id, (record, future) in list(self._pr_lookups.items()):
+            if not future.done():
+                continue
+            del self._pr_lookups[item_id]
+            updated = None
+            try:
+                # The manual decision and this check/transition share the backlog lock.
+                with mutation(self.repository.root):
+                    current = self.repository.scan().valid.get(item_id)
+                    if current != record or item_id in self.failed:
+                        continue
+                    state = future.result()
+                    self._pr_problems.pop(item_id, None)
+                    if state == "MERGED":
+                        updated = self.repository.transition(item_id, "merged")
+            except Exception as exc:
+                problem = str(exc)
+                if self._pr_problems.get(item_id) != problem:
+                    self._pr_problems[item_id] = problem
+                    self.report(f"{item_id} pull-request: {problem}")
+            if updated is not None:
+                self.report(f"{item_id} pull-request: merged -> {updated.metadata['step']}")
+                if self.on_change is not None:
+                    self.on_change()
+
+        for record in self.repository.scan().valid.values():
+            if record.metadata.get("step") != "pull-request" or record.id in self.failed:
+                continue
+            step = self.repository.step(record)
+            if not step.human or "merged" not in step.transitions:
+                continue
+            now = time.monotonic()
+            if record.id in self._pr_lookups or now - self._pr_started.get(record.id, -float("inf")) < PR_POLL_SECONDS:
+                continue
+            future = Future()
+            self._pr_started[record.id] = now
+            self._pr_lookups[record.id] = (record, future)
+
+            def lookup(record=record, future=future):
+                try:
+                    future.set_result(pr_state(record))
+                except Exception as exc:
+                    future.set_exception(exc)
+
+            threading.Thread(target=lookup, name=f"{record.id}-pr", daemon=True).start()
+
     def run(self, once=False, interval=2.0, stop=None):
         """Poll for new work even while earlier steps are running; Stop only ends dispatch."""
         stop = stop if stop is not None else threading.Event()
         in_flight = []
         scan = True
         while not stop.is_set():
+            if not once:
+                self.poll_pull_requests()
             if scan:
                 in_flight.extend(self.dispatch(stop))
             completed = [future for future in in_flight if future.done()]
