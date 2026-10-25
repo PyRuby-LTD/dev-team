@@ -8,7 +8,7 @@ from .config import ROOT, load_roles
 
 CHECK = "check"
 CHECK_OUTCOMES = {"passed", "failed"}
-HARNESS_ACTIONS = {"merged", "rejected"}
+HARNESS_ACTIONS = {"merged", "rejected", "abandon"}
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 
 

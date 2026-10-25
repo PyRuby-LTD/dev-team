@@ -74,7 +74,7 @@ class PullRequestDecision(unittest.TestCase):
         self.assertEqual("pull-request", self.listing()[1])
         self.assertFalse(self.argv.exists())
 
-    def test_customer_can_only_move_a_pull_request_to_merged_or_rejected(self):
+    def test_customer_cannot_skip_the_pull_request_decision(self):
         self.at_pull_request()
         for name in ("published", "completed", "accept"):
             refused = self.devteam("backlog", "move", "STORY-001", name, check=False)
@@ -117,11 +117,14 @@ class PullRequestDecision(unittest.TestCase):
         body = next((self.product / "backlog").rglob("STORY-001.md")).read_text()
         self.assertIn("Rename the flag", body)
 
-    def test_accept_still_finishes_directly_and_the_pr_path_still_leads_to_publish(self):
+    def test_accept_is_refused_and_the_pr_path_still_leads_to_publish(self):
         self.capture("STORY-002")
-        self.move(*TO_ACCEPT, "accept")
+        self.move(*TO_ACCEPT)
+        refused = self.devteam("backlog", "move", "STORY-001", "accept", check=False)
+        self.assertNotEqual(0, refused.returncode)
+        self.assertIn("not a transition", refused.stderr)
         self.move(*TO_ACCEPT, "pr", item="STORY-002")
-        self.assertEqual("done", self.listing()[1])
+        self.assertEqual("accept", self.listing()[1])
         self.assertEqual("publish", self.listing("STORY-002")[1])
 
     def test_default_workflow_validates_through_the_backlog_command(self):
@@ -153,7 +156,7 @@ class DefaultWorkflowShape(unittest.TestCase):
         self.assertNotIn("done", seen)
 
     def test_pull_request_is_the_customers_and_leads_to_the_harness_steps(self):
-        self.assertEqual({"owner": "human", "transitions": {"merged": "merged", "rejected": "rejected"}},
+        self.assertEqual({"owner": "human", "transitions": {"merged": "merged", "rejected": "rejected", "abandon": "abandoning"}},
                          self.steps["pull-request"])
 
     def test_harness_steps_complete_to_done_and_implement(self):
@@ -161,7 +164,7 @@ class DefaultWorkflowShape(unittest.TestCase):
         self.assertEqual({"owner": "harness:rejected", "transitions": {"completed": "implement"}}, self.steps["rejected"])
 
     def test_accept_keeps_its_three_transitions(self):
-        self.assertEqual({"owner": "human", "transitions": {"pr": "publish", "accept": "done", "revise": "implement"}},
+        self.assertEqual({"owner": "human", "transitions": {"pr": "publish", "revise": "implement", "abandon": "abandoning"}},
                          self.steps["accept"])
 
 

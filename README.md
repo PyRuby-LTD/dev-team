@@ -143,11 +143,13 @@ beside the code; the first command creates it. See
 | test | tester, on the item's branch | `written` (to verify), `defect` (back to implement) |
 | verify | the harness runs `make regression` | `passed` (to review), `failed` (back to test) |
 | review | reviewer, on the item's branch | `approve`, `revise` |
-| accept | you | `pr` (to publish), `accept` (done, no pull request), `revise` |
+| accept | you | `pr` (to publish), `revise`, `abandon` (to abandoning) |
 | publish | publisher, on the item's branch | `published` (to pull-request) |
-| pull-request | you | `merged` (to merged), `rejected` (to rejected) |
+| pull-request | you | `merged` (to merged), `rejected` (to rejected), `abandon` (to abandoning) |
 | merged | harness | `completed` (to done) |
 | rejected | harness | `completed` (back to implement) |
+| abandoning | harness | `completed` (to abandoned) |
+| abandoned | - | |
 | done | - | |
 
 The implementer writes unit tests only where the logic is hard to get right;
@@ -210,6 +212,18 @@ harness reads the PR's review, inline and conversation comments with `gh`, which
 must be installed and authenticated. It replaces `## Pull request feedback`
 before returning to `implement`. A failure leaves the item at `rejected`; fix
 the cause and retry. Neither action changes the PR.
+
+At `accept` or `pull-request`, choose `abandon` to stop work without merging.
+It moves straight to `abandoning` without asking for a feedback note. If the
+checkout is on the item's branch, the harness requires a clean tree and a
+recorded base, then switches to that base before finishing at `abandoned`.
+A failure leaves the item at `abandoning`, holding the checkout; clean the tree
+or fix the recorded base and retry. If another branch is checked out, the
+harness leaves it alone and finishes without those checks. The local item
+branch and its commits are kept for manual recovery; the harness does not
+fetch, merge or push. Closing any open PR is your job. `abandoned` releases the
+checkout, and the next item starts from the branch then checked out. `done`
+is reached only through `merged`; existing finished items are unchanged.
 
 ## The project check
 
