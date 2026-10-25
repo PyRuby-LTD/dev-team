@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from concurrent.futures import wait
 from unittest.mock import patch
 
 from devteam import git
@@ -118,6 +119,22 @@ class Merged(unittest.TestCase):
                 self.assertEqual(before, git.must(self.product, 'for-each-ref',
                                                  '--format=%(refname) %(objectname)',
                                                  'refs/heads/main', 'refs/heads/devteam/'))
+
+    def test_detected_merge_uses_the_existing_harness_to_reach_done(self):
+        self.item.path.write_text(self.item.path.read_text().replace('step: merged\n', 'step: pull-request\n'))
+        self.repo.write_body(self.item.id, '## Pull request\nhttps://github.com/acme/product/pull/2\n', 'fixture')
+        stub = self.gh_calls.parent / 'bin' / 'gh'
+        stub.write_text('#!/bin/sh\necho \'{"state":"MERGED"}\'\n')
+        tip = self.advance(self.writer, 'remote')
+        git.must(self.writer, 'push', '-q', 'origin', 'main')
+        self.runner.poll_pull_requests()
+        _, unfinished = wait([future for _, future in self.runner._pr_lookups.values()], timeout=5)
+        self.assertFalse(unfinished)
+        self.runner.poll_pull_requests()
+        self.assertEqual('merged', self.repo.scan().valid[self.item.id].metadata['step'])
+        self.assertIn('pull-request: merged -> merged', self.messages[-1])
+        self.done()
+        self.assertEqual(tip, git.must(self.product, 'rev-parse', 'main'))
 
     def test_dirty_tracked_and_untracked_fail_before_fetch(self):
         for name in ('app.txt', 'untracked.txt'):

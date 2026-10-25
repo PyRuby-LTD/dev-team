@@ -1,6 +1,9 @@
 """Event-controlled workers exercise concurrency without running external agents."""
 import json
+import os
 from pathlib import Path
+import shutil
+import sys
 import tempfile
 import threading
 import unittest
@@ -9,6 +12,7 @@ from unittest.mock import patch
 from devteam import cli, git
 from devteam.backlog import Repository
 from devteam.runner import Runner, StepFailed, HARNESS_ACTIONS, merged
+from devteam import runner as runners
 from tests.test_runner import role
 
 WORKFLOW = {
@@ -121,6 +125,56 @@ class Dispatch(unittest.TestCase):
                 self.assertEqual(count, sum(f.result(timeout=3) for f in submitted))
                 self.assertEqual(count, sum(self.calls.count(record.id) for record in records))
         self.assertNotIn("max_agents", (Path(__file__).resolve().parent.parent / "config/roles.toml").read_text())
+
+    def test_hung_pr_process_does_not_delay_agent_check_or_harness_dispatch(self):
+        # Extend this fixture's workflow with the human decision under observation.
+        from devteam.workflow import Step
+        workflow = self.repo.workflow("default")
+        workflow.steps["ready"].transitions["publish"] = "pull-request"
+        workflow.steps["pull-request"] = Step("pull-request", "human", {"merged": "merged", "rejected": "rejected"})
+        published = self.item("publish")
+        self.repo.write_body(published.id, "## Pull request\nhttps://github.com/acme/product/pull/2\n", "fixture")
+        remote = self.root / "remote.git"
+        git.must(self.product, "init", "-q", "--bare", str(remote))
+        git.must(self.product, "remote", "add", "origin", str(remote))
+        git.must(self.product, "push", "-q", "origin", "main")
+        stub_dir = self.root / "bin"
+        stub_dir.mkdir()
+        shutil.copy(Path(__file__).parent / "stubs/gh", stub_dir / "gh")
+        (stub_dir / "python3").symlink_to(sys.executable)
+        argv = self.root / "gh-argv"
+        with patch.dict(os.environ, PATH=f"{stub_dir}{os.pathsep}{os.environ['PATH']}",
+                        GH_STUB_ARGV=str(argv), GH_STUB_SLEEP="state", GH_STUB_SECONDS="20"), \
+                patch.object(runners, "GH_TIMEOUT", 5):
+            stop, thread = self.loop()
+            lookup = None
+            try:
+                for _ in range(200):
+                    if argv.exists() and argv.read_text():
+                        break
+                    threading.Event().wait(.01)
+                self.assertTrue(argv.exists())
+                lookup = self.runner._pr_lookups[published.id][1]
+                self.assertFalse(lookup.done())
+                records = [self.item("analyse"), self.item("check"), self.item("merge")]
+                git.must(self.product, "config", f"branch.devteam/{records[-1].id}.base", "main")
+                self.release.set()
+                for _ in range(200):
+                    if all(self.repo.scan().valid[record.id].metadata["step"] == "done" for record in records):
+                        break
+                    threading.Event().wait(.01)
+                self.assertTrue(all(self.repo.scan().valid[record.id].metadata["step"] == "done" for record in records))
+                self.assertFalse(lookup.done(), "other work must finish while gh is outstanding")
+                self.assertEqual({}, self.runner.failed)
+            finally:
+                stop.set()
+                thread.join(2)
+                if lookup is not None:
+                    from concurrent.futures import wait
+                    wait([lookup], timeout=6)
+            self.assertFalse(thread.is_alive())
+            self.assertTrue(lookup.done())
+            self.assertIn("timed out", str(lookup.exception()))
 
     def test_branch_and_check_steps_exclude_each_other_but_allow_analysis(self):
         for first, second in (("play", "play"), ("play", "check"), ("check", "play"), ("check", "check")):
