@@ -31,8 +31,13 @@ def cmd_backlog(args):
             return
         if args.backlog_action == "capture":
             body = Path(args.file).read_bytes().decode("utf-8") if args.file else ""
-            record = repo.create(args.type, args.title, body, parent=args.parent, item_id=args.id)
+            record = repo.create(args.type, args.title, body, parent=args.parent, item_id=args.id,
+                                 depends_on=args.depends_on)
             print(f"created {record.id} in {record.path}")
+            return
+        if args.backlog_action == "depends-on":
+            record = repo.set_dependencies(args.id, args.dependencies)
+            print(f"{record.id}: depends_on set to {record.metadata['depends_on']}")
             return
         snapshot = repo.scan()
         for path, errors in snapshot.errors.items():
@@ -110,7 +115,12 @@ def main(argv=None):
     capture.add_argument("--id")
     capture.add_argument("--parent")
     capture.add_argument("--file", help="UTF-8 Markdown body; metadata is generated separately")
+    capture.add_argument("--depends-on", action="append", help="dependency ID; repeat for multiple dependencies")
     capture.set_defaults(func=cmd_backlog)
+    dependencies = actions.add_parser("depends-on", help="replace dependencies (no IDs clears the list)")
+    dependencies.add_argument("id")
+    dependencies.add_argument("dependencies", nargs="*")
+    dependencies.set_defaults(func=cmd_backlog)
     move = actions.add_parser("move", help="apply one of the current step's transitions")
     move.add_argument("id")
     move.add_argument("transition")

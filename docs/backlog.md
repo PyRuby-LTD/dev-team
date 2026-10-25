@@ -24,6 +24,7 @@ step: ready
 | `parent` | Story: an epic. Task: a story or bug. Bug: optional epic, story or task. Epic and request: none |
 | `workflow` | Required except on epics: the name of the workflow definition the item follows |
 | `step` | Required except on epics: the item's current step in that workflow |
+| `depends_on` | Optional list of story, task or bug IDs on stories, tasks and bugs; absent or `[]` means no dependencies |
 
 `step` is the only state. Who owns a step and where an item may go next are
 defined by the workflow, not by the item. Epics group work and carry neither
@@ -31,8 +32,28 @@ field. Questions, answers and acceptance criteria belong in the body; git
 history is the audit trail.
 
 Unknown fields, duplicate keys, YAML aliases, missing or mistyped parents,
-parent cycles and duplicate IDs are reported per file. An item with an invalid
-parent is reported too; unrelated items stay valid. Validation never writes.
+parent cycles and duplicate IDs are reported per file. Dependency problems are
+also reported: unknown IDs, self-references, cycles (with the chain), non-ID
+entries, repeated entries, non-list values, the field on an epic or request,
+and dependencies on epics or requests. An epic never reaches `done`; a request's
+`done` means approved analysis, not merged work. An invalid parent or dependency
+quarantines the dependent item and its child tasks; unrelated items stay valid.
+Validation never writes.
+
+For example, `depends_on: [STORY-001, STORY-002]` holds an item at its first
+branch-role step until both dependencies reach `done`. The runner reports each
+unfinished dependency and its current step as a waiting reason in the terminal
+UI. The held item does not take the checkout, so independent work can run.
+Analysis, challenge and other non-branch steps continue; checks and harness
+steps are exempt. The hold is re-evaluated on every scan and lifts when the last
+dependency reaches `done`, letting the new branch start from the returned base
+branch with the merged work.
+
+An `abandoned` dependency never satisfies the hold. The runner reports it as
+blocked and tells the customer to edit `depends_on`. Remove or replace that
+entry to release the item. These rules apply only while the item has no local
+`devteam/<id>` branch. Adding or changing dependencies after that branch exists
+has no scheduling effect, including for abandoned dependencies.
 
 ## Workflows
 
@@ -101,13 +122,23 @@ or pass `--product DIR` before the command:
 dev-team backlog capture epic 'Example'
 dev-team backlog capture request 'A new idea' --file idea.md
 dev-team backlog capture story 'Feature' --parent EPIC-001
+dev-team backlog capture story 'Build on the feature' --parent EPIC-001 --depends-on STORY-001
+dev-team backlog depends-on STORY-002 STORY-001 BUG-003
+dev-team backlog depends-on STORY-002
 dev-team backlog validate
 dev-team backlog move STORY-001 analyse
 dev-team run --once
 dev-team check
 ```
 
-Use `--file` to supply the body and `--id` to choose an ID. `list` and `validate` list
+Use `--file` to supply the body and `--id` to choose an ID. Repeat
+`--depends-on ID` on capture for each dependency. `backlog depends-on <id> [ID ...]` replaces
+an existing item's entire list; no dependency IDs clears it. Both commands
+validate before writing and leave item files untouched on invalid input.
+Dependency edits preserve other front matter and the body and are committed on
+the backlog branch, like captures and moves. Analysts and product owners can
+use these commands; during an agent step a valid `depends_on` change is allowed,
+while any other front-matter change still fails the step. `list` and `validate` list
 each item with its step and that step's owner, and exits 1 if any file has
 errors. `run` invokes the owning agent for every item at an agent-owned step;
 see the README. `tui` opens a two-pane view: the items on the left, and the selected

@@ -21,3 +21,12 @@ finding in the item, by changing it or by asking the customer, before choosing
 Do not write an `**Answer:**` line under a new question; the customer's reply
 is added beneath it. Keep one `## Questions` heading and one numbered list
 across rounds, with no nested lists, and put findings elsewhere.
+
+Record dependencies when this work needs code from another story, task or bug
+before implementation can start. Use `{{harness_command}} backlog depends-on
+<item-id> <dependency-id> ...` to replace the list, or omit dependency IDs to
+clear it. A valid `depends_on` change is permitted during analysis; keep other
+front-matter fields unchanged. Do not use epics or requests as dependencies.
+Dependencies must reach `done` before the first branch role starts. An
+`abandoned` dependency blocks unbranched work until the customer edits the
+list. Once the item's branch exists, dependencies no longer hold it.

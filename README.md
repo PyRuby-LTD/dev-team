@@ -194,6 +194,23 @@ carry on. When the holder is finished, the runner returns to its base branch
 and creates the next item's branch from there. It never switches branch over
 uncommitted changes; it waits and says so.
 
+Stories, tasks and bugs can declare `depends_on: [STORY-001, BUG-002]`.
+Before a local `devteam/<id>` branch exists, branch roles wait until every
+dependency is at `done`, reporting unfinished IDs and steps in the terminal UI.
+Held work leaves the checkout available to independent items. Analysis and
+other non-branch steps continue, and checks and harness actions are exempt.
+The next scan releases the hold once the dependencies are done, so the new
+branch starts from the returned base with the merged work. An `abandoned`
+dependency blocks the item until the customer edits `depends_on`; it never
+counts as done. Changes to dependencies after the item's branch exists have
+no scheduling effect.
+
+Use repeatable `--depends-on ID` options with `dev-team backlog capture`, or
+`dev-team backlog depends-on STORY-003 STORY-001 BUG-002` to replace a list.
+`dev-team backlog depends-on STORY-003` clears it. The commands validate before
+writing and commit successful edits to the backlog branch. See
+[the field and validation rules](docs/backlog.md).
+
 At `accept`, look at the result in place. `pr` makes the runner push the branch to
 `origin` and hands the item to the publisher, which opens a pull request against
 the base branch with `gh`. Re-publishing after a rejection updates the existing

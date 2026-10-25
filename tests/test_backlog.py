@@ -96,7 +96,7 @@ class BacklogAcceptance(unittest.TestCase):
             "empty workflow": original.replace("workflow: default", "workflow: ''"),
             "non-string key": original.replace("title: A story", "123: value"),
             "alias": original.replace("title: A story", "title: &title A story\nstep: *title"),
-            "unknown field": original.replace("title: A story", "title: A story\ndepends_on: []"),
+            "unknown field": original.replace("title: A story", "title: A story\nunknown: []"),
             "null type": original.replace("type: story", "type: null"),
             "bad ID": original.replace("id: STORY-001", "id: ../../escape"),
             "epic with step": self.epic.render().replace("type: epic", "type: epic\nstep: captured"),
