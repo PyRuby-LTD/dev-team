@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline gh api stand-in, with per-endpoint fixtures and failure controls."""
+"""Offline gh stand-in, with per-endpoint fixtures and failure controls."""
 import json
 import os
 from pathlib import Path
@@ -8,11 +8,11 @@ import time
 
 with Path(os.environ["GH_STUB_ARGV"]).open("a") as log:
     log.write(json.dumps(sys.argv[1:]) + "\n")
-kind = "reviews" if sys.argv[2].endswith("/reviews") else (
+kind = "state" if sys.argv[1:3] == ["pr", "view"] else "reviews" if sys.argv[2].endswith("/reviews") else (
     "inline" if "/pulls/" in sys.argv[2] else "conversation")
 if os.environ.get("GH_STUB_FAIL") == kind:
-    sys.stderr.write("stub gh: authentication failed\n")
+    sys.stderr.write(os.environ.get("GH_STUB_ERROR", "stub gh: authentication failed") + "\n")
     sys.exit(1)
 if os.environ.get("GH_STUB_SLEEP") == kind:
-    time.sleep(2)
+    time.sleep(float(os.environ.get("GH_STUB_SECONDS", "2")))
 sys.stdout.write((Path(os.environ["GH_STUB_FIXTURES"]) / f"{kind}.json").read_text())

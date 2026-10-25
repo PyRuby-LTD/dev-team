@@ -12,8 +12,11 @@ such as a prompt or role markdown file, also need no unit test. For code changes
 adding an assertion to an existing test or reworking a test the change supersedes
 may serve better than writing a new test. Avoid mocks where you sensibly can:
 test real collaborators, or shape the code so the difficult logic can be tested
-on its own. Leave criteria that need the running system to the tester's
-narrative tests; do not build that suite.
+on its own. Leave to the tester's journey tests only what is part of a user
+completing a goal through the running system; do not build that suite.
+Presentation, such as layout, element order, styling, colour or wording, needs
+no automated test at any level: record it as left to human judgement at review.
+Do not hand a criterion to the tester merely because it cannot be unit tested.
 
 By default, run the tests you wrote or changed and the tests of the modules you
 modified, not the full test suite. Also re-run any test named in findings passed

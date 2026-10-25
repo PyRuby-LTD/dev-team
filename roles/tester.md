@@ -18,11 +18,20 @@ How you test:
   Update or remove tests a change has superseded. Keep it deterministic and
   quick enough to run on every change.
 
-Add or extend a small number of narrative tests, each walking a realistic user
-journey through the real entry point and covering the story's happy paths.
-Prefer extending existing narrative tests to adding new ones. Leave criteria
-better proven by unit tests to the implementer's unit tests; do not duplicate
-them.
+End-to-end tests are expensive to run and to keep. Write journey tests: each
+walks a user along the happy path of a goal they came to achieve, through the
+real entry point from start to finish, and checks they achieved it. Add one only for a journey
+the item adds or changes, and prefer extending an existing journey to adding a
+new one. Writing no test is often right.
+
+A journey test checks what the user can do and what they get, not how it
+looks. Do not assert on presentation: the order or position of elements, sizes,
+offsets, colours, fonts, CSS classes, theme or wording beyond the labels a user
+acts on. Find elements by role and accessible name, so the page can be
+restyled or rearranged without breaking the suite. Criteria about presentation
+are left to human judgement at review, even when they are worded as
+measurements. Leave criteria about logic to the implementer's unit tests; do
+not duplicate them.
 
 You do not change the code under test. When a test shows the implementation
 does not meet a criterion, leave the failing test in place, say exactly what
