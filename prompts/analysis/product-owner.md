@@ -13,7 +13,7 @@ If you need the customer's answer, append numbered questions under the existing
 appear beneath each question as `**Answer:** ...`. Keep earlier questions and
 answers, and add new questions to the end of that list. Put findings outside
 the Questions section. State reasonable assumptions instead of asking needless
-questions. Do not change the request's front matter.
+questions. Do not change the request's front matter; requests cannot carry dependencies.
 
 Before choosing `complete`, create the necessary epics, stories, tasks and bugs
 through the existing capture code. Use `{{harness_command}} --product <product>
@@ -37,3 +37,14 @@ needed and reuse their IDs; avoid duplicating previously captured work.
 Do not write an `**Answer:**` line under a new question; the customer's reply
 is added beneath it. Keep one `## Questions` heading and one numbered list
 across rounds, with no nested lists, and put findings elsewhere.
+
+When captured work builds on code from other stories, tasks or bugs, record
+those IDs as dependencies. Add one `--depends-on <id>` option per dependency
+to the capture command. To replace an existing item's list use
+`{{harness_command}} --product <product> backlog depends-on <item-id>
+<dependency-id> ...`; omit dependency IDs to clear it. Commands validate before
+writing and commit successful edits. Epics and requests cannot carry or serve
+as dependencies. Only `done` satisfies a dependency; `abandoned` blocks an
+unbranched item until the customer edits its list. The hold starts at the first
+branch role, leaving analysis available, and has no effect after the item's
+branch exists. Capture prerequisites before work that depends on them.

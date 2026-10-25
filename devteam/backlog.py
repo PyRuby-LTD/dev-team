@@ -49,7 +49,7 @@ class Record:
 
 TYPES = {"epic", "story", "task", "bug", "request"}
 DIRECTORIES = {"epic": "epics", "story": "stories", "task": "tasks", "bug": "bugs", "request": "requests"}
-FIELDS = {"id", "type", "title", "parent", "workflow", "step"}
+FIELDS = {"id", "type", "title", "parent", "workflow", "step", "depends_on"}
 PARENTS = {"story": {"epic"}, "task": {"story", "bug"}, "bug": {"epic", "story", "task"}}
 ID = re.compile(r"[A-Z][A-Z0-9]*-[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 
@@ -104,6 +104,19 @@ def validate_metadata(data):
         raise InvalidRecord("type must be epic, story, task, bug or request")
     if not valid_id(data["id"]) or not data["id"].startswith(data["type"].upper() + "-"):
         raise InvalidRecord("id must use its uppercase type prefix and a nonempty identifier (e.g. STORY-001)")
+    if "depends_on" in data:
+        if data["type"] in {"epic", "request"}:
+            raise InvalidRecord(f"{data['type']} must have no depends_on")
+        dependencies = data["depends_on"]
+        if not isinstance(dependencies, list):
+            raise InvalidRecord("depends_on must be a list of item IDs")
+        seen = set()
+        for dependency in dependencies:
+            if not valid_id(dependency):
+                raise InvalidRecord(f"depends_on entry {dependency!r} is not an item ID")
+            if dependency in seen:
+                raise InvalidRecord(f"depends_on repeats {dependency}")
+            seen.add(dependency)
     parent = data.get("parent")
     if parent is not None and not valid_id(parent):
         raise InvalidRecord("parent must be null or an item ID")
@@ -178,7 +191,30 @@ def validate_links(result):
                 result.error(record.path, f"parent cycle: {' -> '.join(chain)}; remove a link")
                 break
             parent = unique[parent].metadata.get("parent")
-    # An invalid parent quarantines its descendants, not unrelated work.
+    for record in unique.values():
+        for dependency in record.metadata.get("depends_on", []):
+            if dependency == record.id:
+                result.error(record.path, f"dependency {dependency} refers to itself")
+            if dependency not in unique:
+                result.error(record.path, f"dependency {dependency} is missing, invalid or ambiguous; repair its record")
+            elif unique[dependency].metadata["type"] in {"epic", "request"}:
+                kind = unique[dependency].metadata["type"]
+                reason = "a request's done does not mean merged work" if kind == "request" else "an epic never reaches done"
+                result.error(record.path, f"invalid dependency {dependency}: {reason}")
+
+        def visit(item_id, chain):
+            if item_id in chain:
+                result.error(record.path, f"dependency cycle: {' -> '.join(chain + [item_id])}; remove a link")
+                return
+            if item_id not in unique or item_id in visited:
+                return
+            visited.add(item_id)
+            for dependency in unique[item_id].metadata.get("depends_on", []):
+                visit(dependency, chain + [item_id])
+
+        visited = set()
+        visit(record.id, [])
+    # Invalid parents and dependencies quarantine their dependents and descendants.
     changed = True
     while changed:
         changed = False
@@ -187,6 +223,12 @@ def validate_links(result):
             if record.path not in result.errors and parent in unique and unique[parent].path in result.errors:
                 result.error(record.path, f"parent {parent} has validation errors; repair it first")
                 changed = True
+            if record.path not in result.errors:
+                for dependency in record.metadata.get("depends_on", []):
+                    if dependency in unique and unique[dependency].path in result.errors:
+                        result.error(record.path, f"dependency {dependency} has validation errors; repair it first")
+                        changed = True
+                        break
     return result
 
 
@@ -224,7 +266,7 @@ class Repository:
             raise InvalidRecord(f"step {record.metadata['step']!r} is not defined in workflow {definition.name!r}")
         return step
 
-    def scan(self):
+    def scan(self, *, replacement=None):
         result = Snapshot()
         for kind in sorted(TYPES):
             directory = self.root / DIRECTORIES[kind]
@@ -235,7 +277,10 @@ class Repository:
                 try:
                     if not path.resolve().is_relative_to(self.root):
                         raise InvalidRecord("item path escapes backlog root; remove symlink")
-                    record = parse(path, path.read_bytes().decode("utf-8"))
+                    if replacement is not None and replacement.path == path:
+                        record = replacement
+                    else:
+                        record = parse(path, path.read_bytes().decode("utf-8"))
                     if record.metadata["type"] != kind:
                         raise InvalidRecord(f"type does not match directory {directory.name}")
                     if kind != "epic":
@@ -245,11 +290,11 @@ class Repository:
                     result.error(path, str(exc))
         return validate_links(result)
 
-    def create(self, kind, title, body="", *, parent=None, item_id=None):
+    def create(self, kind, title, body="", *, parent=None, item_id=None, depends_on=None):
         with mutation(self.root):
-            return self._create(kind, title, body, parent, item_id)
+            return self._create(kind, title, body, parent, item_id, depends_on)
 
-    def _create(self, kind, title, body, parent, item_id):
+    def _create(self, kind, title, body, parent, item_id, depends_on):
         if kind not in TYPES:
             raise InvalidRecord("type must be epic, story, task, bug or request")
         snapshot = self.scan()
@@ -267,6 +312,8 @@ class Repository:
         if kind != "epic":
             workflow = "analysis" if kind == "request" else DEFAULT_WORKFLOW
             metadata.update(workflow=workflow, step=self.workflow(workflow).initial)
+        if depends_on is not None:
+            metadata["depends_on"] = depends_on
         validate_metadata(metadata)
         if item_id in used:
             raise InvalidRecord(f"duplicate ID {item_id}; choose a unique ID")
@@ -280,6 +327,41 @@ class Repository:
             fh.write(record.render().encode("utf-8"))
         self.commit(f"{item_id}: captured" + (f" at {metadata['step']}" if kind != "epic" else ""), record.path)
         return record
+
+    def set_dependencies(self, item_id, dependencies):
+        """Validate before writing; preserve all text outside the dependency value."""
+        with mutation(self.root):
+            matches = [r for r in self.scan().records.values() if r.id == item_id]
+            if len(matches) != 1:
+                raise InvalidRecord(f"{item_id} is missing or invalid; run validate")
+            record = matches[0]
+            metadata = dict(record.metadata, depends_on=dependencies)
+            validate_metadata(metadata)
+            updated = Record(record.path, metadata, record.body)
+            snapshot = self.scan(replacement=updated)
+            if record.path in snapshot.errors:
+                raise InvalidRecord(str(snapshot.errors[record.path]))
+            text = record.path.read_bytes().decode("utf-8")
+            lines = text.splitlines(keepends=True)
+            end = next(i for i in range(1, len(lines)) if lines[i].rstrip("\r\n") == "---")
+            source = "".join(lines[1:end])
+            node = yaml.compose(source, Loader=StrictLoader)
+            value = yaml.safe_dump(dependencies, default_flow_style=True).strip()
+            for key, old in node.value:
+                if key.value == "depends_on":
+                    suffix = source[old.end_mark.index:]
+                    if source[old.start_mark.index:old.end_mark.index].endswith("\n"):
+                        value += "\r\n" if "\r\n" in source else "\n"
+                    source = source[:key.end_mark.index] + ": " + value + suffix
+                    break
+            else:
+                source += "depends_on: " + value + ("\r\n" if "\r\n" in source else "\n")
+            text = lines[0] + source + "".join(lines[end:])
+            if parse(record.path, text).metadata != metadata:
+                raise InvalidRecord(f"could not rewrite depends_on in {record.path}")
+            self._replace(record.path, text)
+            self.commit(f"{item_id}: set depends_on", record.path)
+            return updated
 
     def transition(self, item_id, name, note=""):
         """Apply a transition; a note is first recorded in the body as feedback for the next owner."""

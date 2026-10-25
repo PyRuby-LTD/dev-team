@@ -24,7 +24,7 @@ PROTOCOL = """
 ## Work item
 
 The work item is the file {{item}}. Read it first; it is the full context.
-You may edit the body of that file. Do not change its front matter.
+You may edit the body and set a valid `depends_on` list. Do not change any other front-matter field.
 If it has a `## Feedback` section, the last entry there is the customer's reason
 for sending the item to you; act on it.
 
@@ -260,15 +260,35 @@ class Runner:
         return step.check or (step.harness and step.action in {"merged", "abandon"}) or (
             step.role and self.roles[step.role].branch)
 
+    def dependency_wait(self, record, step, snapshot):
+        if not step.role or not self.roles[step.role].branch:
+            return None
+        dependencies = record.metadata.get("depends_on", [])
+        if not dependencies or (self.checkout is not None and
+                                git.has_ref(self.checkout, f"refs/heads/devteam/{record.id}")):
+            return None
+        valid = snapshot.valid
+        unfinished = [valid[item_id] for item_id in dependencies
+                      if valid[item_id].metadata["step"] != "done"]
+        abandoned = [item.id for item in unfinished if item.metadata["step"] == "abandoned"]
+        if abandoned:
+            return f"blocked by abandoned {', '.join(abandoned)}; the customer must edit depends_on"
+        if unfinished:
+            names = ", ".join(f"{item.id} ({item.metadata['step']})" for item in unfinished)
+            return f"waiting for {names} to be done"
+        return None
+
     def claim(self, record, step):
         reason = None
         with self.lock:
             if record.id in self._active or record.id in self._failed:
                 return False
-            current = self.repository.scan().valid.get(record.id)
+            snapshot = self.repository.scan()
+            current = snapshot.valid.get(record.id)
             if current is None or current.metadata != record.metadata:
                 return False
-            if self.uses_checkout(step):
+            reason = self.dependency_wait(record, step, snapshot)
+            if reason is None and self.uses_checkout(step):
                 if self.checkout_user is not None:
                     reason = f"waiting for {self.checkout_user}, which is using the checkout"
                 else:
@@ -375,7 +395,8 @@ class Runner:
         if match.group(1) not in step.transitions:
             raise StepFailed(f"the reply named {match.group(1)!r}, which is not a transition from {step.name!r}")
         current = self.repository.scan().valid.get(record.id)
-        if current is None or current.metadata != record.metadata:
+        if current is None or ({k: v for k, v in current.metadata.items() if k != "depends_on"} !=
+                               {k: v for k, v in record.metadata.items() if k != "depends_on"}):
             raise StepFailed("the agent changed or broke the item's front matter")
         # Agents often cannot write .git from their sandbox, so the runner commits their work.
         if role.branch and not git.clean(self.checkout):
