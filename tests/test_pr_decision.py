@@ -168,7 +168,7 @@ class DefaultWorkflowShape(unittest.TestCase):
                          self.steps["accept"])
 
 
-class PullRequestHoldsTheCheckout(unittest.TestCase):
+class PullRequestReleasesTheCheckout(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -178,6 +178,8 @@ class PullRequestHoldsTheCheckout(unittest.TestCase):
         self.bin.mkdir()
         shutil.copy(STUBS / "claude", self.bin / "claude")
         (self.bin / "claude").chmod(0o755)
+        shutil.copy(STUBS / "codex", self.bin / "codex")
+        (self.bin / "codex").chmod(0o755)
         self.argv = self.directory / "argv.json"
         subprocess.run(["git", "init", "-q", "-b", "main", str(self.product)], check=True)
         (self.product / "README.md").write_text("product\n")
@@ -193,6 +195,7 @@ class PullRequestHoldsTheCheckout(unittest.TestCase):
             self.devteam("backlog", "move", "STORY-001", transition)
         # STORY-001 has the checkout, as it would after its implement step.
         subprocess.run(["git", "-C", str(self.product), "switch", "-q", "-c", "devteam/STORY-001"], check=True)
+        subprocess.run(["git", "-C", str(self.product), "config", "branch.devteam/STORY-001.base", "main"], check=True)
 
     def devteam(self, *args, env=None):
         return subprocess.run([sys.executable, "-m", "devteam", "--product", str(self.product), *args],
@@ -204,15 +207,15 @@ class PullRequestHoldsTheCheckout(unittest.TestCase):
                "STUB_STDOUT": str(STREAMS / "success.jsonl")}
         return self.devteam("run", "--once", env=env)
 
-    def test_item_awaiting_the_customers_pull_request_decision_blocks_other_code_changes(self):
+    def test_item_awaiting_the_customers_pull_request_decision_releases_checkout(self):
         listing = self.devteam("backlog", "list").stdout
         self.assertRegex(listing, r"STORY-001\s+pull-request\s+human")
         result = self.run_once()
-        self.assertIn("waiting for STORY-001, which holds the checkout at step pull-request", result.stdout)
-        self.assertFalse(self.argv.exists())
+        self.assertNotIn("waiting for STORY-001", result.stdout)
+        self.assertTrue(self.argv.exists())
         branch = subprocess.run(["git", "-C", str(self.product), "branch", "--show-current"],
                                 capture_output=True, text=True, check=True).stdout.strip()
-        self.assertEqual("devteam/STORY-001", branch)
+        self.assertEqual("devteam/STORY-002", branch)
 
 
 if __name__ == "__main__":

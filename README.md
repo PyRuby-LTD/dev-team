@@ -193,10 +193,10 @@ commit, since their sandboxes often cannot write `.git`. A stray file written
 by a parallel non-branch agent can be included in that commit on the running
 branch-role item's branch.
 
-One item holds the checkout at a time: until it reaches a terminal step, any
-other item that needs a code-changing role waits, while steps such as analysis
-carry on. When the holder is finished, the runner returns to its base branch
-and creates the next item's branch from there. It never switches branch over
+One checkout step runs at a time, while steps such as analysis carry on. An
+item keeps its place through checkout steps, but releases it at human review
+steps such as `accept` and `pull-request`. The runner returns to its base branch
+and switches to or creates the next item's branch from there. It never switches branch over
 uncommitted changes; it waits and says so.
 
 Stories, tasks and bugs can declare `depends_on: [STORY-001, BUG-002]`.
@@ -245,7 +245,7 @@ At `accept`, look at the result in place. `pr` runs `sync-publish` and
 the base branch with `gh`. Re-publishing after a rejection updates the existing
 open PR's body and commits, preserving its title and URL. If no open PR exists,
 the publisher creates one. The item then waits at `pull-request` for your decision
-and continues to hold the checkout. Merging is yours to do; the tool does not
+and releases the checkout. Merging is yours to do; the tool does not
 merge or close the PR. Choose `merged` to finish or `rejected` to return to
 implementation, with an optional feedback note. At `merged`, the harness fetches
 `origin`, switches to the recorded base branch, and fast-forwards it before
@@ -284,6 +284,18 @@ which runs the target, prints a short result and keeps the full output under
 itself: the exit code chooses `passed` or `failed`, and the result is written
 into the item under `## Test run`. That run, not any agent's account, is what
 the reviewer is given.
+
+To inspect a story's code, press `s` in the TUI to stop agents and wait for
+running steps to finish. Select the story and press `x` to switch to its
+existing `devteam/<id>` branch. The action refuses a switch while steps are
+running or the checkout has uncommitted changes, and reports a missing branch
+without creating one. It works at any step with an existing branch.
+
+Start and stop the app yourself in another terminal, including any local
+stubs or databases it needs. There is no required startup target and the harness
+does not manage the app. Stop it before restarting agents with `s`, as agents
+may switch branches. Human steps such as `accept` and `pull-request` release
+the checkout so queued stories can continue while you review.
 
 ## Choosing models per role
 

@@ -11,9 +11,10 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Header, Label, Markdown, OptionList, RichLog, Static, TextArea, Tree
 from textual.widgets.option_list import Option
 
-from . import questions
+from . import git, questions
 from .backlog import InvalidRecord
 from .workflow import InvalidWorkflow
+from .runner import StepFailed, Waiting
 
 REFRESH_SECONDS = 2
 YOU, AGENT, DONE, INVALID = "bold yellow", "cyan", "green", "bold red"
@@ -392,6 +393,7 @@ class Backlog(App):
         ("s", "toggle_agents", "Start / stop agents"),
         ("l", "toggle_output", "Agent output"),
         ("t", "retry", "Retry failed"),
+        ("x", "switch_branch", "Switch to item branch"),
         ("tab", "switch_pane", "Switch pane"),
         ("r", "reload", "Refresh"),
         ("q", "quit", "Quit"),
@@ -681,6 +683,20 @@ class Backlog(App):
         if self.runner is not None and row is not None and self.runner.failed.get(row.key):
             self.runner.retry(row.key)
             self.action_reload()
+
+    def action_switch_branch(self):
+        if self.runner is None or self.shown is None or not self.shown.is_item:
+            return
+        if self.thread is not None and not self.stop.is_set():
+            self.notify("Press s to stop agents before switching branches.")
+            return
+        try:
+            branch = self.runner.switch_branch(self.shown.key)
+        except (StepFailed, Waiting, git.GitError, OSError) as exc:
+            self.notify(str(exc), severity="error")
+            return
+        self.notify(f"Switched to {branch}. Start and stop the app in your own terminal.")
+        self.action_reload()
 
     def action_quit(self):
         if self.runner is not None and self.runner.active_ids():

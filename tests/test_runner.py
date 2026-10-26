@@ -256,7 +256,7 @@ class HarnessSteps(unittest.TestCase):
             self.assertEqual(1, self.runner.run_pass())
         self.assertEqual("implement", self.repo.scan().valid[self.story.id].metadata["step"])
 
-    def test_pr_decision_holds_checkout_until_terminal(self):
+    def test_only_checkout_steps_hold_checkout(self):
         product = self.root / "product"
         product.mkdir()
         git.must(product, "init", "-q", "-b", "main")
@@ -264,7 +264,7 @@ class HarnessSteps(unittest.TestCase):
         git.must(product, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
         self.runner.checkout = product
         self.runner.take_checkout(self.story)
-        for step in ("pull-request", "rejected", "merged"):
+        for step in ("merged",):
             with self.subTest(step=step):
                 self.at(step)
                 with self.assertRaises(Waiting) as raised:
@@ -275,8 +275,10 @@ class HarnessSteps(unittest.TestCase):
         self.assertTrue(row.needs_you)
         self.assertEqual("YOU", row.waiting_on)
         self.assertEqual([], self.runner.pending())
-        self.at("done")
-        self.assertEqual(f"devteam/{self.other.id}", self.runner.take_checkout(self.other))
+        for step in ("accept", "pull-request", "rejected", "done"):
+            self.at(step)
+            git.must(product, "switch", "-q", f"devteam/{self.story.id}")
+            self.assertEqual(f"devteam/{self.other.id}", self.runner.take_checkout(self.other))
         self.assertEqual(f"devteam/{self.other.id}", git.current_branch(product))
 
 

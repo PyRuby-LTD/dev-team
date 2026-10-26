@@ -60,11 +60,15 @@ def merged(runner, record):
     base = git.base_of(runner.checkout, branch)
     if base is None:
         raise StepFailed(f"no base branch is recorded for {branch}")
+    current = git.current_branch(runner.checkout)
     if not git.clean(runner.checkout):
-        current = git.current_branch(runner.checkout)
-        raise StepFailed(f"the checkout has uncommitted changes on {current}")
+        foreign = current != branch and (current == base or (current and current.startswith("devteam/")))
+        error = Waiting if foreign else StepFailed
+        raise error(f"the checkout has uncommitted changes on {current}")
     git.fetch(runner.checkout, "origin")
     git.fast_forward(runner.checkout, base, f"origin/{base}")
+    if current and current.startswith("devteam/") and current != branch:
+        git.must(runner.checkout, "switch", "-q", current)
     return "completed"
 
 
@@ -81,7 +85,7 @@ def sync(runner, record):
     current = git.current_branch(runner.checkout)
     if current and current.startswith("devteam/") and current != branch:
         holder = runner.repository.scan().valid.get(current.removeprefix("devteam/"))
-        if holder and not runner.repository.step(holder).terminal:
+        if holder and runner.uses_checkout(runner.repository.step(holder)):
             raise Waiting(f"waiting for {holder.id}, which holds the checkout")
     return git.sync_branch(runner.checkout, branch, base)
 
@@ -296,6 +300,13 @@ class Runner:
             return f"waiting for {names} to be done"
         return None
 
+    def checkout_holder(self, branch):
+        if branch and branch.startswith("devteam/"):
+            holder = self.repository.scan().valid.get(branch.removeprefix("devteam/"))
+            if holder is not None and self.uses_checkout(self.repository.step(holder)):
+                return holder
+        return None
+
     def claim(self, record, step):
         reason = None
         with self.lock:
@@ -334,8 +345,25 @@ class Runner:
                 found.append((record, step))
         return found
 
+    def switch_branch(self, item_id):
+        """Switch to existing work for manual inspection after agents have stopped."""
+        with self.lock:
+            if self._active:
+                raise Waiting("Wait for the running steps to finish before switching branches.")
+            if self.checkout is None:
+                raise StepFailed("Switching branches needs a git repository.")
+            if item_id not in self.repository.scan().valid:
+                raise StepFailed("Select a valid work item first.")
+            branch = f"devteam/{item_id}"
+            if not git.has_ref(self.checkout, f"refs/heads/{branch}"):
+                raise StepFailed(f"No existing branch for {item_id}.")
+            if not git.clean(self.checkout):
+                raise Waiting("The checkout has uncommitted changes; clean it before switching branches.")
+            git.must(self.checkout, "switch", "-q", branch)
+            return branch
+
     def take_checkout(self, record):
-        """Put the checkout on the item's branch; one unfinished item holds it at a time."""
+        """Put the checkout on the item's branch, preserving another checkout step's place."""
         if self.checkout is None:
             raise StepFailed("this role works on a branch, which needs a git repository")
         branch = f"devteam/{record.id}"
@@ -346,7 +374,7 @@ class Runner:
             raise StepFailed("the checkout is not on a branch")
         if current.startswith("devteam/"):
             holder = self.repository.scan().valid.get(current.removeprefix("devteam/"))
-            if holder is not None and not self.repository.step(holder).terminal:
+            if self.checkout_holder(current) is not None:
                 raise Waiting(f"waiting for {holder.id}, which holds the checkout at step {holder.metadata['step']}")
         if not git.clean(self.checkout):
             raise Waiting(f"waiting: the checkout has uncommitted changes on {current}")
