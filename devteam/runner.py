@@ -13,6 +13,7 @@ from .backlog import InvalidRecord, mutation
 from .config import ROOT, harness_command, load_roles
 from .workflow import InvalidWorkflow
 from .evidence import PathGuard
+from .publication import requirements
 
 REPLY = re.compile(r"TRANSITION:\s*([A-Za-z0-9_-]+)\W*\Z")
 RECORDS = "docs/work-items"
@@ -429,7 +430,7 @@ class Runner:
         if role.record:
             copy = self.checkout / RECORDS / f"{record.id}.md"
             copy.parent.mkdir(parents=True, exist_ok=True)
-            masked, numbers = self.repository.guard.mask(record.body)
+            masked, numbers = self.repository.guard.mask(requirements(record.body))
             text = record.path.read_bytes().decode("utf-8")
             front = text[:len(text) - len(record.body)]
             copy.write_bytes((front + masked).encode("utf-8"))
