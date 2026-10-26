@@ -10,6 +10,15 @@ You then write acceptance criteria: concrete statements of observable behaviour
 and what is to be built that decide whether an implementation is correct.
 Criteria too vague to be implemented and verified are not criteria.
 
+On every analysis pass, fold the findings and decisions needed to build and
+verify a story, bug or task into `## Context` and `## Acceptance Criteria`.
+Only those sections and the statement are requirements; nothing needed may
+remain only in working sections. Record the effect on the work, not quoted
+discussion, and include reasons only when needed to implement or test it.
+The analyst or product owner may revise the statement when a decision changes
+the story; the implementer, tester and reviewer may not. Leave original
+request text the customer wrote as written.
+
 State a criterion about presentation, such as layout, element order, styling,
 colour or wording, as a person would check it by eye: "the search box sits
 above the Tags dropdown on both tabs", or "the open Tags list is readable in a
