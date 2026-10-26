@@ -349,6 +349,23 @@ class TestPublicationCopy(Product):
                          "## Acceptance Criteria\n\n1. Works.\n", copy)
         self.assertEqual(body, self.body())
 
+    def test_republishing_after_rework_rewrites_the_copy_from_the_current_requirements(self):
+        self.move(*TO_ACCEPT)
+        self.move("pr", "completed", "passed")
+        front = self.text().split("\n---\n", 1)[0] + "\n---\n"
+        self.item.write_text(front + "\nAsk.\n\n## Context\n\nOld reason.\n\n## Acceptance Criteria\n\n1. Old.\n")
+        self.plan({"reply": "published"})
+        self.run_once()
+        self.assertEqual("pull-request", self.step())
+        self.move("rejected", "completed")
+        self.item.write_text(front + "\nAsk.\n\n## Context\n\nNew reason.\n\n## Analysis\n\nRework notes.\n\n"
+                             "## Acceptance Criteria\n\n1. New.\n")
+        self.assertEqual("publish", self.step())
+        self.plan({"reply": "published"})
+        self.run_once()
+        copy = self.git(self.product, "show", "devteam/STORY-001:docs/work-items/STORY-001.md")
+        self.assertEqual(front + "\nAsk.\n\n## Context\n\nNew reason.\n\n## Acceptance Criteria\n\n1. New.\n", copy)
+
     def test_a_tripping_body_is_masked_in_the_copy_and_the_step_carries_on(self):
         self.move(*TO_ACCEPT)
         self.move("pr", "completed", "passed")
