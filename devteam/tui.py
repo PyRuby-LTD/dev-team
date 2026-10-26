@@ -648,7 +648,7 @@ class Backlog(App):
         # The agent thread can outlive the screen; a report after shutdown has nowhere to go.
         if self.is_running:
             try:
-                self.call_later(callback, *args)
+                self.call_from_thread(callback, *args)
             except RuntimeError:
                 pass
 
@@ -698,16 +698,12 @@ class Backlog(App):
         self.notify(f"Switched to {branch}. Start and stop the app in your own terminal.")
         self.action_reload()
 
-    def finish_quit(self):
-        self.stop.set()
-        self.exit()
-
     def action_quit(self):
         if self.runner is not None and self.runner.active_ids():
             message = f"Agents are still working on {', '.join(self.runner.active_ids())}. Quit and abandon those runs?"
-            self.push_screen(Confirm(message), lambda yes: self.finish_quit() if yes else None)
+            self.push_screen(Confirm(message), lambda yes: self.exit() if yes else None)
         else:
-            self.finish_quit()
+            self.exit()
 
     def action_toggle_mine(self):
         self.only_mine = not self.only_mine

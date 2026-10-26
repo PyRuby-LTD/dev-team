@@ -407,7 +407,6 @@ class Runner:
             "transitions": "\n".join(f"- `{name}` moves the item to `{target}`" for name, target in step.transitions.items()),
         }
         if role.branch:
-            self.check_run_limit(record)
             branch = self.take_checkout(record)
             base = git.base_of(self.checkout, branch)
             if base is None:
@@ -464,20 +463,15 @@ class Runner:
             git.commit_all(self.checkout, f"{record.id}: {step.name} by {role.name}")
         return match.group(1), self.repository.transition(record.id, match.group(1))
 
-    def check_run_limit(self, record):
-        with self.lock:
-            if self._runs.get(record.id, 0) >= self.max_runs:
-                raise StepFailed(f"already ran {self.max_runs} steps this session")
-
     def count_run(self, record):
         # A revise loop between two agents would otherwise run unattended without limit.
         with self.lock:
-            self.check_run_limit(record)
+            if self._runs.get(record.id, 0) >= self.max_runs:
+                raise StepFailed(f"already ran {self.max_runs} steps this session")
             self._runs[record.id] = self._runs.get(record.id, 0) + 1
 
     def verify(self, record, step, log):
         """Run the project's check on the item's branch; its exit code chooses the transition."""
-        self.check_run_limit(record)
         self.take_checkout(record)
         self.count_run(record)
         self.report(f"{record.id} {step.name}: check started")

@@ -295,6 +295,26 @@ class Dispatch(unittest.TestCase):
                 self.runner.engine = normal
                 self.assertEqual(1, self.runner.run_pass())
 
+    def test_exhausted_checkout_steps_wait_for_dirty_work_before_enforcing_limit(self):
+        self.runner.max_runs = 0
+        for transition in ("play", "check"):
+            with self.subTest(transition=transition):
+                record = self.item(transition)
+                step = self.repo.step(record)
+                dirty = self.product / "local-work.txt"
+                dirty.write_text("keep this work\n")
+                self.assertFalse(self.runner.run_item(record, step))
+                self.assertIn("uncommitted changes", self.runner.waiting[record.id])
+                self.assertNotIn(record.id, self.runner.failed)
+                self.assertEqual("keep this work\n", dirty.read_text())
+                dirty.unlink()
+                self.assertTrue(self.runner.run_item(record, step))
+                self.assertEqual(f"devteam/{record.id}", git.current_branch(self.product))
+                self.assertIn("already ran 0 steps", self.runner.failed[record.id])
+                self.assertNotIn(record.id, self.runner.runs)
+                self.assertEqual([], self.calls)
+                git.must(self.product, "switch", "-q", "main")
+
     def test_count_run_is_atomic_and_enforces_limit(self):
         record = self.item("analyse")
         self.runner.max_runs = 100

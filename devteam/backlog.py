@@ -375,8 +375,7 @@ class Repository:
                     if name in step.transitions:
                         label = f"{name} -> {step.transitions[name]}"
                         self.write_body(item_id, questions.add_feedback(record.body, label, note), f"feedback for {name}")
-            updated = self._transition(item_id, name)
-        return updated
+            return self._transition(item_id, name)
 
     def write_body(self, item_id, body, message):
         """Replace an item's body, leaving its front matter text exactly as it is."""
