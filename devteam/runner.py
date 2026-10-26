@@ -79,14 +79,13 @@ def sync(runner, record):
     base = git.base_of(runner.checkout, branch)
     if base is None:
         raise StepFailed(f"no base branch is recorded for {branch}")
-    if not git.clean(runner.checkout):
-        raise StepFailed(f"the checkout has uncommitted changes on {git.current_branch(runner.checkout)}")
     # Check ownership before fetching or switching, without creating a branch.
     current = git.current_branch(runner.checkout)
-    if current and current.startswith("devteam/") and current != branch:
-        holder = runner.repository.scan().valid.get(current.removeprefix("devteam/"))
-        if holder and runner.uses_checkout(runner.repository.step(holder)):
-            raise Waiting(f"waiting for {holder.id}, which holds the checkout")
+    reason = runner.checkout_wait(record, current)
+    if reason is not None:
+        raise Waiting(reason)
+    if not git.clean(runner.checkout):
+        raise StepFailed(f"the checkout has uncommitted changes on {current}")
     return git.sync_branch(runner.checkout, branch, base)
 
 
@@ -307,6 +306,12 @@ class Runner:
                 return holder
         return None
 
+    def checkout_wait(self, record, branch):
+        holder = self.checkout_holder(branch)
+        if holder is not None and holder.id != record.id:
+            return f"waiting for {holder.id}, which holds the checkout at step {holder.metadata['step']}"
+        return None
+
     def claim(self, record, step):
         reason = None
         with self.lock:
@@ -321,8 +326,12 @@ class Runner:
                 if self.checkout_user is not None:
                     reason = f"waiting for {self.checkout_user}, which is using the checkout"
                 else:
-                    self.checkout_user = record.id
+                    if self.checkout is not None:
+                        reason = self.checkout_wait(record, git.current_branch(self.checkout))
+                    if reason is None:
+                        self.checkout_user = record.id
             if reason is None:
+                self._waiting.pop(record.id, None)
                 self._active.add(record.id)
                 return True
         self.note_waiting(record, step, reason)
@@ -372,10 +381,9 @@ class Runner:
             return branch
         if current is None:
             raise StepFailed("the checkout is not on a branch")
-        if current.startswith("devteam/"):
-            holder = self.repository.scan().valid.get(current.removeprefix("devteam/"))
-            if self.checkout_holder(current) is not None:
-                raise Waiting(f"waiting for {holder.id}, which holds the checkout at step {holder.metadata['step']}")
+        reason = self.checkout_wait(record, current)
+        if reason is not None:
+            raise Waiting(reason)
         if not git.clean(self.checkout):
             raise Waiting(f"waiting: the checkout has uncommitted changes on {current}")
         if current.startswith("devteam/"):
