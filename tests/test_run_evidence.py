@@ -318,10 +318,10 @@ class TestStoryFromStartToPublication(Product):
                 self.assertNotIn("only test output you should trust", text)
                 self.assertNotRegex(text, r"(?i)(read|see|under) (a failure )?in `## Test run`")
 
-    def test_the_record_copied_for_publication_matches_the_item_and_no_log_is_tracked_in_the_product(self):
+    def test_the_published_record_omits_test_runs_and_no_log_is_tracked_in_the_product(self):
         self.run_story()
         copy = self.git(self.product, "show", "devteam/STORY-001:docs/work-items/STORY-001.md")
-        self.assertIn("passed (exit 0)", section(copy, "Test run"))
+        self.assertIsNone(section(copy, "Test run"))
         self.assert_no_machine_path(copy)
         branches = self.git(self.product, "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes").split()
         self.assertIn("refs/heads/devteam/STORY-001", branches)
@@ -334,27 +334,52 @@ class TestStoryFromStartToPublication(Product):
 
 
 class TestPublicationCopy(Product):
-    def test_a_body_that_trips_nothing_is_copied_unchanged(self):
+    def test_publication_preserves_front_matter_and_only_copies_requirements(self):
         self.move(*TO_ACCEPT)
         self.move("pr", "completed", "passed")
+        front = self.text().split("\n---\n", 1)[0] + "\n---\n"
+        body = ("\nCustomer request.\n\n## Context\n\nThe reason.\n\n"
+                "## Analysis\n\nWorking notes.\n\n## Acceptance Criteria\n\n1. Works.\n\n"
+                "## Pull request\n\nWorking URL.\n")
+        self.item.write_text(front + body)
         self.plan({"reply": "published"})
         self.run_once()
         copy = self.git(self.product, "show", "devteam/STORY-001:docs/work-items/STORY-001.md")
-        self.assertEqual(self.git(self.backlog, "show", "HEAD~1:stories/STORY-001.md").split("\n---\n", 1)[1],
-                         copy.split("\n---\n", 1)[1])
+        self.assertEqual(front + "\nCustomer request.\n\n## Context\n\nThe reason.\n\n"
+                         "## Acceptance Criteria\n\n1. Works.\n", copy)
+        self.assertEqual(body, self.body())
+
+    def test_republishing_after_rework_rewrites_the_copy_from_the_current_requirements(self):
+        self.move(*TO_ACCEPT)
+        self.move("pr", "completed", "passed")
+        front = self.text().split("\n---\n", 1)[0] + "\n---\n"
+        self.item.write_text(front + "\nAsk.\n\n## Context\n\nOld reason.\n\n## Acceptance Criteria\n\n1. Old.\n")
+        self.plan({"reply": "published"})
+        self.run_once()
+        self.assertEqual("pull-request", self.step())
+        self.move("rejected", "completed")
+        self.item.write_text(front + "\nAsk.\n\n## Context\n\nNew reason.\n\n## Analysis\n\nRework notes.\n\n"
+                             "## Acceptance Criteria\n\n1. New.\n")
+        self.assertEqual("publish", self.step())
+        self.plan({"reply": "published"})
+        self.run_once()
+        copy = self.git(self.product, "show", "devteam/STORY-001:docs/work-items/STORY-001.md")
+        self.assertEqual(front + "\nAsk.\n\n## Context\n\nNew reason.\n\n## Acceptance Criteria\n\n1. New.\n", copy)
 
     def test_a_tripping_body_is_masked_in_the_copy_and_the_step_carries_on(self):
         self.move(*TO_ACCEPT)
         self.move("pr", "completed", "passed")
         with self.item.open("a") as fh:
-            fh.write(f"\nOutput kept in `{HOME}/out/log.txt` and {self.product}/src/app.py.\n")
-        number = len(self.item.read_text().splitlines())
+            fh.write(f"\n## Analysis\n\nOmitted notes.\n\n## Context\n\n"
+                     f"Output kept in `{HOME}/out/log.txt` and {self.product}/src/app.py.\n")
         self.plan({"reply": "published"})
         output = self.run_once()
         copy = self.git(self.product, "show", "devteam/STORY-001:docs/work-items/STORY-001.md")
         self.assertIn("Output kept in `<path>` and src/app.py.", copy)
         self.assertNotIn(NAME, copy)
         self.assertNotIn(str(self.product), copy)
+        number = next(n for n, line in enumerate(copy.splitlines(), 1) if line.startswith("Output kept"))
+        self.assertLess(number, len(self.text().splitlines()))
         self.assertIn(f"STORY-001: copy masked lines {number}", output)
         self.assertNotIn(NAME, output)
         self.assertEqual("pull-request", self.step())
@@ -362,6 +387,17 @@ class TestPublicationCopy(Product):
         again = self.devteam("backlog", "capture", "story", "Copy", "--file", self.write_body(copy.split("\n---\n", 1)[1]),
                              "--parent", "EPIC-001")
         self.assertNotIn("masked", again.stdout)
+
+    def test_paths_in_omitted_sections_are_not_reported_by_publication(self):
+        self.move(*TO_ACCEPT)
+        self.move("pr", "completed", "passed")
+        with self.item.open("a") as fh:
+            fh.write(f"\n## Invented notes\n\nOutput in `{HOME}/out/log.txt`.\n")
+        self.plan({"reply": "published"})
+        output = self.run_once()
+        copy = self.git(self.product, "show", "devteam/STORY-001:docs/work-items/STORY-001.md")
+        self.assertNotIn("Output in", copy)
+        self.assertNotIn("copy masked lines", output)
 
     def write_body(self, text):
         path = self.base / "body.md"
