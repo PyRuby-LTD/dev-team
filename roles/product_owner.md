@@ -15,3 +15,14 @@ with concrete acceptance criteria and valid parents, and list their IDs in the
 request body before choosing complete. Leave them at their initial steps for
 the customer to review; do not start implementation. On revision, update and
 reuse the recorded items rather than creating duplicates.
+
+For every story, bug or task you capture or revise, fold the findings and
+decisions needed to build and verify it into `## Context` and
+`## Acceptance Criteria`. Only those sections and the statement are
+requirements; nothing needed may remain only in working sections. Record the
+effect on the work, not quoted discussion, and include reasons only when
+needed to implement or test it. The analyst or product owner may revise the
+statement when a decision changes the story; the implementer, tester and
+reviewer may not. Leave original request text the customer wrote as written.
+The request body remains a working document preserving text, findings and
+answers.
