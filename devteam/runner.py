@@ -13,7 +13,6 @@ from .backlog import InvalidRecord, mutation
 from .config import ROOT, harness_command, load_roles
 from .workflow import InvalidWorkflow
 from .evidence import PathGuard
-from .tryout import Tryout
 
 REPLY = re.compile(r"TRANSITION:\s*([A-Za-z0-9_-]+)\W*\Z")
 RECORDS = "docs/work-items"
@@ -254,14 +253,6 @@ class Runner:
         self._pr_problems = {}
         self.checkout_user = None
         self.on_change = None
-        self.checkout_priority = None
-        self.tryout = Tryout(self)
-        repository.on_transition = self.transitioned
-
-    def transitioned(self, item_id):
-        with self.lock:
-            if self.tryout.item_id == item_id:
-                self.tryout.release()
 
     @property
     def failed(self):
@@ -327,22 +318,10 @@ class Runner:
                 return False
             reason = self.dependency_wait(record, step, snapshot)
             if reason is None and self.uses_checkout(step):
-                if self.tryout.item_id is not None:
-                    reason = f"waiting for try-out of {self.tryout.item_id}"
-                elif self.tryout.dirty_release and self.checkout is not None and not git.clean(self.checkout):
-                    reason = "waiting: the checkout has uncommitted changes after try-out"
-                elif (self.checkout_priority and self.checkout_priority != record.id
-                      and self.checkout_priority not in self._failed
-                      and self._runs.get(self.checkout_priority, 0) < self.max_runs
-                      and any(r.id == self.checkout_priority and self.uses_checkout(s)
-                              for r, s in self.pending())):
-                    reason = f"waiting for interrupted {self.checkout_priority}"
-                elif self.checkout_user is not None:
+                if self.checkout_user is not None:
                     reason = f"waiting for {self.checkout_user}, which is using the checkout"
                 else:
                     self.checkout_user = record.id
-                    if self.checkout_priority == record.id:
-                        self.checkout_priority = None
             if reason is None:
                 self._active.add(record.id)
                 return True
@@ -364,9 +343,26 @@ class Runner:
             step = self.repository.step(record)
             if step.role or step.check or step.harness:
                 found.append((record, step))
-        return sorted(found, key=lambda pair: pair[0].id != self.checkout_priority)
+        return found
 
-    def take_checkout(self, record, tryout=False):
+    def switch_branch(self, item_id):
+        """Switch to existing work for manual inspection after agents have stopped."""
+        with self.lock:
+            if self._active:
+                raise Waiting("Wait for the running steps to finish before switching branches.")
+            if self.checkout is None:
+                raise StepFailed("Switching branches needs a git repository.")
+            if item_id not in self.repository.scan().valid:
+                raise StepFailed("Select a valid work item first.")
+            branch = f"devteam/{item_id}"
+            if not git.has_ref(self.checkout, f"refs/heads/{branch}"):
+                raise StepFailed(f"No existing branch for {item_id}.")
+            if not git.clean(self.checkout):
+                raise Waiting("The checkout has uncommitted changes; clean it before switching branches.")
+            git.must(self.checkout, "switch", "-q", branch)
+            return branch
+
+    def take_checkout(self, record):
         """Put the checkout on the item's branch, preserving another checkout step's place."""
         if self.checkout is None:
             raise StepFailed("this role works on a branch, which needs a git repository")
@@ -378,7 +374,7 @@ class Runner:
             raise StepFailed("the checkout is not on a branch")
         if current.startswith("devteam/"):
             holder = self.repository.scan().valid.get(current.removeprefix("devteam/"))
-            if not tryout and self.checkout_holder(current) is not None:
+            if self.checkout_holder(current) is not None:
                 raise Waiting(f"waiting for {holder.id}, which holds the checkout at step {holder.metadata['step']}")
         if not git.clean(self.checkout):
             raise Waiting(f"waiting: the checkout has uncommitted changes on {current}")
@@ -519,7 +515,6 @@ class Runner:
                 self._active.discard(record.id)
                 if self.checkout_user == record.id:
                     self.checkout_user = None
-                self.tryout.tick()
             if self.on_change is not None:
                 try:
                     self.on_change()
@@ -570,7 +565,6 @@ class Runner:
 
     def dispatch(self, stop=None):
         """Submit one step per runnable item, without joining workers or imposing a cap."""
-        self.tryout.tick()
         submitted = []
         for record, step in self.pending():
             if stop is not None and stop.is_set():

@@ -241,7 +241,6 @@ class Repository:
         self._workflows = {}
         self.guard = guard
         self.notice = notice
-        self.on_transition = None
 
     def workflow(self, name):
         if name not in self._workflows:
@@ -377,8 +376,6 @@ class Repository:
                         label = f"{name} -> {step.transitions[name]}"
                         self.write_body(item_id, questions.add_feedback(record.body, label, note), f"feedback for {name}")
             updated = self._transition(item_id, name)
-        if self.on_transition is not None:
-            self.on_transition(item_id)
         return updated
 
     def write_body(self, item_id, body, message):

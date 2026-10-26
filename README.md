@@ -42,9 +42,7 @@ dependencies from `uv.lock`. You also need:
   `origin`.
 - From the `test` step onwards, a product `Makefile` with a `regression` target
   (`make regression`, optionally `TEST=<name>`). `init` creates a placeholder
-  that fails with an "unimplemented" message until you replace it. For customer
-  try-outs, provide `make run` to start the product; `init` includes that
-  placeholder too.
+  that fails with an "unimplemented" message until you replace it.
 
 Makefile targets must select the product's own environment (for a uv product,
 use `uv run ...`), because `dev-team` runs `make` with the checkout's virtual
@@ -96,8 +94,7 @@ origin. A rerun completes a failed commit or push; an existing different origin
 commit produces a warning and no push. In an existing codebase it makes no
 commit or push: it leaves a new placeholder uncommitted and asks you to wire up
 `make regression` and commit before opening the TUI. Existing Makefiles are
-preserved, with a warning if they lack a regression target. The placeholder also
-contains `run`; wire it up to start the product for customer try-outs.
+preserved, with a warning if they lack a regression target.
 
 ```bash
 cd /path/to/product
@@ -288,22 +285,17 @@ itself: the exit code chooses `passed` or `failed`, and the result is written
 into the item under `## Test run`. That run, not any agent's account, is what
 the reviewer is given.
 
-Products can also provide `make run`, named by `command = ["make", "run"]`
-under `[run]` in `config/roles.toml`. At `accept` or `pull-request`, select the
-item in the TUI and press `x` to try it out. The harness waits for the current
-checkout step, switches to the item's branch and starts the product, keeping
-output under `backlog/log/<id>/run-*.log`. The status shows a waiting request,
-the item being tried out, or a product that has exited. Missing targets are
-reported and release the checkout.
+To inspect a story's code, press `s` in the TUI to stop agents and wait for
+running steps to finish. Select the story and press `x` to switch to its
+existing `devteam/<id>` branch. The action refuses a switch while steps are
+running or the checkout has uncommitted changes, and reports a missing branch
+without creating one. It works at any step with an existing branch.
 
-Press `e` to cancel a request or release a try-out. Any transition on that item,
-or quitting the TUI, also stops the product's whole process group. After five
-seconds a process that has not stopped is killed. Checkout steps resume after
-the group exits; an interrupted story keeps its place ahead of queued stories.
-Starting or stopping agents does not stop a try-out. Human review steps release
-the checkout when no try-out is claimed. Uncommitted changes are preserved:
-requests and checkout steps wait until the customer cleans the tree. Existing
-Makefiles are never rewritten to add `run`.
+Start and stop the app yourself in another terminal, including any local
+stubs or databases it needs. There is no required startup target and the harness
+does not manage the app. Stop it before restarting agents with `s`, as agents
+may switch branches. Human steps such as `accept` and `pull-request` release
+the checkout so queued stories can continue while you review.
 
 ## Choosing models per role
 

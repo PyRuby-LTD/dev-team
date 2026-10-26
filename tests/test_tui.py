@@ -1,7 +1,6 @@
 import asyncio
 import json
 from pathlib import Path
-import sys
 import tempfile
 import threading
 import unittest
@@ -15,8 +14,6 @@ from devteam import questions, tui
 from devteam.backlog import Repository
 from devteam.config import Role
 from devteam.runner import Runner
-from devteam.tryout import group_alive
-from tests import test_checkout as checkout_fixtures
 
 WORKFLOW = {
     "initial": "captured",
@@ -932,64 +929,6 @@ class ParallelAgents(Fixture):
                 app.stop.set()
                 release.set()
                 await settle(pilot, lambda: not runner.active_ids() and app.thread is None)
-
-
-class TryoutShutdown(unittest.IsolatedAsyncioTestCase):
-    engine = checkout_fixtures.CheckoutAcceptance.engine
-
-    def setUp(self):
-        checkout_fixtures.CheckoutAcceptance.setUp(self)
-        self.repo.transition(self.first.id, "play")
-        self.runner.run(once=True)
-        self.addCleanup(self.release)
-
-    def release(self):
-        worker = self.runner.tryout.release()
-        if worker is not None:
-            worker.join(8)
-            self.assertFalse(worker.is_alive())
-
-    async def check_shutdown(self, quit_key):
-        # Both processes ignore TERM on quit, exercising the async wait through
-        # the grace period. Unmount also releases a normally stopping product.
-        self.runner.tryout.command = [sys.executable, "-u", "-c", f"""
-import os, signal, time
-if {quit_key!r}:
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
-os.fork()
-print('ready', flush=True)
-time.sleep(60)
-"""]
-        app = tui.Backlog(self.repo, self.runner)
-        async with app.run_test(size=(120, 40)) as pilot:
-            self.runner.tryout.request(self.first.id)
-            process = self.runner.tryout.process
-            self.assertIsNotNone(process)
-            logs = list((self.backlog / "log" / self.first.id).glob("run-*.log"))
-            for _ in range(200):
-                if logs[0].read_text().splitlines().count("ready") == 2:
-                    break
-                await asyncio.sleep(0.02)
-            else:
-                self.fail("product and child did not start")
-            self.assertTrue(group_alive(process.pid))
-            if quit_key:
-                await pilot.press("q")
-                for _ in range(400):
-                    if not app.is_running:
-                        break
-                    await asyncio.sleep(0.02)
-                else:
-                    self.fail("quit did not finish stopping the product")
-        self.assertIsNotNone(process.poll())
-        self.assertFalse(group_alive(process.pid))
-        self.assertIsNone(self.runner.tryout.item_id)
-
-    async def test_quit_waits_for_product_and_descendant_shutdown(self):
-        await self.check_shutdown(quit_key=True)
-
-    async def test_unmount_waits_for_product_and_descendant_shutdown(self):
-        await self.check_shutdown(quit_key=False)
 
 
 if __name__ == "__main__":
