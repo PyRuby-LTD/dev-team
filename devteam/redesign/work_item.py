@@ -177,9 +177,18 @@ def _text(dumper, value):
 _Dumper.add_representer(str, _text)
 
 
+def to_yaml(value):
+    """Models and plain data alike, as the work-item files write them."""
+    if isinstance(value, BaseModel):
+        value = value.model_dump(exclude_none=True, exclude_defaults=True)
+    elif isinstance(value, list):
+        value = [v.model_dump(exclude_none=True, exclude_defaults=True) if isinstance(v, BaseModel) else v
+                 for v in value]
+    return yaml.dump(value, Dumper=_Dumper, sort_keys=False, allow_unicode=True, width=float("inf"))
+
+
 def dump(item):
-    return yaml.dump(item.model_dump(exclude_none=True, exclude_defaults=True), Dumper=_Dumper, sort_keys=False,
-                     allow_unicode=True, width=float("inf"))
+    return to_yaml(item)
 
 
 def load(path):

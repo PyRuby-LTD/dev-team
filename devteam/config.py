@@ -5,11 +5,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def harness_command() -> str:
+def harness_command(module: str = "devteam") -> str:
     path = str(ROOT)
     if any(char.isspace() or char in "*?[]()\"'\\" for char in path):
         raise ValueError("Harness checkout path cannot contain whitespace or * ? [ ] ( ) \" ' \\")
-    return f"uv run --project {path} python -P -m devteam"
+    return f"uv run --project {path} python -P -m {module}"
 
 
 @dataclass
