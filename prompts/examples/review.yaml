@@ -1,0 +1,10 @@
+# Review example: the reviewer's findings on a diff
+verdict: revise
+findings:
+  - location: ui/src/components/recipes/Recipe:112
+    concern: glossary
+    finding: Recipe shows a list of "labels" which should be a list of "tags".
+    outcome: fix
+  - concern: testing
+    finding: Expected a journey test to be updated for filtering recipes
+    outcome: fix

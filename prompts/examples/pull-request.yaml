@@ -1,0 +1,7 @@
+# Pull request example: the publisher's PR body - the title for the PR is taken from the work-item title
+summary: Create an access log with one entry per request
+api_changes: # leave this off when there is no contract change for the REST or GraphQL API
+surprises: # Anything surprising or unexpected
+  - Found 2 different log libraries available in the application. Configured access logging in logback.properties.
+opinions: # Opinions an agent introduced outside the scope of the story
+  - Introduced the logstash JSON appender library

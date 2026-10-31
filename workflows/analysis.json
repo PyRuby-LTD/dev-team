@@ -11,9 +11,6 @@
       "owner": "agent:product_owner",
       "transitions": {
         "questions": "product-owner-questions",
-        "architect": "architect",
-        "platform-engineer": "platform-engineer",
-        "quality-lead": "quality-lead",
         "complete": "review"
       }
     },
@@ -21,45 +18,6 @@
       "owner": "human",
       "transitions": {
         "answered": "product-owner"
-      }
-    },
-    "architect": {
-      "owner": "agent:architect",
-      "transitions": {
-        "questions": "architect-questions",
-        "return": "product-owner"
-      }
-    },
-    "architect-questions": {
-      "owner": "human",
-      "transitions": {
-        "answered": "architect"
-      }
-    },
-    "platform-engineer": {
-      "owner": "agent:platform_engineer",
-      "transitions": {
-        "questions": "platform-engineer-questions",
-        "return": "product-owner"
-      }
-    },
-    "platform-engineer-questions": {
-      "owner": "human",
-      "transitions": {
-        "answered": "platform-engineer"
-      }
-    },
-    "quality-lead": {
-      "owner": "agent:quality_lead",
-      "transitions": {
-        "questions": "quality-lead-questions",
-        "return": "product-owner"
-      }
-    },
-    "quality-lead-questions": {
-      "owner": "human",
-      "transitions": {
-        "answered": "quality-lead"
       }
     },
     "review": {

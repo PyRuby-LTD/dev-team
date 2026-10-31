@@ -1,0 +1,40 @@
+# Story example
+title: Log requests to the API
+depends_on: 
+  - STORY-NNN # list the stories that must be complete before this can be implemented. Leave it off when this story has no dependencies
+parent: # The epic this story belongs to.
+overview: |
+    As a Support engineer,
+    I want access logs to be captured
+    So that I can see activity against the API
+scope: |
+    The existing log setup writes application logs in plain text. There are currently
+    no access logs captured.
+acceptance_criteria:
+  - An access log contains the fields "date-time", "request method", "request path", "response status"
+  - Access logs are written at INFO level
+  - Access logs for responses that have an exception also log their exception message and stack trace
+  - Access log messages are written as structured JSON, with multiline log entries written as a single entry
+  - An access log does not capture request or response body payloads. These can contain sensitive information that should not be exposed in logs.
+glossary_changes:
+  - name: Access log
+    description: A log entry written to capture requests that reach the REST API and what the outcome was
+persona_changes:
+  - name: Support engineer
+    description: The person responsible for ensuring the production application is working properly. When the system is not healthy, it is their job to investigate and raise bugs to fix the problem.
+# personas_affected: []  identifies all personas impacted by this story
+questions:
+  - question: |
+      What level should the logs be written at?
+      a) Write 2xx requests at DEBUG, 3xx and 4xx at INFO and 5xx at ERROR
+      b) Write them all at INFO
+      c) Write them all at DEBUG
+      d) Something else? 
+    answer: b - Access logs should always be written at INFO
+  - question: |
+      Timing - Should the elapsed time be captured and in what time-unit?
+      a) Do not capture elapsed time
+      b) Nanos - finest measurement but with slightly greater overhead.
+      c) Milliseconds - standard system time
+      d) Something else?
+    # awaiting an answer from the customer to decide whether to include elapsed time

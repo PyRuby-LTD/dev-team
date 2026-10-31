@@ -1,0 +1,120 @@
+# Work-item example: every field an item can carry, from capture through to publish.
+# Any field may appear on any type; nothing is required or forbidden by type. The per-type
+# examples (story, draft-story, task, bug, epic) show what each kind usually contains.
+# Each step's contribution is nested under its own key so later steps read it without
+# re-deriving it, and a rework replaces that step's object rather than appending to it.
+
+# Front matter: identity and position in the workflow
+id: STORY-NNN
+type: story # epic, story, task, bug or request
+title: Log requests to the API
+parent: EPIC-NNN # the item this one belongs to
+depends_on: # leave it off when this item has no dependencies
+  - STORY-NNN
+workflow: default
+step: publish
+
+# Requirements: written by the product owner, revised as decisions are made
+overview: | # the outcome or "As a ..." statement
+  As a Support engineer,
+  I want access logs to be captured
+  So that I can see activity against the API
+scope: | # a public API change carries the proposed contract in full
+  The existing log setup writes application logs in plain text. There are currently
+  no access logs captured.
+context: # the files and functions involved, relative to the project root
+change: # what to change
+current_behaviour:
+expected_behaviour:
+steps_to_reproduce: []
+acceptance_criteria:
+  - An access log contains the fields "date-time", "request method", "request path", "response status"
+  - Access logs are written at INFO level
+  - Access logs for responses that have an exception also log their exception message and stack trace
+  - Access log messages are written as structured JSON, with multiline log entries written as a single entry
+  - An access log does not capture request or response body payloads. These can contain sensitive information that should not be exposed in logs.
+personas_affected: # every persona this item touches, named in the Testing ACs
+  - Support engineer
+glossary_changes:
+  - name: Access log
+    description: A log entry written to capture requests that reach the REST API and what the outcome was
+persona_changes:
+  - name: Support engineer
+    description: The person responsible for ensuring the production application is working properly. When the system is not healthy, it is their job to investigate and raise bugs to fix the problem.
+standards: # names are files in standards/ without the extension
+  proposed: # product owner, at analysis, chosen from the available standards; the challenger disputes missing or unnecessary ones
+    - name: api-contracts
+      reason: Adds no endpoints, but the access log records request paths and statuses defined by the contract
+    - name: quality
+      reason: Support engineer journeys depend on the log format
+  applied: # set by the customer before playing the item; when left off, the proposed list applies
+    - api-contracts
+    - quality
+    - platform
+questions:
+  - question: |
+      What level should the logs be written at?
+      a) Write 2xx requests at DEBUG, 3xx and 4xx at INFO and 5xx at ERROR
+      b) Write them all at INFO
+      c) Write them all at DEBUG
+      d) Something else?
+    answer: b - Access logs should always be written at INFO
+
+# Challenger: judgement of the analysed item
+challenge:
+  verdict: sound # sound or rework
+  findings:
+    - concern: Missing personas
+      finding: Logging is needed for developer but not listed under personas_affected
+    - concern: Date time format
+      finding: The date-time format in the log timestamp property is non-standard and was not supplied by the customer. Use standard ISO format date-times
+
+# Implementer: what was built, beyond what the diff shows
+implementation:
+  outcome: implemented # implemented or blocked
+  branch: devteam/STORY-NNN
+  blocked_by: # only when blocked: what stops the build, for the customer to resolve
+  libraries_added:
+    - name: logstash-logback-encoder
+      licence: Apache-2.0
+  tech_tasks: # refactors proposed rather than done in this item
+    - TASK-NNN
+  surprises:
+    - Found 2 different log libraries available in the application. Configured access logging in logback.properties.
+  opinions: # introduced outside the scope of the item
+    - Introduced the logstash JSON appender library
+
+# Tester: journey decisions; adding nothing is normal
+testing:
+  outcome: written # written or defect
+  journeys:
+    - journey: journeys/support-engineer/diagnose-failure.feature
+      action: extend # extend, new or none
+      personas:
+        - Support engineer
+      reason: # only for none: why a journey would add insufficient value
+  defects: # only when the outcome is defect: what the implementer must fix
+    - The stack trace is logged as a separate entry when the exception has a cause
+
+# Reviewer: findings on the diff; each is fixed or captured as a tech task
+review:
+  verdict: approve # approve or revise
+  findings:
+    - location: ui/src/components/recipes/Recipe:112
+      concern: glossary
+      finding: Recipe shows a list of "labels" which should be a list of "tags".
+      outcome: fix # fix or task
+    - concern: testing
+      finding: Expected a journey test to be updated for filtering recipes
+      outcome: task
+      task: TASK-NNN
+
+# Publisher: the pull request body; the PR title is the item title
+publish:
+  pull_request: 123
+  summary: Create an access log with one entry per request
+  api_changes: # leave this off when there is no contract change for the REST or GraphQL API
+  surprises: # collated from implementation and testing
+    - Found 2 different log libraries available in the application. Configured access logging in logback.properties.
+  opinions:
+    - Introduced the logstash JSON appender library

@@ -51,11 +51,6 @@ engine = "claude"
 model = "sonnet"
 max_turns = 30
 
-[roles.analyst]
-engine = "claude"
-model = "sonnet"
-max_turns = 30
-
 # Deliberately a stronger model than the analyst whose work it attacks.
 [roles.challenger]
 engine = "claude"
@@ -89,17 +84,3 @@ branch = true
 record = true
 push = true
 
-[roles.architect]
-engine = "claude"
-model = "sonnet"
-max_turns = 30
-
-[roles.platform_engineer]
-engine = "claude"
-model = "sonnet"
-max_turns = 30
-
-[roles.quality_lead]
-engine = "claude"
-model = "sonnet"
-max_turns = 30
