@@ -1,5 +1,6 @@
 import contextlib
 import io
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -9,21 +10,27 @@ from unittest import mock
 import yaml
 
 from devteam.redesign import submission
-from devteam.backlog import Repository
 from devteam.redesign.console import main
 from devteam.redesign.steps import AgentStep, HumanStep, InvalidStep, Outcome
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 FINDINGS = """
 findings:
   - concern: glossary
     finding: Recipe shows "labels" which should be "tags".
+    outcome: fix
 """
+
+
+FINDINGS_SCHEMA = {"type": "object", "additionalProperties": False, "properties": {"findings": {
+    "type": "array", "items": {"type": "object", "required": ["concern", "finding"]}}}}
 
 
 def review():
     return AgentStep("review", {"approve": Outcome("approve", "accept", "All met."),
                                 "revise": Outcome("revise", "implement", "Not met.")},
-                     "reviewer", Path("prompts/review.md"))
+                     "reviewer", Path("prompts/review.md"), output=FINDINGS_SCHEMA)
 
 
 class StagingOutput(unittest.TestCase):
@@ -56,6 +63,8 @@ class StagingOutput(unittest.TestCase):
             "sets the outcome": ("revise", "outcome: approve\n", "must not set 'outcome'"),
             "duplicate key": ("revise", "findings: []\nfindings: []\n", "duplicate key 'findings'"),
             "malformed": ("revise", "findings: [\n", "not valid YAML"),
+            "breaks the schema": ("revise", "findings:\n  - concern: glossary\n",
+                                  "does not fit its schema: findings.0: 'finding' is a required property"),
         }
         for label, (outcome, text, message) in cases.items():
             with self.subTest(label), self.assertRaisesRegex(InvalidStep, message):
@@ -68,28 +77,13 @@ class StagingOutput(unittest.TestCase):
             self.stage("pr", "", step)
 
 
-class RecordingOutput(unittest.TestCase):
-    def test_output_goes_under_the_step_name_with_its_outcome(self):
-        item = {"id": "BUG-001", "challenge": {"outcome": "sound"}}
-        recorded = review().record(item, "revise", yaml.safe_load(FINDINGS))
-        self.assertEqual({"outcome": "sound"}, recorded["challenge"])
-        self.assertEqual("revise", recorded["review"]["outcome"])
-        self.assertEqual(["glossary"], [f["concern"] for f in recorded["review"]["findings"]])
-        self.assertNotIn("review", item)
-
-    def test_a_rework_replaces_the_earlier_output(self):
-        first = review().record({}, "revise", yaml.safe_load(FINDINGS))
-        self.assertEqual({"review": {"outcome": "approve"}}, review().record(first, "approve", {}))
-
-
 class SubmitCommand(unittest.TestCase):
     def setUp(self):
         self.product = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.prefix = ["--product", str(self.product), "backlog"]
-        repo = Repository(self.product / "backlog")
-        repo.create("bug", "Access logs")
-        for name in ("analyse", "analysed", "sound", "play", "implemented", "written", "completed", "passed"):
-            repo.transition("BUG-001", name)
+        bugs = self.product / "backlog" / "bugs"
+        bugs.mkdir(parents=True)
+        shutil.copy(FIXTURES / "BUG-001.yaml", bugs)
 
     def submit(self, outcome, text):
         with mock.patch("sys.stdin", io.StringIO(text)), contextlib.redirect_stdout(io.StringIO()) as output:
@@ -110,7 +104,7 @@ class SubmitCommand(unittest.TestCase):
     def test_an_unknown_item_is_refused(self):
         with mock.patch("sys.stdin", io.StringIO("")), self.assertRaises(SystemExit) as exit:
             main(self.prefix + ["submit", "BUG-999", "approve"])
-        self.assertIn("BUG-999 is missing or invalid", str(exit.exception.code))
+        self.assertIn("BUG-999 does not exist", str(exit.exception.code))
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ steps:
   analysis:
     owner: agent:product_owner
     prompt: analysis.md
+    output: requirements
     outcomes:
       questions:
         next: answering
@@ -21,6 +22,19 @@ steps:
   challenge:
     owner: agent:challenger
     prompt: challenge.md
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        findings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [concern, finding]
+            properties:
+              concern: {type: string}
+              finding: {type: string}
     outcomes:
       sound:
         next: ready
@@ -31,6 +45,7 @@ steps:
 
   answering:
     owner: human
+    output: requirements
     outcomes:
       answered:
         next: analysis
@@ -38,6 +53,12 @@ steps:
 
   ready:
     owner: human
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        standards: {type: array, items: {type: string}}
+        feedback: {type: string}
     outcomes:
       play:
         next: implement
@@ -49,6 +70,24 @@ steps:
   implement:
     owner: agent:implementer
     prompt: implement.md
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        branch: {type: string}
+        blocked_by: {type: string}
+        libraries_added:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, licence]
+            properties:
+              name: {type: string}
+              licence: {type: string}
+        tech_tasks: {type: array, items: {type: string}}
+        surprises: {type: array, items: {type: string}}
+        opinions: {type: array, items: {type: string}}
     outcomes:
       implemented:
         next: test
@@ -60,6 +99,22 @@ steps:
   test:
     owner: agent:tester
     prompt: test.md
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        journeys:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [journey, action]
+            properties:
+              journey: {type: string}
+              action: {enum: [extend, new, none]}
+              personas: {type: array, items: {type: string}}
+              reason: {type: string}
+        defects: {type: array, items: {type: string}}
     outcomes:
       written:
         next: sync
@@ -102,6 +157,22 @@ steps:
   review:
     owner: agent:reviewer
     prompt: review.md
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        findings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [concern, finding, outcome]
+            properties:
+              location: {type: string}
+              concern: {type: string}
+              finding: {type: string}
+              outcome: {enum: [fix, task]}
+              task: {type: string}
     outcomes:
       approve:
         next: accept
@@ -112,6 +183,11 @@ steps:
 
   accept:
     owner: human
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        feedback: {type: string}
     outcomes:
       pr:
         next: sync-publish
@@ -157,6 +233,15 @@ steps:
   publish:
     owner: agent:publisher
     prompt: publish.md
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        pull_request: {type: integer}
+        summary: {type: string}
+        api_changes: {type: string}
+        surprises: {type: array, items: {type: string}}
+        opinions: {type: array, items: {type: string}}
     outcomes:
       published:
         next: pull-request

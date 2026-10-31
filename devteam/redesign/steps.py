@@ -1,9 +1,15 @@
 """Workflow steps: the common interface the runner dispatches and the TUI displays, one class per kind of owner."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
 
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
+
 from devteam.config import ROOT
+
+# A step whose output is the item's requirements, merged into the item rather than kept beside it.
+REQUIREMENTS = "requirements"
 
 
 class InvalidStep(ValueError):
@@ -24,6 +30,7 @@ class Step:
 
     name: str
     outcomes: dict
+    output: dict | str | None = field(default=None, kw_only=True)  # a JSON Schema, REQUIREMENTS or nothing
 
     @property
     def owner(self):
@@ -51,17 +58,32 @@ class Step:
         """Return the outcome's name, or raise Waiting to be tried again later."""
         raise NotImplementedError(f"step {self.name!r} is not performed by the harness")
 
-    def record(self, item, outcome, fragment):
-        """The item with this step's output under its own key, replacing any earlier output."""
+    def check(self, outcome, fragment):
+        """The fragment, once the outcome is one of this step's and the fragment fits the step's output."""
         if outcome not in self.outcomes:
             valid = ", ".join(self.outcomes) or "none (terminal step)"
             raise InvalidStep(f"{outcome!r} is not an outcome of step {self.name!r}; valid: {valid}")
+        fragment = {} if fragment is None else fragment
         if not isinstance(fragment, dict):
             raise InvalidStep(f"the output of step {self.name!r} must be a mapping")
         if "outcome" in fragment:
             raise InvalidStep(f"the output of step {self.name!r} must not set 'outcome'; the harness records it")
-        return {**item, self.name: {"outcome": outcome, **fragment}}
-
+        if self.output is None:
+            if fragment:
+                raise InvalidStep(f"step {self.name!r} takes no output")
+        elif self.output == REQUIREMENTS:
+            from .work_item import InvalidWorkItem, check_requirements
+            try:
+                check_requirements(fragment)
+            except InvalidWorkItem as exc:
+                raise InvalidStep(f"the output of step {self.name!r} is not valid requirements: {exc}") from None
+        else:
+            errors = sorted(Draft202012Validator(self.output).iter_errors(fragment), key=lambda e: list(e.absolute_path))
+            if errors:
+                problems = "; ".join(f"{'.'.join(str(p) for p in e.absolute_path) or 'output'}: {e.message}"
+                                     for e in errors)
+                raise InvalidStep(f"the output of step {self.name!r} does not fit its schema: {problems}")
+        return fragment
 
 @dataclass
 class HumanStep(Step):
@@ -212,6 +234,18 @@ def _prompt(step_name, name, prompts):
     return prompt
 
 
+def _output(step_name, output):
+    if output is None or output == REQUIREMENTS:
+        return output
+    if not isinstance(output, dict):
+        raise InvalidStep(f"step {step_name!r}: 'output' must be {REQUIREMENTS!r} or a JSON Schema")
+    try:
+        Draft202012Validator.check_schema(output)
+    except SchemaError as exc:
+        raise InvalidStep(f"step {step_name!r}: 'output' is not a valid JSON Schema: {exc.message}") from None
+    return output
+
+
 def _harness_step(step_name, owner):
     kind, _, name = owner.partition(":")
     module, _, class_name = name.rpartition(".")
@@ -237,20 +271,21 @@ def build(step_name, spec, roles, prompts=None):
         raise InvalidStep(f"step {step_name!r}: owner must be 'human', 'agent:<role>', "
                           "'harness:<class>' or 'git:<class>'")
     expected = {"owner", "prompt", "outcomes"} if agent else {"owner", "outcomes"}
-    if set(spec) != expected:
+    if set(spec) - {"output"} != expected:
         raise InvalidStep(f"step {step_name!r} owned by {owner!r} must have exactly "
-                          + ", ".join(repr(key) for key in sorted(expected)))
+                          + ", ".join(repr(key) for key in sorted(expected)) + ", and may have 'output'")
     outcomes = _outcomes(step_name, spec["outcomes"])
+    output = _output(step_name, spec.get("output"))
     if owner == "human":
-        return HumanStep(step_name, outcomes)
+        return HumanStep(step_name, outcomes, output=output)
     if not agent:
         action = _harness_step(step_name, owner)
         # The customer may add outcomes of their own, such as abandoning a pull request.
         if missing := action.produces - set(outcomes):
             raise InvalidStep(f"step {step_name!r}: {action.__name__} needs the outcomes "
                               + ", ".join(repr(name) for name in sorted(missing)))
-        return action(step_name, outcomes)
+        return action(step_name, outcomes, output=output)
     role = owner.removeprefix("agent:")
     if role not in roles:
         raise InvalidStep(f"step {step_name!r}: role {role!r} is not in config/roles.toml")
-    return AgentStep(step_name, outcomes, role, _prompt(step_name, spec["prompt"], prompts))
+    return AgentStep(step_name, outcomes, role, _prompt(step_name, spec["prompt"], prompts), output=output)

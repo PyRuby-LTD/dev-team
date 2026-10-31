@@ -24,8 +24,7 @@ def _path(root, item_id, step_name):
 def stage(root, record, step, outcome, text):
     if not isinstance(step, AgentStep):
         raise InvalidStep(f"{record.id} is at step {step.name!r}, which is not an agent step")
-    fragment = parse(text)
-    step.record({}, outcome, fragment)
+    fragment = step.check(outcome, parse(text))
     path = _path(root, record.id, step.name)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")

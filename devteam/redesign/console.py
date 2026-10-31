@@ -4,11 +4,11 @@ import sys
 from pathlib import Path
 
 from devteam import git
-from devteam.backlog import InvalidRecord, Repository
 from devteam.evidence import PathGuard
 
-from . import flow, submission
+from . import submission
 from .steps import InvalidStep
+from .work_item import Backlog, InvalidWorkItem
 
 
 def locate(args):
@@ -24,19 +24,15 @@ def locate(args):
 
 
 def cmd_submit(args):
-    checkout, backlog = locate(args)
-    repo = Repository(backlog, guard=PathGuard(checkout))
+    checkout, root = locate(args)
+    backlog = Backlog(root, guard=PathGuard(checkout))
     try:
-        record = repo.scan().valid.get(args.id)
-        if record is None:
-            raise InvalidRecord(f"{args.id} is missing or invalid; run validate")
-        step = flow.load(record.metadata["workflow"]).steps.get(record.metadata["step"])
-        if step is None:
-            raise InvalidStep(f"{record.id} is at {record.metadata['step']!r}, which its workflow does not define")
-        submission.stage(backlog, record, step, args.outcome, sys.stdin.read())
-    except (InvalidRecord, flow.InvalidWorkflow, InvalidStep, OSError, UnicodeError) as exc:
+        item = backlog.get(args.id)
+        step = backlog.step(item)
+        submission.stage(root, item, step, args.outcome, sys.stdin.read())
+    except (InvalidWorkItem, InvalidStep, OSError, UnicodeError) as exc:
         raise SystemExit(str(exc)) from exc
-    print(f"{record.id} {step.name}: {args.outcome} staged")
+    print(f"{item.id} {step.name}: {args.outcome} staged")
 
 
 def main(argv=None):

@@ -98,6 +98,22 @@ class StepDefinitions(unittest.TestCase):
         self.specs["accept"]["prompt"] = "implement.md"
         self.assertInvalid("accept", "must have exactly 'outcomes', 'owner'")
 
+    def test_a_step_may_name_its_output(self):
+        schema = {"type": "object", "properties": {"feedback": {"type": "string"}}}
+        for output in (schema, "requirements"):
+            with self.subTest(output):
+                self.specs["accept"]["output"] = output
+                self.assertEqual(output, self.build("accept").output)
+        del self.specs["accept"]["output"]
+        self.assertIsNone(self.build("accept").output)
+
+    def test_an_output_must_be_requirements_or_a_valid_schema(self):
+        for output, message in (("findings", "'output' must be 'requirements' or a JSON Schema"),
+                                ({"type": "dictionary"}, "'output' is not a valid JSON Schema")):
+            with self.subTest(output):
+                self.specs["accept"]["output"] = output
+                self.assertInvalid("accept", message)
+
     def test_an_agent_role_must_be_configured(self):
         self.specs["implement"]["owner"] = "agent:wizard"
         self.assertInvalid("implement", "'wizard' is not in config/roles.toml")

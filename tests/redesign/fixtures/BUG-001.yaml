@@ -1,0 +1,5 @@
+id: BUG-001
+type: bug
+title: Access logs
+workflow: default
+step: review
