@@ -30,11 +30,9 @@ questions:
       b) Write them all at INFO
       c) Write them all at DEBUG
       d) Something else? 
-    answer: b - Access logs should always be written at INFO
   - question: |
       Timing - Should the elapsed time be captured and in what time-unit?
       a) Do not capture elapsed time
       b) Nanos - finest measurement but with slightly greater overhead.
       c) Milliseconds - standard system time
       d) Something else?
-    # awaiting an answer from the customer to decide whether to include elapsed time

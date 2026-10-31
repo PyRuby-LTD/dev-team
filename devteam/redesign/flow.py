@@ -6,8 +6,8 @@ from pathlib import Path
 import yaml
 
 from . import steps
-from .backlog import InvalidRecord, StrictLoader
-from .config import ROOT, load_roles
+from devteam.backlog import InvalidRecord, StrictLoader
+from devteam.config import ROOT, load_roles
 
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 

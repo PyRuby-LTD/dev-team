@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
-from .config import ROOT
+from devteam.config import ROOT
 
 
 class InvalidStep(ValueError):
@@ -51,6 +51,17 @@ class Step:
         """Return the outcome's name, or raise Waiting to be tried again later."""
         raise NotImplementedError(f"step {self.name!r} is not performed by the harness")
 
+    def record(self, item, outcome, fragment):
+        """The item with this step's output under its own key, replacing any earlier output."""
+        if outcome not in self.outcomes:
+            valid = ", ".join(self.outcomes) or "none (terminal step)"
+            raise InvalidStep(f"{outcome!r} is not an outcome of step {self.name!r}; valid: {valid}")
+        if not isinstance(fragment, dict):
+            raise InvalidStep(f"the output of step {self.name!r} must be a mapping")
+        if "outcome" in fragment:
+            raise InvalidStep(f"the output of step {self.name!r} must not set 'outcome'; the harness records it")
+        return {**item, self.name: {"outcome": outcome, **fragment}}
+
 
 @dataclass
 class HumanStep(Step):
@@ -87,7 +98,7 @@ class AgentStep(Step):
 
 def _actions():
     # The actions still live in the runner, which will import this module once steps are integrated.
-    from . import runner
+    from devteam import runner
     return runner
 
 

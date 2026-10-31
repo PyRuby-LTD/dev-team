@@ -1,8 +1,9 @@
 # Work-item example: every field an item can carry, from capture through to publish.
 # Any field may appear on any type; nothing is required or forbidden by type. The per-type
 # examples (story, draft-story, task, bug, epic) show what each kind usually contains.
-# Each step's contribution is nested under its own key so later steps read it without
-# re-deriving it, and a rework replaces that step's object rather than appending to it.
+# Each human or agent step's output is stored under the step's own name, with the outcome
+# the step chose. The harness writes both, so later steps read it without re-deriving it,
+# and a rework replaces that step's object rather than appending to it.
 
 # Front matter: identity and position in the workflow
 id: STORY-NNN
@@ -14,63 +15,80 @@ depends_on: # leave it off when this item has no dependencies
 workflow: default
 step: publish
 
-# Requirements: written by the product owner, revised as decisions are made
-overview: | # the outcome or "As a ..." statement
-  As a Support engineer,
-  I want access logs to be captured
-  So that I can see activity against the API
-scope: | # a public API change carries the proposed contract in full
-  The existing log setup writes application logs in plain text. There are currently
-  no access logs captured.
-context: # the files and functions involved, relative to the project root
-change: # what to change
-current_behaviour:
-expected_behaviour:
-steps_to_reproduce: []
-acceptance_criteria:
-  - An access log contains the fields "date-time", "request method", "request path", "response status"
-  - Access logs are written at INFO level
-  - Access logs for responses that have an exception also log their exception message and stack trace
-  - Access log messages are written as structured JSON, with multiline log entries written as a single entry
-  - An access log does not capture request or response body payloads. These can contain sensitive information that should not be exposed in logs.
-personas_affected: # every persona this item touches, named in the Testing ACs
-  - Support engineer
-glossary_changes:
-  - name: Access log
-    description: A log entry written to capture requests that reach the REST API and what the outcome was
-persona_changes:
-  - name: Support engineer
-    description: The person responsible for ensuring the production application is working properly. When the system is not healthy, it is their job to investigate and raise bugs to fix the problem.
-standards: # names are files in standards/ without the extension
-  proposed: # product owner, at analysis, chosen from the available standards; the challenger disputes missing or unnecessary ones
+# Product owner: the requirements, revised as decisions are made
+analysis:
+  outcome: analysed # analysed or questions
+  overview: | # the outcome or "As a ..." statement
+    As a Support engineer,
+    I want access logs to be captured
+    So that I can see activity against the API
+  scope: | # a public API change carries the proposed contract in full
+    The existing log setup writes application logs in plain text. There are currently
+    no access logs captured.
+  context: # the files and functions involved, relative to the project root
+  change: # what to change
+  current_behaviour:
+  expected_behaviour:
+  steps_to_reproduce: []
+  acceptance_criteria:
+    - An access log contains the fields "date-time", "request method", "request path", "response status"
+    - Access logs are written at INFO level
+    - Access logs for responses that have an exception also log their exception message and stack trace
+    - Access log messages are written as structured JSON, with multiline log entries written as a single entry
+    - An access log does not capture request or response body payloads. These can contain sensitive information that should not be exposed in logs.
+  personas_affected: # every persona this item touches, named in the Testing ACs
+    - Support engineer
+  glossary_changes:
+    - name: Access log
+      description: A log entry written to capture requests that reach the REST API and what the outcome was
+  persona_changes:
+    - name: Support engineer
+      description: The person responsible for ensuring the production application is working properly. When the system is not healthy, it is their job to investigate and raise bugs to fix the problem.
+  standards: # chosen from the available standards; names are files in standards/ without the extension
     - name: api-contracts
       reason: Adds no endpoints, but the access log records request paths and statuses defined by the contract
     - name: quality
       reason: Support engineer journeys depend on the log format
-  applied: # set by the customer before playing the item; when left off, the proposed list applies
-    - api-contracts
-    - quality
-    - platform
-questions:
-  - question: |
-      What level should the logs be written at?
-      a) Write 2xx requests at DEBUG, 3xx and 4xx at INFO and 5xx at ERROR
-      b) Write them all at INFO
-      c) Write them all at DEBUG
-      d) Something else?
-    answer: b - Access logs should always be written at INFO
+  questions: # earlier questions stay in place; new ones are added to the end
+    - question: |
+        What level should the logs be written at?
+        a) Write 2xx requests at DEBUG, 3xx and 4xx at INFO and 5xx at ERROR
+        b) Write them all at INFO
+        c) Write them all at DEBUG
+        d) Something else?
 
-# Challenger: judgement of the analysed item
+# Customer: answers to the product owner's questions
+answering:
+  outcome: answered
+  answers: # each question is copied exactly from analysis.questions
+    - question: |
+        What level should the logs be written at?
+        a) Write 2xx requests at DEBUG, 3xx and 4xx at INFO and 5xx at ERROR
+        b) Write them all at INFO
+        c) Write them all at DEBUG
+        d) Something else?
+      answer: b - Access logs should always be written at INFO
+
+# Challenger: judgement of the analysed item; it disputes missing or unnecessary standards
 challenge:
-  verdict: sound # sound or rework
+  outcome: sound # sound or rework
   findings:
     - concern: Missing personas
       finding: Logging is needed for developer but not listed under personas_affected
     - concern: Date time format
       finding: The date-time format in the log timestamp property is non-standard and was not supplied by the customer. Use standard ISO format date-times
 
+# Customer: playing the item; when standards is left off, the ones analysis proposed apply
+ready:
+  outcome: play # play or rework
+  standards:
+    - api-contracts
+    - quality
+    - platform
+  feedback: # only with rework: what the product owner should change
+
 # Implementer: what was built, beyond what the diff shows
-implementation:
+implement:
   outcome: implemented # implemented or blocked
   branch: devteam/STORY-NNN
   blocked_by: # only when blocked: what stops the build, for the customer to resolve
@@ -85,7 +103,7 @@ implementation:
     - Introduced the logstash JSON appender library
 
 # Tester: journey decisions; adding nothing is normal
-testing:
+test:
   outcome: written # written or defect
   journeys:
     - journey: journeys/support-engineer/diagnose-failure.feature
@@ -98,7 +116,7 @@ testing:
 
 # Reviewer: findings on the diff; each is fixed or captured as a tech task
 review:
-  verdict: approve # approve or revise
+  outcome: approve # approve or revise
   findings:
     - location: ui/src/components/recipes/Recipe:112
       concern: glossary
@@ -109,8 +127,14 @@ review:
       outcome: task
       task: TASK-NNN
 
+# Customer: accepting the change
+accept:
+  outcome: pr # pr, revise or abandon
+  feedback: # only with revise: what the implementer should change
+
 # Publisher: the pull request body; the PR title is the item title
 publish:
+  outcome: published
   pull_request: 123
   summary: Create an access log with one entry per request
   api_changes: # leave this off when there is no contract change for the REST or GraphQL API

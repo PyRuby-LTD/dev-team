@@ -1,5 +1,4 @@
 # Review example: the reviewer's findings on a diff
-verdict: revise
 findings:
   - location: ui/src/components/recipes/Recipe:112
     concern: glossary

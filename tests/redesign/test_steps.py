@@ -9,8 +9,8 @@ from unittest import mock
 import yaml
 
 from devteam import runner as harness
-from devteam import steps
-from devteam.steps import (Abandon, AgentStep, Check, HarnessStep, HumanStep, InvalidStep, Merged,
+from devteam.redesign import steps
+from devteam.redesign.steps import (Abandon, AgentStep, Check, HarnessStep, HumanStep, InvalidStep, Merged,
                            Outcome, PullRequest, Rejected, Step, Sync, build)
 
 DEFINITION = """
@@ -142,7 +142,7 @@ class ActionStepDefinitions(unittest.TestCase):
 
     def test_the_owner_names_a_harness_step_of_the_right_kind(self):
         cases = {
-            "unknown class": ("git:Rebase", "'Rebase' is not a harness step in devteam.steps"),
+            "unknown class": ("git:Rebase", "'Rebase' is not a harness step in devteam.redesign.steps"),
             "grouping": ("git:GitStep", "'GitStep' is not a harness step"),
             "base": ("harness:HarnessStep", "'HarnessStep' is not a harness step"),
             "not a step": ("harness:Outcome", "'Outcome' is not a harness step"),

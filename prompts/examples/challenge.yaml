@@ -1,5 +1,4 @@
 # Challenge example: the challenger's judgement of an analysed story
-verdict: rework
 findings:
   - concern: Missing personas
     finding: Logging is needed for developer but not listed under personas_affected

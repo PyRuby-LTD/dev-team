@@ -19,4 +19,3 @@ steps_to_reproduce:
   - The log file contains multiple log lines for the stack trace
 questions:
   - question: |
-    answer:
