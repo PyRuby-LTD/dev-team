@@ -148,14 +148,17 @@ class Answers(ModalScreen):
             with Horizontal(classes="buttons"):
                 yield Button("Save answers (ctrl+s)", variant="primary", id="save")
                 yield Button("Cancel (esc)", id="cancel")
-            yield Label(Text("tab: next answer    blank answers stay unanswered", "dim"))
+            yield Label(Text("tab: next answer    every question needs an answer; write n/a to pass on one", "dim"))
 
     def on_mount(self):
         self.query(TextArea).first().focus()
 
     def action_save(self):
-        self.dismiss([{"question": question, "answer": area.text.strip()}
-                      for question, area in zip(self.questions, self.query(TextArea)) if area.text.strip()])
+        answers = [area.text.strip() for area in self.query(TextArea)]
+        if not all(answers):
+            self.notify("Answer every question first; write n/a for any you will not answer.", severity="error")
+            return
+        self.dismiss([{"question": question, "answer": answer} for question, answer in zip(self.questions, answers)])
 
     def on_button_pressed(self, event):
         if event.button.id == "save":
@@ -389,32 +392,32 @@ class Console(App):
         except InvalidWorkItem as exc:
             self.notify(str(exc), severity="error")
             return
-        self.push_screen(Outcomes(item, step), lambda outcome: self.chosen(item, step, outcome))
+        questions = unanswered(item) if takes_answers(step) else []
+        if questions:
+            heading = Text.assemble((item.id, "bold"), "  ", item.title, f"\nAnswer the questions at {step.name}.")
+            self.push_screen(Answers(heading, questions), lambda answers: self.answered(item, step, answers))
+        else:
+            self.answered(item, step, [])
 
-    def chosen(self, item, step, outcome):
+    def answered(self, item, step, answers):
+        if answers is None:
+            return
+        output = {"questions": answers} if answers else {}
+        self.push_screen(Outcomes(item, step), lambda outcome: self.chosen(item, step, outcome, output))
+
+    def chosen(self, item, step, outcome, output):
         if outcome is None:
             return
-        heading = Text.assemble((item.id, "bold"), f"  {outcome}  ->  {step.outcomes[outcome].next}")
-        questions = unanswered(item) if takes_answers(step) else []
+        if not takes_feedback(step):
+            self.record(item, step, outcome, output)
+            return
+        heading = Text.assemble((item.id, "bold"), f"  {outcome}  ->  {step.outcomes[outcome].next}\n\n",
+                                ("Feedback for the next step (optional)", "bold"))
 
-        def answered(answers):
-            if answers is None:
-                return
-            output = {"questions": answers} if answers else {}
-            if not takes_feedback(step):
-                self.record(item, step, outcome, output)
-                return
-
-            def given(text):
-                if text is not None:
-                    self.record(item, step, outcome, {**output, "feedback": text.strip()} if text.strip() else output)
-            self.push_screen(FreeText(heading + Text("\n\nFeedback for the next step (optional)", "bold"), "Record",
-                                      "Leave it blank to just move on."), given)
-
-        if questions:
-            self.push_screen(Answers(heading, questions), answered)
-        else:
-            answered([])
+        def given(text):
+            if text is not None:
+                self.record(item, step, outcome, {**output, "feedback": text.strip()} if text.strip() else output)
+        self.push_screen(FreeText(heading, "Record", "Leave it blank to just move on."), given)
 
     def record(self, item, step, outcome, output):
         try:

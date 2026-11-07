@@ -38,11 +38,17 @@ class Fixture(unittest.IsolatedAsyncioTestCase):
                 return
         self.fail("the backlog did not reach the expected state")
 
-    async def choose(self, app, pilot, item_id, outcome):
+    async def open(self, app, pilot, item_id):
         app.select(item_id)
         await pilot.pause()
         await pilot.press("enter")
         await pilot.pause()
+
+    async def choose(self, app, pilot, item_id, outcome):
+        await self.open(app, pilot, item_id)
+        await self.pick(app, pilot, outcome)
+
+    async def pick(self, app, pilot, outcome):
         self.assertIsInstance(app.screen, Outcomes)
         options = app.screen.query_one(OptionList)
         options.highlighted = next(i for i, option in enumerate(options.options) if option.id == outcome)
@@ -137,7 +143,7 @@ class Acting(Fixture):
         entry = self.backlog.get("REQUEST-001").step_outputs[-1]
         self.assertEqual(("review", "revise", {"feedback": "Split it"}), (entry.step, entry.outcome, entry.output))
 
-    async def test_answers_land_on_their_questions_and_blank_ones_stay_unanswered(self):
+    async def test_every_open_question_is_answered_before_the_outcome_and_lands_on_its_question(self):
         self.backlog.create("request", "Shopping list")
         self.backlog.record("REQUEST-001", "analyse")
         self.backlog.record("REQUEST-001", "questions", {"questions": [
@@ -145,15 +151,20 @@ class Acting(Fixture):
         app = Console(self.backlog)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
-            await self.choose(app, pilot, "REQUEST-001", "answered")
+            await self.open(app, pilot, "REQUEST-001")
             self.assertIsInstance(app.screen, Answers)
             first, second = app.screen.query(TextArea)
             first.focus()
-            await pilot.press(*"Aldi")
-            await pilot.press("ctrl+s")
+            await pilot.press(*"Aldi", "ctrl+s")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, Answers)
+            second.focus()
+            await pilot.press(*"n/a", "ctrl+s")
+            await pilot.pause()
+            await self.pick(app, pilot, "answered")
             await self.settle(pilot, lambda: self.backlog.get("REQUEST-001").step == "analysis")
-        self.assertEqual([("Who cooks?", "Me"), ("Which shop?", "Aldi"), ("Budget?", None)],
-                         [(q.question, q.answer) for q in self.backlog.get("REQUEST-001").questions])
+        self.assertEqual([("Who cooks?", "Me"), ("Which shop?", "Aldi"), ("Budget?", "n/a")],
+                         [(question.question, question.answer) for question in self.backlog.get("REQUEST-001").questions])
 
     async def test_a_new_request_is_captured_from_free_text(self):
         app = Console(self.backlog)

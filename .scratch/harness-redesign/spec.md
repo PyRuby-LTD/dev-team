@@ -31,8 +31,8 @@ The work proceeds in five milestones:
 3. As a customer, I want to choose `analyse` from a list of the step's outcomes, each shown with what it means, so that I know what each choice will do.
 4. As a customer, I want the product owner to be invoked as soon as I choose `analyse`, so that analysis starts without a separate command.
 5. As a customer, I want to watch the product owner's live output in the TUI while it analyses, so that I can judge how well the new prompts work.
-6. As a customer, I want the product owner's questions to appear on the request, each with a free-text answer box below it, so that I can answer them where I read them.
-7. As a customer, I want to leave some answers blank and still move on, so that I can defer a question I cannot answer yet.
+6. As a customer, I want the product owner's questions put to me, each with a free-text answer box below it, before I choose the step's outcome, so that the answers can shape which outcome I choose.
+7. As a customer, I want to answer a question I cannot or will not answer with n/a, so that every question has an answer and none is silently skipped.
 8. As a customer, I want my answers to stay attached to their questions across rounds of analysis, so that none are lost or reordered.
 9. As a product owner agent, I want my earlier questions and the customer's answers in my prompt, so that I build on them instead of asking again.
 10. As a product owner agent, I want to create each drafted work item through the harness command while analysing a request, so that every draft is a valid YAML work item from the start.
@@ -144,7 +144,7 @@ The work proceeds in five milestones:
 - The TUI is rebuilt rather than ported. The original TUI is a reference for interactions, not a starting point.
 - The TUI knows exactly five kinds of customer input:
   1. Choose an outcome from the current step's list, each shown with its meaning.
-  2. Answer questions: each unanswered question with a free-text box below it.
+  2. Answer questions: each unanswered question with a free-text box below it, offered before the outcome and each requiring an answer.
   3. Feedback: a free-text box when the step's output has a `feedback` field.
   4. New request: free text that captures a request.
   5. Standards: a checklist of available standards, pre-ticked with the item's chosen standards and their reasons (milestone 3).
