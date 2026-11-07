@@ -19,11 +19,10 @@ WORKFLOW = {
     "initial": "ready",
     "steps": {
         "ready": {"owner": "human", "transitions": {
-            "analyse": "analysis", "play": "implement", "check": "verify",
+            "analyse": "analysis", "play": "implement",
             "merge": "merged", "reject": "rejected"}},
         "analysis": {"owner": "agent:analyst", "transitions": {"finished": "done"}},
         "implement": {"owner": "agent:implementer", "transitions": {"finished": "done"}},
-        "verify": {"owner": "check", "transitions": {"passed": "done", "failed": "done"}},
         "merged": {"owner": "harness:merged", "transitions": {"completed": "done"}},
         "rejected": {"owner": "harness:rejected", "transitions": {"completed": "done"}},
         "done": {"owner": "human", "transitions": {}},
@@ -52,8 +51,7 @@ class Dispatch(unittest.TestCase):
         self.release = threading.Event()
         self.calls = []
         self.messages = []
-        self.runner = Runner(self.repo, self.roles, self.engine, self.messages.append,
-                             checkout=self.product, check=self.check)
+        self.runner = Runner(self.repo, self.roles, self.engine, self.messages.append, checkout=self.product)
         self.futures = []
         self.loops = []
         self.addCleanup(self.drain)
@@ -88,12 +86,6 @@ class Dispatch(unittest.TestCase):
             raise RuntimeError("test did not release engine")
         return 0, "TRANSITION: finished"
 
-    def check(self, checkout, log):
-        self.started[log.parent.name].set()
-        if not self.release.wait(5):
-            raise RuntimeError("test did not release check")
-        return 0, "passed"
-
     def dispatch(self):
         submitted = self.runner.dispatch()
         self.futures.extend(submitted)
@@ -126,7 +118,7 @@ class Dispatch(unittest.TestCase):
                 self.assertEqual(count, sum(self.calls.count(record.id) for record in records))
         self.assertNotIn("max_agents", (Path(__file__).resolve().parent.parent / "config/roles.toml").read_text())
 
-    def test_hung_pr_process_does_not_delay_agent_check_or_harness_dispatch(self):
+    def test_hung_pr_process_does_not_delay_agent_or_harness_dispatch(self):
         # Extend this fixture's workflow with the human decision under observation.
         from devteam.workflow import Step
         workflow = self.repo.workflow("default")
@@ -156,7 +148,7 @@ class Dispatch(unittest.TestCase):
                 self.assertTrue(argv.exists())
                 lookup = self.runner._pr_lookups[published.id][1]
                 self.assertFalse(lookup.done())
-                records = [self.item("analyse"), self.item("check"), self.item("merge")]
+                records = [self.item("analyse"), self.item("merge")]
                 git.must(self.product, "config", f"branch.devteam/{records[-1].id}.base", "main")
                 self.release.set()
                 for _ in range(200):
@@ -176,31 +168,29 @@ class Dispatch(unittest.TestCase):
             self.assertTrue(lookup.done())
             self.assertIn("timed out", str(lookup.exception()))
 
-    def test_branch_and_check_steps_exclude_each_other_but_allow_analysis(self):
-        for first, second in (("play", "play"), ("play", "check"), ("check", "play"), ("check", "check")):
-            with self.subTest(first=first, second=second):
-                self.release.clear()
-                holder = self.item(first)
-                other = self.item(second)
-                analyst = self.item("analyse")
-                submitted = self.dispatch()
-                self.assertTrue(self.started[holder.id].wait(2))
-                self.assertTrue(self.started[analyst.id].wait(2))
-                self.assertFalse(self.started[other.id].is_set())
-                self.assertEqual(f"waiting for {holder.id}, which is using the checkout",
-                                 self.runner.waiting[other.id])
-                self.assertEqual({}, self.runner.failed)
-                self.assertEqual(f"devteam/{holder.id}", git.current_branch(self.product))
-                self.release.set()
-                self.assertEqual(2, sum(f.result(timeout=3) for f in submitted))
-                self.assertEqual(1, self.runner.run_pass())
+    def test_branch_steps_exclude_each_other_but_allow_analysis(self):
+        self.release.clear()
+        holder = self.item("play")
+        other = self.item("play")
+        analyst = self.item("analyse")
+        submitted = self.dispatch()
+        self.assertTrue(self.started[holder.id].wait(2))
+        self.assertTrue(self.started[analyst.id].wait(2))
+        self.assertFalse(self.started[other.id].is_set())
+        self.assertEqual(f"waiting for {holder.id}, which is using the checkout",
+                         self.runner.waiting[other.id])
+        self.assertEqual({}, self.runner.failed)
+        self.assertEqual(f"devteam/{holder.id}", git.current_branch(self.product))
+        self.release.set()
+        self.assertEqual(2, sum(f.result(timeout=3) for f in submitted))
+        self.assertEqual(1, self.runner.run_pass())
 
     def test_merged_waits_for_checkout_and_later_runs_without_switching_early(self):
         remote = self.root / "remote.git"
         git.must(self.product, "init", "-q", "--bare", str(remote))
         git.must(self.product, "remote", "add", "origin", str(remote))
         git.must(self.product, "push", "-q", "origin", "main")
-        for transition in ("play", "check"):
+        for transition in ("play",):
             with self.subTest(transition=transition):
                 self.release.clear()
                 holder = self.item(transition)
@@ -217,8 +207,8 @@ class Dispatch(unittest.TestCase):
                 self.assertEqual(1, self.runner.run_pass())
                 self.assertEqual(f"devteam/{holder.id}", git.current_branch(self.product))
 
-    def test_running_merged_excludes_branch_and_check_but_not_rejected(self):
-        for transition in ("play", "check"):
+    def test_running_merged_excludes_branch_steps_but_not_rejected(self):
+        for transition in ("play",):
             with self.subTest(transition=transition):
                 self.release.clear()
                 merging = self.item("merge")
@@ -297,7 +287,7 @@ class Dispatch(unittest.TestCase):
 
     def test_exhausted_checkout_steps_wait_for_dirty_work_before_enforcing_limit(self):
         self.runner.max_runs = 0
-        for transition in ("play", "check"):
+        for transition in ("play",):
             with self.subTest(transition=transition):
                 record = self.item(transition)
                 step = self.repo.step(record)

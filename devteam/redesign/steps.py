@@ -7,6 +7,7 @@ from typing import ClassVar
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
+from devteam import check as checks
 from devteam import git
 from devteam.config import ROOT
 
@@ -146,13 +147,30 @@ class AgentStep(Step):
             branch = f"devteam/{item.id}"
             if git.current_branch(harness.checkout) != branch:
                 raise StepFailed(f"{role.name} left the checkout off {branch}; its work is not committed")
-            # Agents often cannot write .git from their sandbox, so the harness commits their work.
-            git.commit_all(harness.checkout, f"{item.id}: {self.name} by {role.name}")
+            outcome, _ = staged
+            if git.merging(harness.checkout):
+                self.end_merge(harness, item, outcome)
+            else:
+                # Agents often cannot write .git from their sandbox, so the harness commits their work.
+                git.commit_all(harness.checkout, f"{item.id}: {self.name} by {role.name}")
         return staged
+
+    def end_merge(self, harness, item, outcome):
+        """Commit the merge an agent resolved, or abort it when the item lets go of the checkout."""
+        following = harness.backlog.workflow(item.workflow).steps[self.outcomes[outcome].next]
+        if not following.uses_checkout(harness):
+            # The sync started from a clean checkout, so whatever the agent left belongs to the merge.
+            git.abort_merge(harness.checkout)
+            return
+        conflicts = [name for entry in item.pending(self.name) for name in entry.output.get("conflicts", [])]
+        try:
+            git.finish_merge(harness.checkout, conflicts)
+        except git.GitError as exc:
+            raise StepFailed(f"the merge is not resolved: {exc}") from None
 
 
 def _original(name, *args):
-    # Syncing, merging, abandoning and pull request lookups stay in devteam.runner until these steps own them.
+    # Merging, abandoning and pull request lookups stay in devteam.runner until these steps own them.
     from devteam import runner
     try:
         return getattr(runner, name)(*args), {}
@@ -187,7 +205,10 @@ class Check(HarnessStep):
         if harness.checkout is None:
             raise StepFailed("the check needs a git repository")
         result = harness.check(harness.checkout, log=log)
-        return ("passed" if result[0] == 0 and result.status == "finished" else "failed"), {}
+        code, output = result
+        passed = code == 0 and result.status == "finished"
+        verdict = f"exit {code}" if result.status == "finished" else result.status
+        return ("passed" if passed else "failed"), {"summary": f"{verdict}\n{checks.tail(output)}"}
 
 
 @dataclass
@@ -211,7 +232,19 @@ class Sync(GitStep):
     produces: ClassVar[frozenset] = frozenset({"completed", "conflicted"})
 
     def perform(self, harness, item, log):
-        return _original("sync", harness, item)
+        branch = f"devteam/{item.id}"
+        base = git.base_of(harness.checkout, branch)
+        if base is None:
+            raise StepFailed(f"no base branch is recorded for {branch}")
+        if not git.clean(harness.checkout):
+            raise StepFailed(f"the checkout has uncommitted changes on {branch}")
+        try:
+            outcome = git.sync_branch(harness.checkout, branch, base)
+        except git.GitError as exc:
+            raise StepFailed(str(exc)) from None
+        if outcome == "conflicted":
+            return outcome, {"conflicts": [name for name in git.conflicted_files(harness.checkout) if name]}
+        return outcome, {}
 
 
 @dataclass

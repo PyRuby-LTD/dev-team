@@ -131,6 +131,11 @@ steps:
 
   sync:
     owner: git:Sync
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        conflicts: {type: array, items: {type: string}}
     outcomes:
       completed:
         next: verify
@@ -142,6 +147,11 @@ steps:
   resolve:
     owner: agent:implementer
     prompt: resolve.md
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        blocked_by: {type: string}
     outcomes:
       resolved:
         next: verify
@@ -152,6 +162,12 @@ steps:
 
   verify:
     owner: harness:Check
+    output:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary: {type: string}
     outcomes:
       passed:
         next: review
@@ -207,6 +223,11 @@ steps:
 
   sync-publish:
     owner: git:Sync
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        conflicts: {type: array, items: {type: string}}
     outcomes:
       completed:
         next: verify-publish
@@ -228,6 +249,12 @@ steps:
 
   verify-publish:
     owner: harness:Check
+    output:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary: {type: string}
     outcomes:
       passed:
         next: publish

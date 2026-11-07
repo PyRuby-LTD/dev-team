@@ -1,5 +1,4 @@
 """The git operations the harness relies on: the backlog branch and per-item code branches."""
-import json
 import re
 import subprocess
 from pathlib import Path
@@ -164,6 +163,13 @@ def finish_merge(directory, files):
     must(directory, "commit", "-q", "--no-edit")
 
 
+def abort_merge(directory):
+    """Abort the merge and discard whatever else was left in the working tree."""
+    must(directory, "merge", "--abort")
+    must(directory, "reset", "--hard", "-q", "HEAD")
+    must(directory, "clean", "-fdq")
+
+
 def sync_branch(directory, branch, base):
     """Rebase once, falling back to a single merge for conflict resolution."""
     remote = f"refs/remotes/origin/{base}"
@@ -189,7 +195,6 @@ def sync_branch(directory, branch, base):
     if result.returncode and not files:
         raise GitError(result.stderr.strip() or result.stdout.strip())
     if files:
-        must(directory, "config", f"branch.{branch}.conflicts", json.dumps(files))
         return "conflicted"
     finish_merge(directory, [])
     return "completed"

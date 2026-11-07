@@ -205,25 +205,28 @@ class ActionSteps(unittest.TestCase):
         self.assertEqual({Check, Sync, Merged, Abandon}, using)
 
     def test_git_steps_return_the_outcome_without_output(self):
-        for cls, action in ((Sync, "sync"), (Merged, "merged"), (Abandon, "abandon"), (Rejected, "rejected")):
+        for cls, action in ((Merged, "merged"), (Abandon, "abandon"), (Rejected, "rejected")):
             with self.subTest(action), mock.patch.object(original, action, return_value="completed") as performed:
                 self.assertEqual(("completed", {}), cls("step", {}).perform("harness", "item", "log"))
                 performed.assert_called_once_with("harness", "item")
 
     def test_a_git_step_that_cannot_run_yet_waits_and_one_that_cannot_run_fails(self):
-        with mock.patch.object(original, "sync", side_effect=original.Waiting("held")):
+        with mock.patch.object(original, "merged", side_effect=original.Waiting("held")):
             with self.assertRaisesRegex(Waiting, "held"):
-                Sync("sync", {}).perform("harness", "item", "log")
-        with mock.patch.object(original, "sync", side_effect=original.StepFailed("broken")):
+                Merged("merged", {}).perform("harness", "item", "log")
+        with mock.patch.object(original, "merged", side_effect=original.StepFailed("broken")):
             with self.assertRaisesRegex(StepFailed, "broken"):
-                Sync("sync", {}).perform("harness", "item", "log")
+                Merged("merged", {}).perform("harness", "item", "log")
 
-    def test_a_check_returns_the_verdict(self):
+    def test_a_check_that_did_not_finish_has_failed(self):
         step = Check("verify", outcomes("passed", "failed"))
-        for code, verdict in ((0, "passed"), (2, "failed")):
-            with self.subTest(verdict):
-                checked = SimpleNamespace(checkout="checkout", check=mock.Mock(return_value=Result(code, "output")))
-                self.assertEqual((verdict, {}), step.perform(checked, "item", "log"))
+        for code, status in ((0, "finished"), (124, "timed out"), (127, "could not be started")):
+            with self.subTest(status):
+                checked = SimpleNamespace(checkout="checkout",
+                                          check=mock.Mock(return_value=Result(code, "output", status)))
+                outcome, output = step.perform(checked, "item", "log")
+                self.assertEqual("passed" if status == "finished" else "failed", outcome)
+                self.assertEqual({"summary"}, set(output))
                 checked.check.assert_called_once_with("checkout", log="log")
         with self.assertRaisesRegex(StepFailed, "needs a git repository"):
             step.perform(SimpleNamespace(checkout=None), "item", "log")

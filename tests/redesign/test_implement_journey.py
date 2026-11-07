@@ -57,7 +57,7 @@ OUTPUT
 """
 
 
-class ImplementAndTest(Product):
+class Played(Product):
     def ready(self, *item_ids):
         plan = [{"sh": analysed(item_id)} for item_id in item_ids] + [{"sh": sound(item_id)} for item_id in item_ids]
         for item_id in item_ids:
@@ -77,6 +77,8 @@ class ImplementAndTest(Product):
     def files(self, ref):
         return self.git("ls-tree", "-r", "--name-only", ref).split()
 
+
+class ImplementAndTest(Played):
     def test_two_played_items_queue_for_the_checkout_and_each_works_on_its_own_branch(self):
         plan = self.ready("STORY-001", "STORY-002")
         self.script(*plan, {"sh": implemented("STORY-001", "planner.txt")}, {"sh": defect("STORY-001")},

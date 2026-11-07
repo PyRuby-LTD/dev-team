@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from devteam import engines, git, workflow
+from devteam import engines, git
 from devteam import runner as runners
 from devteam.backlog import Repository
 from devteam.config import Role
@@ -215,9 +215,6 @@ class HarnessSteps(unittest.TestCase):
         record.path.write_text(record.path.read_text().replace(
             f"step: {record.metadata['step']}\n", f"step: {step}\n", 1))
         return self.repo.scan().valid[self.story.id]
-
-    def test_registry_matches_the_validated_actions(self):
-        self.assertEqual(workflow.HARNESS_ACTIONS, set(runners.HARNESS_ACTIONS))
 
     def test_rejected_runs_without_engine_checkout_or_run_count(self):
         self.repo.write_body(self.story.id, "## Pull request\nhttps://github.com/example/product/pull/2\n", "fixture")

@@ -73,23 +73,6 @@ def merged(runner, record):
     return "completed"
 
 
-def sync(runner, record):
-    if runner.checkout is None:
-        raise StepFailed("the sync step needs a git repository")
-    branch = f"devteam/{record.id}"
-    base = git.base_of(runner.checkout, branch)
-    if base is None:
-        raise StepFailed(f"no base branch is recorded for {branch}")
-    # Check ownership before fetching or switching, without creating a branch.
-    current = git.current_branch(runner.checkout)
-    reason = runner.checkout_wait(record, current)
-    if reason is not None:
-        raise Waiting(reason)
-    if not git.clean(runner.checkout):
-        raise StepFailed(f"the checkout has uncommitted changes on {current}")
-    return git.sync_branch(runner.checkout, branch, base)
-
-
 def abandon(runner, record):
     """Return the item's checkout to its base, keeping its branch for recovery."""
     if runner.checkout is None:
@@ -214,7 +197,7 @@ def render_pr_feedback(reviews, inline, conversation):
     return "\n\n".join(entries) if entries else "There are no comments on this pull request."
 
 
-HARNESS_ACTIONS = {"merged": merged, "rejected": rejected, "abandon": abandon, "sync": sync}
+HARNESS_ACTIONS = {"merged": merged, "rejected": rejected, "abandon": abandon}
 
 
 def render(step, values, workflow="default"):
@@ -279,7 +262,7 @@ class Runner:
             return sorted(self._active)
 
     def uses_checkout(self, step):
-        return step.check or (step.harness and step.action in {"merged", "abandon", "sync"}) or (
+        return (step.harness and step.action in {"merged", "abandon"}) or (
             step.role and self.roles[step.role].branch)
 
     def dependency_wait(self, record, step, snapshot):
@@ -351,7 +334,7 @@ class Runner:
             if record.metadata["type"] == "epic" or record.id in self.failed or record.id in self.active:
                 continue
             step = self.repository.step(record)
-            if step.role or step.check or step.harness:
+            if step.role or step.harness:
                 found.append((record, step))
         return found
 
@@ -421,11 +404,6 @@ class Runner:
             if base is None:
                 raise StepFailed(f"no base branch is recorded for {branch}")
             values.update(checkout=str(self.checkout), branch=branch, base=base)
-        merge_files = None
-        if role.branch and step.name in {"resolve", "resolve-publish"} and git.merging(self.checkout):
-            stored = git.run(self.checkout, "config", "--get", f"branch.{branch}.conflicts").stdout.strip()
-            merge_files = json.loads(stored) if stored else git.conflicted_files(self.checkout)
-            values["conflicted_files"] = "\n".join(f"- {name}" for name in merge_files)
         self.count_run(record)
         if role.record:
             copy = self.checkout / RECORDS / f"{record.id}.md"
@@ -459,16 +437,7 @@ class Runner:
                                {k: v for k, v in record.metadata.items() if k != "depends_on"}):
             raise StepFailed("the agent changed or broke the item's front matter")
         # Agents often cannot write .git from their sandbox, so the runner commits their work.
-        if merge_files is not None:
-            if match.group(1) == "blocked":
-                git.must(self.checkout, "merge", "--abort")
-                # Sync started clean; discard any extra resolution work as well.
-                git.must(self.checkout, "reset", "--hard", "HEAD")
-                git.must(self.checkout, "clean", "-fd")
-            else:
-                git.finish_merge(self.checkout, merge_files)
-            git.run(self.checkout, "config", "--unset", f"branch.{branch}.conflicts")
-        elif role.branch and not git.clean(self.checkout):
+        if role.branch and not git.clean(self.checkout):
             git.commit_all(self.checkout, f"{record.id}: {step.name} by {role.name}")
         return match.group(1), self.repository.transition(record.id, match.group(1))
 
@@ -478,28 +447,6 @@ class Runner:
             if self._runs.get(record.id, 0) >= self.max_runs:
                 raise StepFailed(f"already ran {self.max_runs} steps this session")
             self._runs[record.id] = self._runs.get(record.id, 0) + 1
-
-    def verify(self, record, step, log):
-        """Run the project's check on the item's branch; its exit code chooses the transition."""
-        self.take_checkout(record)
-        self.count_run(record)
-        self.report(f"{record.id} {step.name}: check started")
-        started = time.monotonic()
-        outcome = self.check(self.checkout, log=log)
-        code, _ = outcome
-        duration = time.monotonic() - started
-        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        status = getattr(outcome, "status", "finished")
-        verdict = status
-        if status == "finished":
-            verdict = ("passed" if code == 0 else "failed") + f" (exit {code})"
-        result = f"Run by the harness, {stamp}: {verdict}; duration {duration:.3f} seconds.\n"
-        current = self.repository.scan().valid.get(record.id)
-        if current is None:
-            raise StepFailed("the item is missing or invalid after the check")
-        self.repository.write_body(record.id, questions.replace_section(current.body, "Test run", result), "test run")
-        name = "passed" if code == 0 and status == "finished" else "failed"
-        return name, self.repository.transition(record.id, name)
 
     def run_item(self, record, step, claimed=False):
         if not claimed and not self.claim(record, step):
@@ -529,17 +476,13 @@ class Runner:
     def perform_item(self, record, step):
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
         log = self.repository.root / "log" / record.id / f"{step.name}-{stamp}.log"
-        if step.check:
-            label = f"{record.id} {step.name} (check)"
-        elif step.harness:
+        if step.harness:
             label = f"{record.id} {step.name} (harness: {step.action})"
         else:
             role = self.roles[step.role]
             label = f"{record.id} {step.name} ({role.name} via {role.engine}/{role.model})"
         try:
-            if step.check:
-                name, updated = self.verify(record, step, log)
-            elif step.harness:
+            if step.harness:
                 name = HARNESS_ACTIONS[step.action](self, record)
                 updated = self.repository.transition(record.id, name)
             else:
