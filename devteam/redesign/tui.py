@@ -30,6 +30,7 @@ class Row:
     needs_you: bool = False
     errors: tuple = ()
     failure: str = ""
+    waiting: str = ""
 
     @property
     def style(self):
@@ -40,7 +41,7 @@ class Row:
         return AGENT if self.waiting_on else DONE
 
 
-def rows(backlog, failed=None):
+def rows(backlog, failed=None, waiting=None):
     """Epics with their descendants, then items outside any epic, then files that failed to load."""
     snapshot = backlog.scan()
     items = snapshot.valid
@@ -56,7 +57,7 @@ def rows(backlog, failed=None):
             step = backlog.step(item)
             result.append(Row(item.id, item.id, item.title, depth, step.name,
                               "" if step.terminal else step.label(), step.needs_you,
-                              failure=(failed or {}).get(item.id, "")))
+                              failure=(failed or {}).get(item.id, ""), waiting=(waiting or {}).get(item.id, "")))
         for child in sorted(children.get(item.id, []), key=lambda child: child.id):
             add(child, depth + 1)
 
@@ -96,7 +97,10 @@ def item_label(row):
                          (f"{row.step:<12}", row.style), " ", (f"{row.waiting_on or 'finished':<16}", row.style), " ")
     if row.failure:
         text.append("FAILED  ", INVALID)
-    return text.append(row.title)
+    text.append(row.title)
+    if row.waiting:
+        text.append(f"  ({row.waiting})", "dim")
+    return text
 
 
 def takes_feedback(step):
@@ -301,7 +305,8 @@ class Console(App):
 
     def action_reload(self):
         try:
-            data, error = rows(self.backlog, self.harness.failed if self.harness else None), None
+            data, error = rows(self.backlog, *((dict(self.harness.failed), dict(self.harness.waiting))
+                                               if self.harness else ())), None
         except (InvalidWorkItem, OSError) as exc:
             data, error = [], str(exc)
         signature = (data, error, self.only_mine)

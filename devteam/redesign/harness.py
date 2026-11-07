@@ -3,11 +3,17 @@ from datetime import datetime, timezone
 import threading
 
 from devteam import check as checks
-from devteam import engines
+from devteam import engines, git
 from devteam.config import load_roles
 
 from .prompt import Prompts
-from .steps import HumanStep, InvalidStep, StepFailed, Waiting
+from .steps import Check, HumanStep, InvalidStep, StepFailed, Waiting
+
+BRANCH_PREFIX = "devteam/"
+
+
+def branch_of(item):
+    return f"{BRANCH_PREFIX}{item.id}"
 
 
 def record_customer(backlog, item_id, outcome, output):
@@ -33,8 +39,52 @@ class Harness:
         self.waiting = {}
 
     def values(self, item):
-        return {"checkout": str(self.checkout or self.backlog.root),
-                "evidence_dir": str(self.backlog.root / "log" / item.id)}
+        evidence = self.backlog.root / "log" / item.id
+        check_steps = [step.name for step in self.backlog.workflow(item.workflow).steps.values() if isinstance(step, Check)]
+        # The stamp after the step name orders logs of different check steps by when they ran.
+        logs = sorted((log for name in check_steps for log in evidence.glob(f"{name}-*.log")),
+                      key=lambda log: log.stem.rsplit("-", 1)[-1])
+        values = {"checkout": str(self.checkout or self.backlog.root), "evidence_dir": str(evidence),
+                  "verify_log": str(logs[-1]) if logs else "not yet written: no workflow check has run"}
+        branch = branch_of(item)
+        if self.checkout is not None and git.has_ref(self.checkout, f"refs/heads/{branch}"):
+            values.update(branch=branch, base=git.base_of(self.checkout, branch) or "")
+        return values
+
+    def holder(self):
+        current = git.current_branch(self.checkout)
+        if not (current and current.startswith(BRANCH_PREFIX)):
+            return None
+        holder = self.backlog.scan().valid.get(current.removeprefix(BRANCH_PREFIX))
+        if holder is None or holder.workflow is None or not self.backlog.step(holder).uses_checkout(self):
+            return None
+        return holder
+
+    def take_checkout(self, item):
+        if self.checkout is None:
+            raise StepFailed("this step works on the item's branch, which needs a git repository")
+        branch = branch_of(item)
+        current = git.current_branch(self.checkout)
+        if current == branch:
+            return
+        if current is None:
+            raise StepFailed("the checkout is not on a branch")
+        holder = self.holder()
+        if holder is not None:
+            raise Waiting(f"waiting for the checkout, which {holder.id} holds at step {holder.step}")
+        if not git.clean(self.checkout):
+            raise Waiting(f"waiting for the checkout, which has uncommitted changes on {current}")
+        if current.startswith(BRANCH_PREFIX):
+            base = git.base_of(self.checkout, current)
+            if base is None:
+                raise StepFailed(f"no base branch is recorded for {current}; switch the checkout by hand")
+            git.must(self.checkout, "switch", "-q", base)
+            current = base
+        if git.has_ref(self.checkout, f"refs/heads/{branch}"):
+            git.must(self.checkout, "switch", "-q", branch)
+        else:
+            git.must(self.checkout, "switch", "-q", "-c", branch)
+            git.must(self.checkout, "config", f"branch.{branch}.base", current)
 
     def listener(self, item):
         on_line = self.on_line
@@ -48,14 +98,18 @@ class Harness:
             step = self.backlog.step(item)
             if step.automatic and not step.terminal:
                 found.append((item, step))
+        for stale in set(self.waiting) - {item.id for item, _ in found}:
+            self.waiting.pop(stale, None)
         return found
 
     def perform(self, item, step):
         """Perform one step and record its outcome; True when the item moved on."""
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
         log = self.backlog.root / "log" / item.id / f"{step.name}-{stamp}.log"
-        self.report(f"{item.id} {step.name}: started by {step.owner}")
         try:
+            if step.uses_checkout(self):
+                self.take_checkout(item)
+            self.report(f"{item.id} {step.name}: started by {step.owner}")
             outcome, output = step.perform(self, item, log)
             updated = self.backlog.record(item.id, outcome, output)
         except Waiting as reason:
@@ -68,6 +122,7 @@ class Harness:
             reason = str(exc) if isinstance(exc, (StepFailed, InvalidStep, ValueError, OSError)) \
                 else f"{type(exc).__name__}: {exc}"
             self.failed[item.id] = reason
+            self.waiting.pop(item.id, None)
             self.report(f"{item.id} {step.name}: FAILED - {reason}; still at {step.name}, not retried until restart")
             return False
         self.waiting.pop(item.id, None)

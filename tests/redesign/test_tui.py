@@ -1,6 +1,8 @@
 """Pilot tests: the TUI opens on a backlog, and what the customer does in it reaches the harness."""
 import dataclasses
+import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import threading
@@ -14,6 +16,8 @@ from devteam.redesign.harness import Harness
 from devteam.redesign.prompt import Prompts
 from devteam.redesign.tui import Answers, Console, Outcomes
 from devteam.redesign.work_item import Backlog
+
+from .test_request_journey import GIT
 
 
 class Fixture(unittest.IsolatedAsyncioTestCase):
@@ -79,6 +83,29 @@ class Opening(Fixture):
             await pilot.press("y")
             await pilot.pause()
             self.assertEqual(["REQUEST-001", str(broken)], [row.key for row in app.shown_rows])
+
+    async def test_an_item_waiting_for_the_checkout_is_shown_waiting(self):
+        product = self.base / "product"
+        product.mkdir()
+        for args in (["init", "-q", "-b", "main"], ["commit", "-q", "--allow-empty", "-m", "Start"],
+                     ["switch", "-q", "-c", "devteam/STORY-002"]):
+            subprocess.run(["git", "-C", str(product), *args], check=True, env={**os.environ, **GIT})
+        for title in ("Plan a week", "Print the plan"):
+            item = self.backlog.create("story", title)
+            for outcome in ("analyse", "analysed", "sound", "play"):
+                self.backlog.record(item.id, outcome)
+        self.backlog.record("STORY-002", "implemented")
+        harness = self.harness()
+        harness.checkout = product
+
+        app = Console(self.backlog, harness=harness)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await self.settle(pilot, lambda: "STORY-001" in harness.waiting and "STORY-002" in harness.failed)
+            app.action_reload()
+            await pilot.pause()
+            rows = {row.key: row for row in app.shown_rows}
+            self.assertTrue(rows["STORY-001"].waiting)
+            self.assertFalse(rows["STORY-002"].waiting)
 
     async def test_the_detail_view_is_the_detail_template(self):
         prompts = self.base / "prompts"

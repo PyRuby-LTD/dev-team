@@ -7,6 +7,7 @@ from typing import ClassVar
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
+from devteam import git
 from devteam.config import ROOT
 
 # A step whose output is the item's requirements, merged into the item rather than kept beside it.
@@ -141,6 +142,12 @@ class AgentStep(Step):
         staged = submission.take(root, item.id, self.name)
         if staged is None:
             raise StepFailed(f"{role.name} exited without submitting an outcome; see {log}")
+        if role.branch:
+            branch = f"devteam/{item.id}"
+            if git.current_branch(harness.checkout) != branch:
+                raise StepFailed(f"{role.name} left the checkout off {branch}; its work is not committed")
+            # Agents often cannot write .git from their sandbox, so the harness commits their work.
+            git.commit_all(harness.checkout, f"{item.id}: {self.name} by {role.name}")
         return staged
 
 
