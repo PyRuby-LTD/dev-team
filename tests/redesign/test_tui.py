@@ -13,7 +13,7 @@ from textual.widgets import Markdown, OptionList, RichLog, TextArea
 from devteam.config import load_roles
 from devteam.redesign import submission
 from devteam.redesign.harness import Harness
-from devteam.redesign.prompt import Prompts
+from devteam.redesign.template import Templates
 from devteam.redesign.tui import Answers, Console, Outcomes
 from devteam.redesign.work_item import Backlog
 
@@ -115,7 +115,7 @@ class Opening(Fixture):
             " with {{ pending | length }} pending\n")
         self.backlog.create("request", "Shopping list")
 
-        app = Console(self.backlog, prompts=Prompts(views=views))
+        app = Console(self.backlog, templates=Templates(views=views))
         async with app.run_test(size=(120, 40)) as pilot:
             app.select("REQUEST-001")
             await pilot.pause()

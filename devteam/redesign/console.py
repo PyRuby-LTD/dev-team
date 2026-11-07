@@ -10,7 +10,7 @@ from devteam.evidence import PathGuard
 
 from . import flow, submission
 from .harness import Harness, record_customer
-from .prompt import RUN_VALUES, InvalidPrompt, Prompts
+from .template import RUN_VALUES, InvalidTemplate, Templates
 from .steps import AgentStep, InvalidStep
 from .work_item import DIRECTORIES, Backlog, InvalidWorkItem, parse
 
@@ -164,17 +164,17 @@ def cmd_prompt(args):
             steps = [workflow.steps[args.step]]
         else:
             raise InvalidStep(f"workflow {item.workflow!r} has no step {args.step!r}")
-        prompts = Prompts()
+        templates = Templates()
         roles = load_roles()
         values = _values(args.set)
         for step in steps:
-            rendered = prompts.render(item, step, values, backlog)
+            rendered = templates.prompt(item, step, values, backlog)
             print(f"==== {step.name}: {step.owner} ====\n")
             print(f"---- system prompt (roles/{step.role}.md) ----\n")
             print(roles[step.role].brief())
-            print(f"---- prompt ({step.prompt.relative_to(prompts.directory.parent).as_posix()}) ----\n")
+            print(f"---- prompt ({step.prompt.relative_to(templates.directory.parent).as_posix()}) ----\n")
             print(rendered)
-    except (InvalidWorkItem, InvalidStep, InvalidPrompt, flow.InvalidWorkflow, OSError, UnicodeError) as exc:
+    except (InvalidWorkItem, InvalidStep, InvalidTemplate, flow.InvalidWorkflow, OSError, UnicodeError) as exc:
         raise SystemExit(str(exc)) from exc
 
 

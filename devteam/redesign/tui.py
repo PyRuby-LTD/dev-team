@@ -11,7 +11,7 @@ from textual.widgets import Button, Footer, Header, Label, Markdown, OptionList,
 from textual.widgets.option_list import Option
 
 from .harness import record_customer
-from .prompt import InvalidPrompt, Prompts
+from .template import InvalidTemplate, Templates
 from .steps import REQUIREMENTS, InvalidStep
 from .work_item import InvalidWorkItem
 
@@ -239,11 +239,11 @@ class Console(App):
         ("q", "quit", "Quit"),
     ]
 
-    def __init__(self, backlog, harness=None, prompts=None):
+    def __init__(self, backlog, harness=None, templates=None):
         super().__init__()
         self.backlog = backlog
         self.harness = harness
-        self.prompts = prompts or (harness.prompts if harness else Prompts())
+        self.templates = templates or (harness.templates if harness else Templates())
         self.stop = threading.Event()
         self.only_mine = False
         self.data = []
@@ -368,8 +368,8 @@ class Console(App):
         try:
             item = self.backlog.get(row.key)
             step = self.backlog.step(item) if item.workflow else None
-            return self.prompts.detail(item, step, self.backlog)
-        except (InvalidWorkItem, InvalidPrompt, OSError) as exc:
+            return self.templates.detail(item, step, self.backlog)
+        except (InvalidWorkItem, InvalidTemplate, OSError) as exc:
             return f"# {row.label}\n\nCannot show this item: {exc}"
 
     def on_tree_node_highlighted(self, event):

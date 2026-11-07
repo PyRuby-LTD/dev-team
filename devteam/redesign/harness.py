@@ -6,7 +6,7 @@ from devteam import check as checks
 from devteam import engines, git
 from devteam.config import load_roles
 
-from .prompt import Prompts
+from .template import Templates
 from .steps import Check, HumanStep, InvalidStep, StepFailed, Waiting
 
 BRANCH_PREFIX = "devteam/"
@@ -25,12 +25,12 @@ def record_customer(backlog, item_id, outcome, output):
 
 
 class Harness:
-    def __init__(self, backlog, checkout=None, roles=None, prompts=None, engine=engines.run, check=checks.run,
+    def __init__(self, backlog, checkout=None, roles=None, templates=None, engine=engines.run, check=checks.run,
                  report=print):
         self.backlog = backlog
         self.checkout = checkout
         self.roles = load_roles() if roles is None else roles
-        self.prompts = prompts or Prompts()
+        self.templates = templates or Templates()
         self.engine = engine
         self.check = check
         self.report = report

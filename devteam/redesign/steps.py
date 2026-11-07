@@ -131,7 +131,7 @@ class AgentStep(Step):
         if shutil.which(role.command[0]) is None:
             raise StepFailed(f"the {role.engine} engine's command {role.command[0]!r} is not on the PATH")
         root = harness.backlog.root
-        prompt = harness.prompts.render(item, self, harness.values(item), harness.backlog)
+        prompt = harness.templates.prompt(item, self, harness.values(item), harness.backlog)
         # A submission left by an earlier run must not be taken for this one.
         submission.take(root, item.id, self.name)
         log.parent.mkdir(parents=True, exist_ok=True)
