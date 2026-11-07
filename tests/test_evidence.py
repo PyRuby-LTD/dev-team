@@ -8,7 +8,6 @@ import unittest
 from unittest.mock import patch
 
 from devteam import config, git
-from devteam.backlog import Repository
 from devteam.evidence import PathGuard
 
 
@@ -70,36 +69,24 @@ class CommitMasking(unittest.TestCase):
             (root / ".gitignore").write_text("log/\n")
             stories = root / "stories"
             stories.mkdir()
-            item = stories / "STORY-001.md"
+            item = stories / "STORY-001.yaml"
             old = "/home/" + "previous" + "/record"
             fresh = "/home/" + "fixtureperson" + "/record"
-            front = f"---\nid: STORY-001\ntitle: {fresh}\n---\n"
-            item.write_text(front + old + "\n")
+            front = "id: STORY-001\ntype: story\n"
+            item.write_text(front + f"scope: {old}\n")
             git.commit_all(root, "existing")
             notices = []
-            repo = Repository(root, guard=PathGuard(root.parent), notice=notices.append)
-            item.write_text(front + old + "\nNew: " + fresh + "\n")
-            (stories / "beside.txt").write_text(fresh)
-            (root / "brief.md").write_text(fresh)
+            guard = PathGuard(root.parent)
+            item.write_text(front + f"scope: {old}\noverview: {fresh}\n")
             (root / "binary").write_bytes(b"\xff")
-            broken = stories / "STORY-002.md"
-            broken.write_text("---\nid: BROKEN\n" + fresh)
-            repo.commit("changed")
-            self.assertEqual(front + old + "\nNew: <path>\n", item.read_text())
-            self.assertEqual("---\nid: BROKEN\n<path>", broken.read_text())
-            saved = list((root / "log" / "STORY-001").glob("unmasked-*.md"))
-            self.assertEqual(1, len(saved))
-            self.assertIn("New: " + fresh, saved[0].read_text())
-            self.assertEqual(2, len(list((root / "log" / "unmasked").iterdir())))
-            self.assertTrue(list((root / "log" / "STORY-002").glob("unmasked-*.md")))
-            self.assertIn("masked lines 6", next(n for n in notices if "STORY-001" in n))
-            patch_text = subprocess.run(["git", "-C", str(root), "show", "--format=", "HEAD"],
-                                        capture_output=True).stdout.decode("utf-8", errors="replace")
-            self.assertNotIn("+New: " + fresh, patch_text)
-            self.assertFalse(any(p.startswith("log/") for p in git.must(root, "ls-files").splitlines()))
-            count = len(notices)
-            repo.commit("nothing")
-            self.assertEqual(count, len(notices))
+            guard(root, notices.append)
+            self.assertEqual(front + f"scope: {old}\noverview: <path>\n", item.read_text())
+            [saved] = (root / "log" / "unmasked").iterdir()
+            self.assertIn("overview: " + fresh, saved.read_text())
+            self.assertEqual(["stories/STORY-001.yaml: masked lines 4"], [n.split(";")[0] for n in notices])
+            git.commit_all(root, "changed")
+            guard(root, notices.append)
+            self.assertEqual(1, len(notices))
 
 
 class ChangedFiles(unittest.TestCase):

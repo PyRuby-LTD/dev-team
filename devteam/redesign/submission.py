@@ -1,4 +1,4 @@
-"""An agent's output for its step: checked when submitted, staged until the runner records it after the agent exits."""
+"""An agent's output for its step: checked when submitted, staged until the harness records it after the agent exits."""
 import os
 from pathlib import Path
 

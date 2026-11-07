@@ -80,10 +80,14 @@ class Played(Product):
 
 class ImplementAndTest(Played):
     def test_two_played_items_queue_for_the_checkout_and_each_works_on_its_own_branch(self):
-        plan = self.ready("STORY-001", "STORY-002")
-        self.script(*plan, {"sh": implemented("STORY-001", "planner.txt")}, {"sh": defect("STORY-001")},
+        # Analysed one after the other: run in parallel, either item's agent could take the other's plan entry.
+        plan = self.ready("STORY-001")
+        self.script(*plan, {"sh": analysed("STORY-002")}, {"sh": sound("STORY-002")},
+                    {"sh": implemented("STORY-001", "planner.txt")}, {"sh": defect("STORY-001")},
                     {"sh": blocked("STORY-001")}, {"sh": implemented("STORY-002", "printer.txt")}, {"sh": defect("STORY-002")},
                     {"sh": blocked("STORY-002")})
+        self.ok("run", "--once")
+        self.ready("STORY-002")
         self.ok("run", "--once")
         self.ok("backlog", "record", "STORY-001", "play", stdin="feedback: Start with breakfast.\n")
         self.ok("backlog", "record", "STORY-002", "play")

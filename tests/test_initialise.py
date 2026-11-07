@@ -9,7 +9,8 @@ from unittest.mock import patch
 
 from devteam import config, git
 from devteam.initialise import github_origin, has_regression, initialise, quick_start
-from tests.test_checkout import IDENTITY
+
+IDENTITY = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
 
 
 class Parsing(unittest.TestCase):

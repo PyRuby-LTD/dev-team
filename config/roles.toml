@@ -1,4 +1,4 @@
-# Which engine and model each role uses. Workflow steps in workflows/*.json name
+# Which engine and model each role uses. Workflow steps in workflows/*.yaml name
 # their owning role as agent:<role>.
 
 [engines.claude]

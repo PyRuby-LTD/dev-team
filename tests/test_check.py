@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from devteam import check, questions
+from devteam import check
 from devteam.redesign.console import main
 
 SCRIPT = 'echo "ran ${1:-everything}"; test "$1" != TEST=bad'
@@ -56,8 +56,6 @@ class ProjectCheck(unittest.TestCase):
         text = check.tail(output, 10)
         self.assertTrue(text.startswith("... 190 earlier lines omitted ..."))
         self.assertTrue(text.endswith("line 199"))
-        self.assertIn("FAILED (exit 2)", check.summary(2, output, "the project check"))
-        self.assertTrue(check.summary(0, "ok\n", "the project check").startswith("Passed"))
 
     def test_cli_prints_a_short_result_and_exits_with_the_check_code(self):
         calls = []
@@ -72,14 +70,6 @@ class ProjectCheck(unittest.TestCase):
                 self.assertEqual(code, exit.exception.code)
                 self.assertIn("check passed" if code == 0 else "check FAILED (exit 3)", output.getvalue())
         self.assertEqual([(self.directory.resolve(), None), (self.directory.resolve(), "bad")], calls)
-
-
-class Sections(unittest.TestCase):
-    def test_section_is_added_then_replaced_in_place(self):
-        first = questions.replace_section("Intro.\n", "Test run", "Passed")
-        self.assertEqual("Intro.\n\n## Test run\n\nPassed\n", first)
-        second = questions.replace_section(first + "\n## Review\n\nFine.\n", "Test run", "FAILED\nmore")
-        self.assertEqual("Intro.\n\n## Test run\n\nFAILED\nmore\n\n## Review\n\nFine.\n", second)
 
 
 if __name__ == "__main__":

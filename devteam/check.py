@@ -57,7 +57,3 @@ def tail(output, lines=TAIL_LINES):
         return "\n".join(kept)
     return f"... {len(kept) - lines} earlier lines omitted ...\n" + "\n".join(kept[-lines:])
 
-
-def summary(code, output, command, lines=TAIL_LINES):
-    verdict = "Passed" if code == 0 else f"FAILED (exit {code})"
-    return f"{verdict}: `{command}`\n\n```text\n{tail(output, lines)}\n```\n"
