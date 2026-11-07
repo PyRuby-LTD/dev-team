@@ -5,10 +5,10 @@ import shutil
 import unittest
 from unittest.mock import patch
 
-from .journey import ROOT, submit
-from .test_implement_journey import blocked, implemented
-from .test_review_journey import APPROVE
-from .test_verify_journey import WRITTEN, Synced
+from tests.journey import ROOT, submit
+from tests.test_implement_journey import blocked, implemented
+from tests.test_review_journey import APPROVE
+from tests.test_verify_journey import WRITTEN, Synced
 
 PUBLISHED = submit("published", "pull_request: 7\nsummary: Plans a week of meals.\napi_changes: No API changes\n")
 

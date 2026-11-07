@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from devteam import check
-from devteam.redesign.console import main
+from devteam.console import main
 
 SCRIPT = 'echo "ran ${1:-everything}"; test "$1" != TEST=bad'
 

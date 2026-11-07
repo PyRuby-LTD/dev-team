@@ -6,9 +6,9 @@ import unittest
 import yaml
 
 from devteam.config import ROOT
-from devteam.redesign.workflow import build
-from devteam.redesign.steps import InvalidStep
-from devteam.redesign.work_item import Backlog, InvalidWorkItem, dump, parse
+from devteam.workflow import build
+from devteam.steps import InvalidStep
+from devteam.work_item import Backlog, InvalidWorkItem, dump, parse
 
 WORKFLOW = """
 initial: captured

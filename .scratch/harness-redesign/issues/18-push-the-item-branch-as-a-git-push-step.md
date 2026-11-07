@@ -29,4 +29,4 @@ A `git:Push` step, which the default workflow places between `record` (issue 17)
 - `Push` is a `GitStep` that produces only `completed` and holds the checkout. It reuses `git.push_branch`, which already leases against the recorded remote head and refuses foreign commits.
 - The original runner still reads `role.push`. Leave that until issue 13 deletes the runner, or drop it here if nothing on the branch still drives the runner to a pushing role.
 - The publish prompt already says that the harness has pushed the branch. Its wording needs no change.
-- Journey test: `tests/redesign/test_publish_journey.py` already asserts that origin's branch matches the local one after publishing. Add the `push` entry to the expected history, and cover a failing push leaving the item at `push`.
+- Journey test: `tests/test_publish_journey.py` already asserts that origin's branch matches the local one after publishing. Add the `push` entry to the expected history, and cover a failing push leaving the item at `push`.

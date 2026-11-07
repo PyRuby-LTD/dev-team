@@ -7,7 +7,7 @@ from unittest.mock import patch
 from devteam import engines
 from devteam.config import load_roles
 
-from .journey import Product, nothing, submit
+from tests.journey import Product, nothing, submit
 
 QUESTIONS = submit("questions", "questions:\n  - question: Who plans the meals?\n")
 

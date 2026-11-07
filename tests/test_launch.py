@@ -16,8 +16,8 @@ import unittest
 import yaml
 
 
-from .journey import GIT, ROOT, Product
-from .test_request_journey import QUESTIONS
+from tests.journey import GIT, ROOT, Product
+from tests.test_request_journey import QUESTIONS
 
 SCRIPTED = ROOT / "tests" / "stubs" / "scripted"
 DEV_TEAM = f"{sys.executable} -P -m devteam"

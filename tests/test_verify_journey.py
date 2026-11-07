@@ -2,8 +2,8 @@
 import subprocess
 import unittest
 
-from .journey import submit
-from .test_implement_journey import Played, blocked, implemented
+from tests.journey import submit
+from tests.test_implement_journey import Played, blocked, implemented
 
 WRITTEN = submit("written", "journeys:\n  - journey: Plan a week\n    action: new\n")
 

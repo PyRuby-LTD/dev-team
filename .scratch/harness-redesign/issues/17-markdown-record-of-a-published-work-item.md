@@ -33,5 +33,5 @@ The record is made by a harness step of its own, `git:Record`, which the default
 - The template is named in `Record`'s code (for example `views/work-item.md`), not in the workflow. A harness step is named explicitly, so the step's definition stays `owner` and `outcomes`. It is rendered with the same environment and context as prompts and the detail view.
 - The template's wording is for the author's review, like the prompts.
 - The record is committed after `verify-publish`, so the check does not see it. It is documentation only.
-- Journey test: extend `tests/redesign/test_publish_journey.py` to assert the `record` entry in the item's history, that the file exists on `origin/devteam/<id>`, and that it is absent from `main` until the merge. Do not assert on its wording.
+- Journey test: extend `tests/test_publish_journey.py` to assert the `record` entry in the item's history, that the file exists on `origin/devteam/<id>`, and that it is absent from `main` until the merge. Do not assert on its wording.
 - Issue 18 moves the push into a `git:Push` step after this one.

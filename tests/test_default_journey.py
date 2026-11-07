@@ -1,7 +1,7 @@
 """The default workflow's first group, analysis, challenge and ready, driven through the dev-team commands."""
 import unittest
 
-from .journey import Product, submit
+from tests.journey import Product, submit
 
 QUESTION = submit("questions", "questions:\n  - question: Which days does a week start on?\n")
 

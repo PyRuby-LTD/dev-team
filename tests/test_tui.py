@@ -13,13 +13,13 @@ from unittest.mock import patch
 from textual.widgets import Markdown, OptionList, RichLog, SelectionList, TextArea
 
 from devteam.config import load_roles
-from devteam.redesign import submission
-from devteam.redesign.harness import Harness
-from devteam.redesign.template import Templates
-from devteam.redesign.tui import Answers, Console, Outcomes, Standards
-from devteam.redesign.work_item import Backlog
+from devteam import submission
+from devteam.harness import Harness
+from devteam.template import Templates
+from devteam.tui import Answers, Console, Outcomes, Standards
+from devteam.work_item import Backlog
 
-from .journey import GIT
+from tests.journey import GIT
 
 
 class Fixture(unittest.IsolatedAsyncioTestCase):
@@ -139,7 +139,7 @@ class Acting(Fixture):
         self.backlog.create("request", "Shopping list")
         app = Console(self.backlog, harness=self.harness())
         # Far longer than settling allows, so only waking the harness on recording can move the item in time.
-        with patch("devteam.redesign.tui.REFRESH_SECONDS", 60):
+        with patch("devteam.tui.REFRESH_SECONDS", 60):
             async with app.run_test(size=(120, 40)) as pilot:
                 await pilot.pause()
                 await self.choose(app, pilot, "REQUEST-001", "analyse")

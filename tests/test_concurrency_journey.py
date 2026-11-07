@@ -4,11 +4,11 @@ import threading
 import time
 import unittest
 
-from devteam.redesign.work_item import parse
+from devteam.work_item import parse
 
-from .journey import then
-from .test_implement_journey import Played, analysed, blocked, sound
-from .test_request_journey import QUESTIONS
+from tests.journey import then
+from tests.test_implement_journey import Played, analysed, blocked, sound
+from tests.test_request_journey import QUESTIONS
 
 
 class Concurrency(Played):

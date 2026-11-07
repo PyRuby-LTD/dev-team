@@ -12,10 +12,10 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from devteam.redesign.commands import CommandFailed, DevTeam
-from devteam.redesign.work_item import load
+from devteam.commands import CommandFailed, DevTeam
+from devteam.work_item import load
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 GIT = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
        "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
 

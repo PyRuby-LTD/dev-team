@@ -1,7 +1,7 @@
 """The default workflow's second group: each played item is implemented and tested on its own branch, one at a time."""
 import unittest
 
-from .journey import Product, submit
+from tests.journey import Product, submit
 
 
 analysed = submit("analysed", "acceptance_criteria:\n  - A week of meals can be planned\n")

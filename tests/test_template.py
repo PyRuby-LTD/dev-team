@@ -5,11 +5,11 @@ import tempfile
 import unittest
 
 from devteam.config import ROOT
-from devteam.redesign.workflow import load as load_workflow
-from devteam.redesign.console import main
-from devteam.redesign.template import RUN_VALUES, InvalidTemplate, Templates
-from devteam.redesign.steps import AgentStep, HumanStep, Outcome
-from devteam.redesign.work_item import WorkItem, parse
+from devteam.workflow import load as load_workflow
+from devteam.console import main
+from devteam.template import RUN_VALUES, InvalidTemplate, Templates
+from devteam.steps import AgentStep, HumanStep, Outcome
+from devteam.work_item import WorkItem, parse
 
 SNIPPET = """\
 {% if item.questions %}

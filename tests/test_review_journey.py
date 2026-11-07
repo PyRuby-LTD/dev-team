@@ -3,9 +3,9 @@ import unittest
 
 import yaml
 
-from .journey import submit
-from .test_implement_journey import blocked, implemented
-from .test_verify_journey import WRITTEN, Synced
+from tests.journey import submit
+from tests.test_implement_journey import blocked, implemented
+from tests.test_verify_journey import WRITTEN, Synced
 
 FINDINGS = [{"location": "planner.py:12", "concern": "correctness", "finding": "A week starting on Sunday loses a day",
              "outcome": "fix"},

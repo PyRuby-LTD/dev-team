@@ -1,13 +1,13 @@
 """Choosing standards at ready: the customer's choice replaces the item's standards for every later step."""
 import unittest
 
-from devteam.redesign.template import load_standards
+from devteam.template import load_standards
 
-from .journey import submit
-from .test_default_journey import SOUND
-from .test_implement_journey import implemented
-from .test_review_journey import APPROVE
-from .test_verify_journey import WRITTEN, Synced
+from tests.journey import submit
+from tests.test_default_journey import SOUND
+from tests.test_implement_journey import implemented
+from tests.test_review_journey import APPROVE
+from tests.test_verify_journey import WRITTEN, Synced
 
 ANALYSED = submit("analysed", """acceptance_criteria:
   - A week of meals can be planned

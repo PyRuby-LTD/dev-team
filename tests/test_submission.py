@@ -9,9 +9,9 @@ from unittest import mock
 
 import yaml
 
-from devteam.redesign import submission
-from devteam.redesign.console import main
-from devteam.redesign.steps import AgentStep, HumanStep, InvalidStep, Outcome
+from devteam import submission
+from devteam.console import main
+from devteam.steps import AgentStep, HumanStep, InvalidStep, Outcome
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
