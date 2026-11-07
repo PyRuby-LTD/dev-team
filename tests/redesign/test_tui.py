@@ -108,14 +108,14 @@ class Opening(Fixture):
             self.assertFalse(rows["STORY-002"].waiting)
 
     async def test_the_detail_view_is_the_detail_template(self):
-        prompts = self.base / "prompts"
-        (prompts / "views").mkdir(parents=True)
-        (prompts / "views" / "detail.md").write_text(
+        views = self.base / "views"
+        views.mkdir()
+        (views / "detail.md").write_text(
             "# {{ item.title }}\n\n{{ item.id }} waits at {{ step.name }} in {{ workflow.name }}"
             " with {{ pending | length }} pending\n")
         self.backlog.create("request", "Shopping list")
 
-        app = Console(self.backlog, prompts=Prompts(prompts))
+        app = Console(self.backlog, prompts=Prompts(views=views))
         async with app.run_test(size=(120, 40)) as pilot:
             app.select("REQUEST-001")
             await pilot.pause()

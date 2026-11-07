@@ -1,4 +1,4 @@
-"""Agent prompts: Jinja2 templates in prompts/, rendered with the work item, its pending feedback and its standards."""
+"""Agent prompts and the TUI's detail view: Jinja2 templates in prompts/ and views/, rendered with the work item, its pending feedback and its standards."""
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,7 +12,7 @@ from .work_item import Requirements, to_yaml
 
 RUN_VALUES = ("checkout", "branch", "base", "verify_log", "conflicted_files", "evidence_dir")
 SUBMIT = "_submit.md"
-DETAIL = "views/detail.md"
+DETAIL = "detail.md"
 
 
 class InvalidPrompt(ValueError):
@@ -52,14 +52,19 @@ def chosen_standards(item, available):
     return [available[name] for name in names]
 
 
+def _environment(directory):
+    environment = Environment(loader=FileSystemLoader(directory), undefined=StrictUndefined, trim_blocks=True,
+                              lstrip_blocks=True, keep_trailing_newline=True, autoescape=False)
+    environment.filters["yaml"] = to_yaml
+    return environment
+
+
 class Prompts:
-    def __init__(self, directory=None, standards=None):
+    def __init__(self, directory=None, standards=None, views=None):
         self.directory = Path(directory or ROOT / "prompts").resolve()
         self.standards = load_standards(standards)
-        self.environment = Environment(loader=FileSystemLoader(self.directory), undefined=StrictUndefined,
-                                       trim_blocks=True, lstrip_blocks=True, keep_trailing_newline=True,
-                                       autoescape=False)
-        self.environment.filters["yaml"] = to_yaml
+        self.environment = _environment(self.directory)
+        self.views = _environment(Path(views or ROOT / "views").resolve())
 
     def context(self, item, step, values=None, backlog=None):
         return {
@@ -81,15 +86,15 @@ class Prompts:
         if not isinstance(step, AgentStep):
             raise InvalidPrompt(f"step {step.name!r} is not an agent step, so it has no prompt")
         name = step.prompt.relative_to(self.directory).as_posix()
-        return self._render(item, (name, SUBMIT), self.context(item, step, values, backlog))
+        return self._render(self.environment, item, (name, SUBMIT), self.context(item, step, values, backlog))
 
     def detail(self, item, step=None, backlog=None):
         """The TUI's view of an item as Markdown, from the same environment and context as its prompts."""
-        return self._render(item, (DETAIL,), self.context(item, step, None, backlog))
+        return self._render(self.views, item, (DETAIL,), self.context(item, step, None, backlog))
 
-    def _render(self, item, templates, context):
+    def _render(self, environment, item, templates, context):
         try:
-            return "\n".join(self.environment.get_template(template).render(context) for template in templates)
+            return "\n".join(environment.get_template(template).render(context) for template in templates)
         except TemplateError as exc:
             where = f" ({exc.filename}:{exc.lineno})" if getattr(exc, "lineno", None) else ""
             raise InvalidPrompt(f"cannot render {templates[0]} for {item.id}: {exc}{where}") from None
