@@ -7,7 +7,7 @@ from devteam import check as checks
 from devteam import engines, git
 from devteam.config import load_roles
 
-from .template import Templates
+from .template import Templates, load_standards
 from .steps import Check, InvalidStep, StepFailed, Waiting
 from .work_item import MovedOn
 
@@ -27,6 +27,12 @@ def record_customer(backlog, item_id, outcome, output):
         if outcome in step.outcomes:
             raise InvalidStep(f"{step.owner} decides {outcome!r} at step {step.name!r}; you may choose "
                               + ", ".join(step.customer_outcomes))
+    names = output.get("standards") if isinstance(output, dict) else None
+    if isinstance(names, list):
+        available = load_standards()
+        if unknown := [name for name in names if name not in available]:
+            raise InvalidStep(f"no such standard: {', '.join(map(str, unknown))}; "
+                              f"the standards are {', '.join(available)}")
     return backlog.record(item.id, outcome, output, at=step.name)
 
 

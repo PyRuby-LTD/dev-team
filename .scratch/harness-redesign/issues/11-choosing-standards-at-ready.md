@@ -6,6 +6,6 @@
 
 **Status:** ready-for-agent
 
-- [ ] A journey test plays an item with one standard added and one removed, and finds the item's standards replaced, the added one with the customer reason
-- [ ] The implementer, tester and reviewer prompts for that item carry the chosen standards
-- [ ] A pilot test shows the checklist reaches the harness, without asserting on wording
+- [x] A journey test plays an item with one standard added and one removed, and finds the item's standards replaced, the added one with the customer reason
+- [x] The implementer, tester and reviewer prompts for that item carry the chosen standards
+- [x] A pilot test shows the checklist reaches the harness, without asserting on wording

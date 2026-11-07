@@ -60,7 +60,7 @@ steps:
       type: object
       additionalProperties: false
       properties:
-        standards: {type: array, items: {type: string}}
+        standards: {type: array, uniqueItems: true, items: {type: string}}
         feedback: {type: string}
     outcomes:
       play:

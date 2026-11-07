@@ -175,6 +175,15 @@ def merge_requirements(item, fragment):
     return data
 
 
+CUSTOMER_REASON = "chosen by the customer"
+
+
+def choose_standards(item, names):
+    """The customer's choice of standards, keeping the reason analysis gave for each it proposed."""
+    reasons = {choice.name: choice.reason for choice in item.standards or []}
+    return [{"name": name, "reason": reasons.get(name, CUSTOMER_REASON)} for name in names]
+
+
 def _build(data):
     try:
         return WorkItem.model_validate(data)
@@ -390,8 +399,9 @@ class Backlog:
         """Record the outcome of the item's current step and move the item to the step it leads to.
 
         The output is kept in step_outputs, addressed to that next step; the outputs this step was given are
-        checked off. A step whose output is the requirements also merges them into the item. Given the step the
-        outcome is for, an item already moved on from it is left alone.
+        checked off. A step whose output is the requirements also merges them into the item, and the customer's
+        choice of standards replaces the item's. Given the step the outcome is for, an item already moved on from
+        it is left alone.
         """
         with mutation(self.root):
             item = self.get(item_id)
@@ -400,6 +410,8 @@ class Backlog:
             step = self.step(item)
             fragment = step.check(outcome, fragment)
             data = merge_requirements(item, fragment) if step.output == REQUIREMENTS else item.model_dump(exclude_none=True)
+            if step.needs_you and "standards" in fragment:
+                data["standards"] = choose_standards(item, fragment["standards"])
             target = step.outcomes[outcome].next
             for entry in data.get("step_outputs", []):
                 if entry["to"] == step.name:

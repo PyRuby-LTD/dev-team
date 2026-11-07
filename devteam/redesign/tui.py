@@ -1,4 +1,4 @@
-"""The customer's view of the YAML backlog: where each item stands, and the outcomes, feedback and requests only they give."""
+"""The customer's view of the YAML backlog: where each item stands, and the outcomes, answers, feedback, standards and requests only they give."""
 from dataclasses import dataclass
 import threading
 
@@ -7,8 +7,10 @@ from textual.app import App
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Header, Label, Markdown, OptionList, RichLog, TextArea, Tree
+from textual.widgets import (Button, Footer, Header, Label, Markdown, OptionList, RichLog, SelectionList, TextArea,
+                             Tree)
 from textual.widgets.option_list import Option
+from textual.widgets.selection_list import Selection
 
 from .harness import record_customer
 from .template import InvalidTemplate, Templates
@@ -103,12 +105,12 @@ def item_label(row):
     return text
 
 
-def takes_feedback(step):
-    return isinstance(step.output, dict) and "feedback" in step.output.get("properties", {})
+def takes(step, field):
+    return isinstance(step.output, dict) and field in step.output.get("properties", {})
 
 
 def takes_answers(step):
-    return step.output == REQUIREMENTS or (isinstance(step.output, dict) and "questions" in step.output.get("properties", {}))
+    return step.output == REQUIREMENTS or takes(step, "questions")
 
 
 def unanswered(item):
@@ -163,6 +165,44 @@ class Answers(ModalScreen):
             self.notify("Answer every question first; write n/a for any you will not answer.", severity="error")
             return
         self.dismiss([{"question": question, "answer": answer} for question, answer in zip(self.questions, answers)])
+
+    def on_button_pressed(self, event):
+        if event.button.id == "save":
+            self.action_save()
+        else:
+            self.dismiss(None)
+
+
+class Standards(ModalScreen):
+    BINDINGS = [("escape", "dismiss(None)", "Cancel"), ("ctrl+s", "save", "Save")]
+
+    def __init__(self, heading, item, available):
+        super().__init__()
+        self.heading = heading
+        reasons = {choice.name: choice.reason for choice in item.standards or []}
+        # The item's standards first, in its order, then the rest the customer may add.
+        names = [name for name in reasons if name in available] + [name for name in available if name not in reasons]
+        self.options = [Selection(Text.assemble((f"{name} ({available[name].kind})", "bold"), "\n",
+                                                (reasons.get(name, available[name].description), "dim")),
+                                  name, name in reasons)
+                        for name in names]
+
+    def compose(self):
+        with Vertical(classes="dialog wide"):
+            yield Label(self.heading)
+            yield SelectionList(*self.options)
+            with Horizontal(classes="buttons"):
+                yield Button("Save standards (ctrl+s)", variant="primary", id="save")
+                yield Button("Cancel (esc)", id="cancel")
+            yield Label(Text("space: tick or untick    ticked reasons are analysis's; "
+                             "a standard you add is recorded as chosen by you", "dim"))
+
+    def on_mount(self):
+        self.query_one(SelectionList).focus()
+
+    def action_save(self):
+        selected = set(self.query_one(SelectionList).selected)
+        self.dismiss([option.value for option in self.options if option.value in selected])
 
     def on_button_pressed(self, event):
         if event.button.id == "save":
@@ -413,7 +453,19 @@ class Console(App):
     def chosen(self, item, step, outcome, output):
         if outcome is None:
             return
-        if not takes_feedback(step):
+        if not takes(step, "standards"):
+            self.ask_feedback(item, step, outcome, output)
+            return
+        heading = Text.assemble((item.id, "bold"), f"  {outcome}  ->  {step.outcomes[outcome].next}\n\n",
+                                ("Standards for this item", "bold"))
+
+        def ticked(names):
+            if names is not None:
+                self.ask_feedback(item, step, outcome, {**output, "standards": names})
+        self.push_screen(Standards(heading, item, self.templates.standards), ticked)
+
+    def ask_feedback(self, item, step, outcome, output):
+        if not takes(step, "feedback"):
             self.record(item, step, outcome, output)
             return
         heading = Text.assemble((item.id, "bold"), f"  {outcome}  ->  {step.outcomes[outcome].next}\n\n",

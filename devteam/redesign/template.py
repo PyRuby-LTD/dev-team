@@ -37,15 +37,7 @@ def load_standards(directory=None):
 
 
 def chosen_standards(item, available):
-    """The customer's choice when playing the item, or else the standards analysis proposed."""
-    names = None
-    for entry in reversed(item.step_outputs):
-        listed = entry.output.get("standards")
-        if isinstance(listed, list) and all(isinstance(name, str) for name in listed):
-            names = listed
-            break
-    if names is None:
-        names = [choice.name for choice in item.standards or []]
+    names = [choice.name for choice in item.standards or []]
     unknown = [name for name in names if name not in available]
     if unknown:
         raise InvalidTemplate(f"{item.id} names standards that do not exist: {', '.join(unknown)}")

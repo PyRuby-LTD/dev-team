@@ -8,13 +8,13 @@ import tempfile
 import threading
 import unittest
 
-from textual.widgets import Markdown, OptionList, RichLog, TextArea
+from textual.widgets import Markdown, OptionList, RichLog, SelectionList, TextArea
 
 from devteam.config import load_roles
 from devteam.redesign import submission
 from devteam.redesign.harness import Harness
 from devteam.redesign.template import Templates
-from devteam.redesign.tui import Answers, Console, Outcomes
+from devteam.redesign.tui import Answers, Console, Outcomes, Standards
 from devteam.redesign.work_item import Backlog
 
 from .test_request_journey import GIT
@@ -192,6 +192,28 @@ class Acting(Fixture):
             await self.settle(pilot, lambda: self.backlog.get("REQUEST-001").step == "analysis")
         self.assertEqual([("Who cooks?", "Me"), ("Which shop?", "Aldi"), ("Budget?", "n/a")],
                          [(question.question, question.answer) for question in self.backlog.get("REQUEST-001").questions])
+
+    async def test_the_standards_ticked_when_playing_an_item_replace_its_standards(self):
+        self.backlog.create("story", "Plan a week")
+        self.backlog.record("STORY-001", "analyse")
+        self.backlog.record("STORY-001", "analysed", {"standards": [
+            {"name": "quality", "reason": "Journeys"}, {"name": "technical-writing", "reason": "Printed plan"}]})
+        self.backlog.record("STORY-001", "sound")
+        app = Console(self.backlog)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await self.choose(app, pilot, "STORY-001", "play")
+            self.assertIsInstance(app.screen, Standards)
+            checklist = app.screen.query_one(SelectionList)
+            self.assertEqual({"quality", "technical-writing"}, set(checklist.selected))
+            checklist.deselect("quality")
+            checklist.select("api-contracts")
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            await pilot.press("ctrl+s")
+            await self.settle(pilot, lambda: self.backlog.get("STORY-001").step == "implement")
+        self.assertEqual([("technical-writing", "Printed plan"), ("api-contracts", "chosen by the customer")],
+                         [(standard.name, standard.reason) for standard in self.backlog.get("STORY-001").standards])
 
     async def test_a_new_request_is_captured_from_free_text(self):
         app = Console(self.backlog)

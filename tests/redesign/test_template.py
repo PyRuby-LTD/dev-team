@@ -72,17 +72,6 @@ class RenderingPrompts(unittest.TestCase):
         self.assertIn("## Feedback from review\n\nfindings:\n  - finding: Labels should be tags\n", text)
         self.assertNotIn("Old finding", text)
 
-    def test_the_customers_choice_of_standards_wins_over_analysis(self):
-        proposed = [{"name": "api-contracts", "reason": "Paths"}, {"name": "quality", "reason": "Journeys"}]
-        text = self.templates.prompt(self.item(standards=proposed), self.step)
-        self.assertEqual(["api-contracts", "quality"], self.standards_in(text))
-        played = self.item(standards=proposed, step_outputs=[
-            {"step": "ready", "outcome": "play", "to": "implement", "output": {"standards": ["platform"]}}])
-        self.assertEqual(["platform"], self.standards_in(self.templates.prompt(played, self.step)))
-
-    def standards_in(self, text):
-        return [line.split()[2] for line in text.splitlines() if line.startswith("## Standard:")]
-
     def test_an_unknown_standard_is_refused(self):
         item = self.item(standards=[{"name": "security", "reason": "Auth"}])
         with self.assertRaisesRegex(InvalidTemplate, "STORY-001 names standards that do not exist: security"):
