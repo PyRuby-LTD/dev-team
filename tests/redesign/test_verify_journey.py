@@ -39,7 +39,7 @@ OUTPUT
 """
 
 
-class SyncVerifyResolve(Played):
+class Synced(Played):
     def setUp(self):
         super().setUp()
         for tool in ("make", "true", "false"):
@@ -72,6 +72,8 @@ class SyncVerifyResolve(Played):
     def merging(self):
         return self.succeeds("rev-parse", "--verify", "--quiet", "MERGE_HEAD")
 
+
+class SyncVerifyResolve(Synced):
     def test_a_clean_sync_and_a_passing_check_reach_review(self):
         self.play(implemented("STORY-001", "planner.txt"), WRITTEN)
         base = self.base_change("pantry.txt", "flour\n")

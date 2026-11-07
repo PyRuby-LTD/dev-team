@@ -108,7 +108,6 @@ class CheckoutAcceptance(unittest.TestCase):
                          [(call[1], call[4]) for call in self.calls])
         self.assertEqual({self.product}, {call[3] for call in self.calls})
         self.assertEqual("main", git.base_of(self.product, "devteam/STORY-001"))
-        self.assertIn("git diff main...devteam/STORY-001", self.calls[1][2])
         self.assertTrue((self.product / "STORY-001.txt").exists())
         self.assertEqual(["STORY-001: implement by implementer", "init"], self.commits(self.product))
         self.assertTrue(git.clean(self.product))

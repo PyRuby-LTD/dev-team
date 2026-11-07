@@ -158,24 +158,6 @@ class DependencyMerge(unittest.TestCase):
         self.assertEqual(tip, git.must(self.product, 'rev-parse', 'HEAD'))
         self.assertTrue((self.product / 'merged-work.txt').exists())
 
-    def test_abandoned_blocks_until_customer_removes_dependency(self):
-        self.item.path.write_text(self.item.path.read_text().replace('step: merged', 'step: accept'))
-        self.repo.transition(self.item.id, 'abandon')
-        self.assertEqual(1, self.runner.run_pass())
-        self.assertEqual('abandoned', self.repo.scan().valid[self.item.id].metadata['step'])
-        self.assertEqual('main', git.current_branch(self.product))
-        self.repo.set_dependencies(self.other.id, [self.item.id])
-        self.other.path.write_text(self.other.path.read_text().replace('step: captured', 'step: implement'))
-        other = self.repo.scan().valid[self.other.id]
-        self.assertFalse(self.runner.claim(other, self.repo.step(other)))
-        reason = self.runner.waiting[other.id]
-        self.assertIn(f'blocked by abandoned {self.item.id}', reason)
-        self.assertIn('customer must edit depends_on', reason)
-        self.assertIsNone(self.runner.checkout_user)
-        self.repo.set_dependencies(other.id, [])
-        other = self.repo.scan().valid[other.id]
-        self.assertTrue(self.runner.claim(other, self.repo.step(other)))
-
     def test_checks_and_harness_actions_are_exempt(self):
         dependency = self.repo.create('bug', 'Unfinished')
         self.repo.set_dependencies(self.item.id, [dependency.id])

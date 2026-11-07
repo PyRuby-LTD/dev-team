@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
+import os
+import subprocess
 import tempfile
 from typing import ClassVar
 import unittest
@@ -8,6 +10,7 @@ from unittest import mock
 
 import yaml
 
+from devteam import git
 from devteam import runner as original
 from devteam.check import Result
 from devteam.redesign import steps
@@ -205,7 +208,7 @@ class ActionSteps(unittest.TestCase):
         self.assertEqual({Check, Sync, Merged, Abandon}, using)
 
     def test_git_steps_return_the_outcome_without_output(self):
-        for cls, action in ((Merged, "merged"), (Abandon, "abandon"), (Rejected, "rejected")):
+        for cls, action in ((Merged, "merged"), (Rejected, "rejected")):
             with self.subTest(action), mock.patch.object(original, action, return_value="completed") as performed:
                 self.assertEqual(("completed", {}), cls("step", {}).perform("harness", "item", "log"))
                 performed.assert_called_once_with("harness", "item")
@@ -239,6 +242,32 @@ class ActionSteps(unittest.TestCase):
                     step.perform("harness", "item", "log")
         with mock.patch.object(original, "pr_state", return_value="MERGED"):
             self.assertEqual(("merged", {}), step.perform("harness", "item", "log"))
+
+
+class AbandonStep(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(mock.patch.dict(os.environ, {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                                       "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}))
+        self.checkout = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.checkout)], check=True)
+        (self.checkout / "app.txt").write_text("initial\n")
+        git.commit_all(self.checkout, "initial")
+        git.must(self.checkout, "switch", "-q", "-c", "devteam/STORY-001")
+        self.harness = SimpleNamespace(checkout=self.checkout)
+        self.item = SimpleNamespace(id="STORY-001")
+        self.step = Abandon("abandoning", outcomes("completed"))
+
+    def test_a_branch_without_a_recorded_base_stays_checked_out(self):
+        with self.assertRaisesRegex(StepFailed, "no base branch is recorded for devteam/STORY-001"):
+            self.step.perform(self.harness, self.item, "log")
+        self.assertEqual("devteam/STORY-001", git.current_branch(self.checkout))
+
+    def test_uncommitted_changes_keep_the_checkout_on_the_items_branch(self):
+        git.must(self.checkout, "config", "branch.devteam/STORY-001.base", "main")
+        (self.checkout / "app.txt").write_text("unsaved\n")
+        with self.assertRaisesRegex(StepFailed, "uncommitted changes on devteam/STORY-001"):
+            self.step.perform(self.harness, self.item, "log")
+        self.assertEqual("devteam/STORY-001", git.current_branch(self.checkout))
 
 
 class HumanSteps(unittest.TestCase):

@@ -73,22 +73,6 @@ def merged(runner, record):
     return "completed"
 
 
-def abandon(runner, record):
-    """Return the item's checkout to its base, keeping its branch for recovery."""
-    if runner.checkout is None:
-        raise StepFailed("the abandon step needs a git repository")
-    branch = f"devteam/{record.id}"
-    if git.current_branch(runner.checkout) != branch:
-        return "completed"
-    base = git.base_of(runner.checkout, branch)
-    if base is None:
-        raise StepFailed(f"no base branch is recorded for {branch}")
-    if not git.clean(runner.checkout):
-        raise StepFailed(f"the checkout has uncommitted changes on {branch}")
-    git.must(runner.checkout, "switch", "-q", base)
-    return "completed"
-
-
 def pull_request(record):
     """Use the last PR URL in the publisher's section, excluding later feedback."""
     lines = record.body.splitlines()
@@ -197,7 +181,7 @@ def render_pr_feedback(reviews, inline, conversation):
     return "\n\n".join(entries) if entries else "There are no comments on this pull request."
 
 
-HARNESS_ACTIONS = {"merged": merged, "rejected": rejected, "abandon": abandon}
+HARNESS_ACTIONS = {"merged": merged, "rejected": rejected}
 
 
 def render(step, values, workflow="default"):

@@ -170,7 +170,7 @@ class AgentStep(Step):
 
 
 def _original(name, *args):
-    # Merging, abandoning and pull request lookups stay in devteam.runner until these steps own them.
+    # Merging and pull request lookups stay in devteam.runner until these steps own them.
     from devteam import runner
     try:
         return getattr(runner, name)(*args), {}
@@ -226,18 +226,22 @@ class GitStep(HarnessStep):
     def uses_checkout(self, harness):
         return True
 
-
-@dataclass
-class Sync(GitStep):
-    produces: ClassVar[frozenset] = frozenset({"completed", "conflicted"})
-
-    def perform(self, harness, item, log):
+    def clean_branch(self, harness, item):
         branch = f"devteam/{item.id}"
         base = git.base_of(harness.checkout, branch)
         if base is None:
             raise StepFailed(f"no base branch is recorded for {branch}")
         if not git.clean(harness.checkout):
             raise StepFailed(f"the checkout has uncommitted changes on {branch}")
+        return branch, base
+
+
+@dataclass
+class Sync(GitStep):
+    produces: ClassVar[frozenset] = frozenset({"completed", "conflicted"})
+
+    def perform(self, harness, item, log):
+        branch, base = self.clean_branch(harness, item)
         try:
             outcome = git.sync_branch(harness.checkout, branch, base)
         except git.GitError as exc:
@@ -260,7 +264,9 @@ class Abandon(GitStep):
     produces: ClassVar[frozenset] = frozenset({"completed"})
 
     def perform(self, harness, item, log):
-        return _original("abandon", harness, item)
+        _, base = self.clean_branch(harness, item)
+        git.must(harness.checkout, "switch", "-q", base)
+        return "completed", {}
 
 
 @dataclass
