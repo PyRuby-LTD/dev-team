@@ -10,7 +10,7 @@ import yaml
 from devteam import git
 from devteam.backlog import InvalidRecord, StrictLoader, mutation, valid_id
 
-from . import flow
+from .workflow import InvalidWorkflow, cached
 from .steps import REQUIREMENTS
 
 DIRECTORIES = {"epic": "epics", "story": "stories", "task": "tasks", "bug": "bugs", "request": "requests"}
@@ -303,8 +303,7 @@ class Backlog:
 
     def __init__(self, root, workflows=None, guard=None, notice=print):
         self.root = Path(root).resolve()
-        self._load_workflow = workflows or flow.harness
-        self._workflows = {}
+        self._load_workflow = workflows or cached
         self.guard = guard
         self.notice = notice
 
@@ -324,9 +323,7 @@ class Backlog:
             raise InvalidWorkItem(f"{path}: {exc}") from None
 
     def workflow(self, name):
-        if name not in self._workflows:
-            self._workflows[name] = self._load_workflow(name)
-        return self._workflows[name]
+        return self._load_workflow(name)
 
     def step(self, item):
         """The workflow step the item is at."""
@@ -334,7 +331,7 @@ class Backlog:
             raise InvalidWorkItem(f"{item.id} is not in a workflow")
         try:
             step = self.workflow(item.workflow).steps.get(item.step)
-        except flow.InvalidWorkflow as exc:
+        except InvalidWorkflow as exc:
             raise InvalidWorkItem(str(exc)) from None
         if step is None:
             raise InvalidWorkItem(f"{item.id} is at {item.step!r}, which workflow {item.workflow!r} does not define")
@@ -377,7 +374,7 @@ class Backlog:
                 workflow = workflow or WORKFLOWS.get(kind, DEFAULT_WORKFLOW)
                 try:
                     data.update(workflow=workflow, step=self.workflow(workflow).initial)
-                except flow.InvalidWorkflow as exc:
+                except InvalidWorkflow as exc:
                     raise InvalidWorkItem(str(exc)) from None
             item = _build(data)
             if self.path(item_id).exists():

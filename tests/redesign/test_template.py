@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from devteam.config import ROOT
-from devteam.redesign import flow
+from devteam.redesign.workflow import load as load_workflow
 from devteam.redesign.console import main
 from devteam.redesign.template import RUN_VALUES, InvalidTemplate, Templates
 from devteam.redesign.steps import AgentStep, HumanStep, Outcome
@@ -100,7 +100,7 @@ class DefaultPrompts(unittest.TestCase):
         item = parse((ROOT / "prompts" / "examples" / "work-item.yaml").read_text())
         templates = Templates()
         values = {name: f"<{name}>" for name in RUN_VALUES}
-        steps = [step for step in flow.load("default").steps.values() if isinstance(step, AgentStep)]
+        steps = [step for step in load_workflow("default").steps.values() if isinstance(step, AgentStep)]
         self.assertTrue(steps)
         for step in steps:
             with self.subTest(step.name):

@@ -6,7 +6,7 @@ import unittest
 import yaml
 
 from devteam.config import ROOT
-from devteam.redesign import flow
+from devteam.redesign.workflow import build
 from devteam.redesign.steps import InvalidStep
 from devteam.redesign.work_item import Backlog, InvalidWorkItem, dump, parse
 
@@ -72,7 +72,7 @@ class WorkItems(unittest.TestCase):
         prompts.mkdir()
         for name in ("analysis", "implement", "review"):
             (prompts / f"{name}.md").write_text("Do the step.\n")
-        workflow = flow.build("default", yaml.safe_load(WORKFLOW), {"product_owner", "implementer", "reviewer"},
+        workflow = build("default", yaml.safe_load(WORKFLOW), {"product_owner", "implementer", "reviewer"},
                               prompts)
         self.backlog = Backlog(self.root / "backlog", workflows={"default": workflow}.__getitem__)
 

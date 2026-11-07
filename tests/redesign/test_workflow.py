@@ -4,7 +4,7 @@ import unittest
 
 import yaml
 
-from devteam.redesign.flow import InvalidWorkflow, build, load
+from devteam.redesign.workflow import InvalidWorkflow, build, load
 from devteam.redesign.steps import AgentStep, Check, HumanStep, PullRequest
 
 ROLES = {"implementer"}

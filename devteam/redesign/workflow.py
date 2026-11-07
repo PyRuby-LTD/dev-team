@@ -11,7 +11,7 @@ from devteam.config import ROOT, load_roles
 
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 # The harness's own workflows, by name, once loaded in this process.
-LOADED = {}
+CACHE = {}
 
 
 class InvalidWorkflow(ValueError):
@@ -68,12 +68,12 @@ def load_all(directory=None, roles=None, prompts=None):
     directory = Path(directory or ROOT / "workflows")
     loaded = {path.stem: load(path.stem, directory, roles, prompts) for path in sorted(directory.glob("*.yaml"))}
     if own:
-        LOADED.update(loaded)
+        CACHE.update(loaded)
     return loaded
 
 
-def harness(name):
+def cached(name):
     """One of the harness's own workflows, loaded once per process."""
-    if name not in LOADED:
-        LOADED[name] = load(name, schemas=False)
-    return LOADED[name]
+    if name not in CACHE:
+        CACHE[name] = load(name, schemas=False)
+    return CACHE[name]

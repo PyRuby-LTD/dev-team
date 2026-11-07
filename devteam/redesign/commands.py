@@ -8,12 +8,13 @@ from devteam import engines, git
 from devteam.config import ROOT, load_roles
 from devteam.evidence import PathGuard
 
-from . import flow, submission
+from . import submission
 from .steps import AgentStep, InvalidStep
+from .workflow import InvalidWorkflow, cached, load_all
 from .work_item import Backlog, InvalidWorkItem, parse
 
 EXAMPLE = ROOT / "prompts" / "examples" / "work-item.yaml"
-FAILURES = (InvalidWorkItem, InvalidStep, flow.InvalidWorkflow, git.GitError, OSError, UnicodeError)
+FAILURES = (InvalidWorkItem, InvalidStep, InvalidWorkflow, git.GitError, OSError, UnicodeError)
 
 
 class CommandFailed(Exception):
@@ -69,8 +70,8 @@ class DevTeam:
         from devteam.initialise import missing
 
         try:
-            flow.load_all()
-        except flow.InvalidWorkflow as exc:
+            load_all()
+        except InvalidWorkflow as exc:
             raise CommandFailed(str(exc)) from None
         gaps = missing(self.product)
         if gaps:
@@ -154,7 +155,7 @@ class DevTeam:
                 work_item = parse(Path(file or EXAMPLE).read_text(encoding="utf-8"))
             if work_item.workflow is None:
                 raise InvalidWorkItem(f"{work_item.id} is not in a workflow")
-            workflow = flow.harness(work_item.workflow)
+            workflow = cached(work_item.workflow)
             if step is None:
                 chosen = [each for each in workflow.steps.values() if isinstance(each, AgentStep)]
             elif not isinstance(workflow.steps.get(step), (AgentStep, type(None))):
