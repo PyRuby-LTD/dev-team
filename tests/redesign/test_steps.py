@@ -11,11 +11,10 @@ from unittest import mock
 import yaml
 
 from devteam import git
-from devteam import runner as original
 from devteam.check import Result
 from devteam.redesign import steps
 from devteam.redesign.steps import (Abandon, AgentStep, Check, HarnessStep, HumanStep, InvalidStep, Merged,
-                           Outcome, PullRequest, Rejected, Step, StepFailed, Sync, Waiting, build)
+                           Outcome, PullRequest, Rejected, Step, StepFailed, Sync, build)
 
 DEFINITION = """
 accept:
@@ -183,10 +182,14 @@ class ActionStepDefinitions(unittest.TestCase):
             build("sync", spec("git:Sync", "completed"), ROLES)
 
     def test_the_customer_may_add_outcomes_of_their_own(self):
-        spec = {"owner": "git:PullRequest", "outcomes": {
+        definition = {"owner": "git:PullRequest", "outcomes": {
             "merged": {"next": "merged", "means": "GitHub reports the pull request merged."},
             "abandon": {"next": "abandoning", "means": "Give up on the change."}}}
-        self.assertEqual({"merged": "merged", "abandon": "abandoning"}, build("pull-request", spec, ROLES).transitions)
+        step = build("pull-request", definition, ROLES)
+        self.assertEqual({"merged": "merged", "abandon": "abandoning"}, step.transitions)
+        self.assertEqual(["abandon"], list(step.customer_outcomes))
+        self.assertTrue(step.needs_you)
+        self.assertFalse(build("sync", spec("git:Sync", "completed", "conflicted"), ROLES).needs_you)
 
     def test_an_action_has_no_prompt(self):
         definition = dict(spec("harness:Check", "passed", "failed"), prompt="verify.md")
@@ -207,20 +210,6 @@ class ActionSteps(unittest.TestCase):
         using = {cls for cls in KINDS if cls("step", {}).uses_checkout(harness)}
         self.assertEqual({Check, Sync, Merged, Abandon}, using)
 
-    def test_git_steps_return_the_outcome_without_output(self):
-        for cls, action in ((Merged, "merged"), (Rejected, "rejected")):
-            with self.subTest(action), mock.patch.object(original, action, return_value="completed") as performed:
-                self.assertEqual(("completed", {}), cls("step", {}).perform("harness", "item", "log"))
-                performed.assert_called_once_with("harness", "item")
-
-    def test_a_git_step_that_cannot_run_yet_waits_and_one_that_cannot_run_fails(self):
-        with mock.patch.object(original, "merged", side_effect=original.Waiting("held")):
-            with self.assertRaisesRegex(Waiting, "held"):
-                Merged("merged", {}).perform("harness", "item", "log")
-        with mock.patch.object(original, "merged", side_effect=original.StepFailed("broken")):
-            with self.assertRaisesRegex(StepFailed, "broken"):
-                Merged("merged", {}).perform("harness", "item", "log")
-
     def test_a_check_that_did_not_finish_has_failed(self):
         step = Check("verify", outcomes("passed", "failed"))
         for code, status in ((0, "finished"), (124, "timed out"), (127, "could not be started")):
@@ -233,16 +222,6 @@ class ActionSteps(unittest.TestCase):
                 checked.check.assert_called_once_with("checkout", log="log")
         with self.assertRaisesRegex(StepFailed, "needs a git repository"):
             step.perform(SimpleNamespace(checkout=None), "item", "log")
-
-    def test_a_pull_request_waits_until_github_reports_it_merged(self):
-        step = PullRequest("pull-request", outcomes("merged"))
-        for state in ("OPEN", "CLOSED"):
-            with self.subTest(state), mock.patch.object(original, "pr_state", return_value=state):
-                with self.assertRaisesRegex(Waiting, f"the pull request is {state.lower()}"):
-                    step.perform("harness", "item", "log")
-        with mock.patch.object(original, "pr_state", return_value="MERGED"):
-            self.assertEqual(("merged", {}), step.perform("harness", "item", "log"))
-
 
 class AbandonStep(unittest.TestCase):
     def setUp(self):

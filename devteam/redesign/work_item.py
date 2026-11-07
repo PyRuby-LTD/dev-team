@@ -22,6 +22,10 @@ class InvalidWorkItem(ValueError):
     pass
 
 
+class MovedOn(InvalidWorkItem):
+    """The item left the step whose outcome was about to be recorded."""
+
+
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -382,14 +386,17 @@ class Backlog:
             self._write(updated, f"{item_id}: updated {', '.join(fields)}")
             return updated
 
-    def record(self, item_id, outcome, fragment=None):
+    def record(self, item_id, outcome, fragment=None, at=None):
         """Record the outcome of the item's current step and move the item to the step it leads to.
 
         The output is kept in step_outputs, addressed to that next step; the outputs this step was given are
-        checked off. A step whose output is the requirements also merges them into the item.
+        checked off. A step whose output is the requirements also merges them into the item. Given the step the
+        outcome is for, an item already moved on from it is left alone.
         """
         with mutation(self.root):
             item = self.get(item_id)
+            if at is not None and item.step != at:
+                raise MovedOn(f"{item_id} moved on from {at} to {item.step} meanwhile")
             step = self.step(item)
             fragment = step.check(outcome, fragment)
             data = merge_requirements(item, fragment) if step.output == REQUIREMENTS else item.model_dump(exclude_none=True)

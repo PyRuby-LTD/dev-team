@@ -1,36 +1,61 @@
-Publish this work item from the repository at {{checkout}}. Branch {{branch}}
-has already been pushed to origin; its base branch is {{base}}. Do not run
-`git push` or `git commit` yourself.
+Publish the change this {{ item.type }} makes as a pull request from its branch,
+{{ branch }}, against {{ base }}, in the repository at {{ checkout }}. The
+harness has already pushed the branch. Do not change, commit or push anything,
+and do not merge the pull request.
 
-Do not put absolute paths, home directories or command output in the pull
-request body. Use repository-relative paths and check outcomes only.
+First look for an open pull request from the branch with
+`gh pr list --head {{ branch }} --state open --json number`. If the lookup
+fails, report the failure rather than guessing; only a successful empty result
+means there is none.
 
-1. Look for an existing open pull request for {{branch}} before creating one:
-   run `gh pr list --head {{branch}} --state open --json url`. If the lookup
-   fails, report the failure; only a successful empty result means none exists.
-2. Prepare a body drawn from the item's acceptance criteria and its
-   `## Implementation` and `## Review` sections. Do not write the body to a
-   file: you cannot write outside the repository, and a file inside it would
-   dirty the checkout. Pass it on standard input instead, with `--body-file -`
-   and a quoted heredoc as the last argument of the same command:
+- With no open pull request, create one titled with the {{ item.type }}'s
+  title, passing the body on standard input so that nothing is written into the
+  checkout:
 
-   ```
-   gh pr create --head {{branch}} --base {{base}} --title "<item-title>" --body-file - <<'EOF'
-   <body>
-   EOF
-   ```
+  ```
+  gh pr create --head {{ branch }} --base {{ base }} --title "<title>" --body-file - <<'EOF'
+  <body>
+  EOF
+  ```
 
-   - If an open PR exists, do not run `gh pr create`. The harness has already
-     pushed the new commits. Update its body with
-     `gh pr edit <existing-url> --body-file - <<'EOF'`, leaving its title and
-     URL unchanged.
-   - Only when no open PR exists for the branch, run `gh pr create` as shown
-     above. This includes first publication and publication after an earlier
-     PR was closed. Use the item's title and the prepared body.
-3. Record the pull request URL under `## Pull request` in the item body.
-   Replace that section's content rather than adding a second heading, or
-   add the heading if absent. The section must hold exactly one URL; when
-   updating an open PR, record the same URL as before.
+- With one open, the pushed commits are already on it. Replace its body the
+  same way with `gh pr edit <number> --body-file -`, keeping its title.
 
-Do not merge the pull request and do not change any code. Choose `published`
-only when the pull request exists.
+Write the body for a reviewer who knows the codebase but has not seen the
+{{ item.type }}. Keep it to a few lines, leading with the point:
+
+1. `{{ item.id }}: {{ item.title }}` and what the change does, in a sentence or
+   two.
+2. Every change to a public API, command, file format or schema, or "No API
+   changes".
+3. Only then anything surprising or unexpected, and any opinion an agent acted
+   on outside the {{ item.type }}'s scope, from what the implementer recorded
+   below.
+
+Do not restate the acceptance criteria, list the files changed or describe how
+it was tested. Do not put absolute paths, home directories or command output in
+the body.
+
+Record in your output:
+
+- `pull_request`: the pull request's number.
+- `summary`: what the change does, as in the body.
+- `api_changes`: the API changes, as in the body.
+- `surprises` and `opinions`: those the body raises, each as one line.
+
+Choose `published` only when the pull request exists with the body you wrote.
+If `gh` fails, exit without submitting and say exactly what failed; the item
+stays at this step for the customer to look into.
+
+## The {{ item.type }}: {{ item.title }}
+
+~~~yaml
+{{ requirements | yaml }}~~~
+{% set recorded = item.step_outputs | selectattr("step", "equalto", "implement") | selectattr("output") | list %}
+{% if recorded %}
+
+## What the implementer last recorded
+
+~~~yaml
+{{ recorded[-1].output | yaml }}~~~
+{% endif %}

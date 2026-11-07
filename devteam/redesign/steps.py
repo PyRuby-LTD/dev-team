@@ -11,6 +11,8 @@ from devteam import check as checks
 from devteam import git
 from devteam.config import ROOT
 
+from . import github
+
 # A step whose output is the item's requirements, merged into the item rather than kept beside it.
 REQUIREMENTS = "requirements"
 # The kinds of customer input the TUI knows; a customer step asking for anything else could never be answered.
@@ -40,6 +42,7 @@ class Outcome:
 class Step:
     automatic: ClassVar[bool] = True
     produces: ClassVar[frozenset | None] = None
+    retry_after: ClassVar[float | None] = None  # seconds before a waiting step is tried again
 
     name: str
     outcomes: dict
@@ -58,8 +61,12 @@ class Step:
         return not self.outcomes
 
     @property
+    def customer_outcomes(self):
+        return {}
+
+    @property
     def needs_you(self):
-        return not self.automatic and not self.terminal
+        return bool(self.customer_outcomes)
 
     def label(self):
         return "finished" if self.terminal else self.owner
@@ -106,6 +113,10 @@ class HumanStep(Step):
     def owner(self):
         return "human"
 
+    @property
+    def customer_outcomes(self):
+        return self.outcomes
+
     def label(self):
         return "finished" if self.terminal else "YOU"
 
@@ -132,6 +143,12 @@ class AgentStep(Step):
         if shutil.which(role.command[0]) is None:
             raise StepFailed(f"the {role.engine} engine's command {role.command[0]!r} is not on the PATH")
         root = harness.backlog.root
+        if role.push:
+            # Agents often cannot write .git from their sandbox, so the harness pushes the branch for them.
+            try:
+                git.push_branch(harness.checkout, f"devteam/{item.id}")
+            except git.GitError as exc:
+                raise StepFailed(f"could not push the branch for {role.name}: {exc}") from None
         prompt = harness.templates.prompt(item, self, harness.values(item), harness.backlog)
         # A submission left by an earlier run must not be taken for this one.
         submission.take(root, item.id, self.name)
@@ -169,14 +186,20 @@ class AgentStep(Step):
             raise StepFailed(f"the merge is not resolved: {exc}") from None
 
 
-def _original(name, *args):
-    # Merging and pull request lookups stay in devteam.runner until these steps own them.
-    from devteam import runner
+def published(item):
+    """The number of the pull request the item was last published as."""
+    for entry in reversed(item.step_outputs):
+        if isinstance(entry.output.get("pull_request"), int):
+            return entry.output["pull_request"]
+    raise StepFailed(f"no pull request is recorded for {item.id}")
+
+
+def _github(lookup, harness, item):
+    if harness.checkout is None:
+        raise StepFailed("looking up the pull request needs a git repository")
     try:
-        return getattr(runner, name)(*args), {}
-    except runner.Waiting as exc:
-        raise Waiting(str(exc)) from None
-    except runner.StepFailed as exc:
+        return lookup(harness.checkout, published(item))
+    except github.GitHubError as exc:
         raise StepFailed(str(exc)) from None
 
 
@@ -189,6 +212,11 @@ class HarnessStep(Step):
         cls = type(self)
         name = cls.__name__ if cls.__module__ == __name__ else f"{cls.__module__}.{cls.__name__}"
         return f"{self.kind}:{name}"
+
+    @property
+    def customer_outcomes(self):
+        # The workflow may give a harness step outcomes it never produces, such as abandoning a pull request.
+        return {name: outcome for name, outcome in self.outcomes.items() if name not in self.produces}
 
     def label(self):
         return "finished" if self.terminal else self.kind
@@ -216,7 +244,8 @@ class Rejected(HarnessStep):
     produces: ClassVar[frozenset] = frozenset({"completed"})
 
     def perform(self, harness, item, log):
-        return _original("rejected", harness, item)
+        comments = _github(github.comments, harness, item)
+        return "completed", {"pull_request": published(item), "comments": comments}
 
 
 @dataclass
@@ -256,7 +285,13 @@ class Merged(GitStep):
     produces: ClassVar[frozenset] = frozenset({"completed"})
 
     def perform(self, harness, item, log):
-        return _original("merged", harness, item)
+        _, base = self.clean_branch(harness, item)
+        try:
+            git.fetch(harness.checkout, "origin")
+            git.fast_forward(harness.checkout, base, f"origin/{base}")
+        except git.GitError as exc:
+            raise StepFailed(str(exc)) from None
+        return "completed", {}
 
 
 @dataclass
@@ -278,10 +313,12 @@ class PullRequest(GitStep):
         return False
 
     def perform(self, harness, item, log):
-        state, _ = _original("pr_state", item)
+        state = _github(github.state, harness, item)
         if state == "MERGED":
             return "merged", {}
-        raise Waiting(f"the pull request is {state.lower()}")
+        choices = " or ".join(f"'{name}'" for name in self.customer_outcomes)
+        raise Waiting(f"pull request #{published(item)} is {state.lower()}"
+                      + (f"; it moves on when merged, or when you choose {choices}" if choices else ""))
 
 
 def _outcomes(step_name, spec):

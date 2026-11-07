@@ -1,25 +1,17 @@
 """Runs automated steps: invoke the owning role, check or harness action, then apply its transition."""
-import json
 import re
-import subprocess
-import time
 import threading
 from concurrent.futures import Future
 from datetime import datetime, timezone
 
 from . import check as checks
-from . import engines, git, questions
-from .backlog import InvalidRecord, mutation
+from . import engines, git
+from .backlog import InvalidRecord
 from .config import ROOT, harness_command, load_roles
 from .workflow import InvalidWorkflow
 from .evidence import PathGuard
-from .publication import requirements
 
 REPLY = re.compile(r"TRANSITION:\s*([A-Za-z0-9_-]+)\W*\Z")
-RECORDS = "docs/work-items"
-GH_TIMEOUT = 60
-PR_POLL_SECONDS = 60
-PR_URL = re.compile(r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/pull/([0-9]+)\b")
 
 PROTOCOL = """
 ## Work item
@@ -53,135 +45,7 @@ class Waiting(Exception):
     pass
 
 
-def merged(runner, record):
-    """Bring the recorded base up to date after the customer's merge decision."""
-    if runner.checkout is None:
-        raise StepFailed("the merged step needs a git repository")
-    branch = f"devteam/{record.id}"
-    base = git.base_of(runner.checkout, branch)
-    if base is None:
-        raise StepFailed(f"no base branch is recorded for {branch}")
-    current = git.current_branch(runner.checkout)
-    if not git.clean(runner.checkout):
-        foreign = current != branch and (current == base or (current and current.startswith("devteam/")))
-        error = Waiting if foreign else StepFailed
-        raise error(f"the checkout has uncommitted changes on {current}")
-    git.fetch(runner.checkout, "origin")
-    git.fast_forward(runner.checkout, base, f"origin/{base}")
-    if current and current.startswith("devteam/") and current != branch:
-        git.must(runner.checkout, "switch", "-q", current)
-    return "completed"
-
-
-def pull_request(record):
-    """Use the last PR URL in the publisher's section, excluding later feedback."""
-    lines = record.body.splitlines()
-    start = next((i for i, line in enumerate(lines)
-                  if re.fullmatch(r"##\s+Pull request\s*", line, re.IGNORECASE)), None)
-    urls = []
-    if start is not None:
-        end = next((i for i in range(start + 1, len(lines)) if questions.HEADING.match(lines[i])), len(lines))
-        urls = PR_URL.findall("\n".join(lines[start + 1:end]))
-    if not urls:
-        raise StepFailed("PR URL is missing from ## Pull request (expected https://github.com/<owner>/<repo>/pull/<n>)")
-    return urls[-1]
-
-
-def pr_state(record):
-    owner, repo, number = pull_request(record)
-    argv = ["gh", "pr", "view", f"https://github.com/{owner}/{repo}/pull/{number}", "--json", "state"]
-    call = " ".join(argv)
-    try:
-        result = subprocess.run(argv, capture_output=True, text=True, errors="replace", timeout=GH_TIMEOUT)
-    except subprocess.TimeoutExpired as exc:
-        raise StepFailed(f"{call}: timed out after {GH_TIMEOUT} seconds") from exc
-    if result.returncode:
-        raise StepFailed(f"{call}: exit {result.returncode}: {result.stderr.strip()}")
-    try:
-        data = json.loads(result.stdout)
-        if not isinstance(data, dict) or data.get("state") not in ("OPEN", "CLOSED", "MERGED"):
-            raise ValueError("expected state OPEN, CLOSED or MERGED")
-    except ValueError as exc:
-        raise StepFailed(f"{call}: invalid JSON response: {exc}") from exc
-    return data["state"]
-
-
-def rejected(runner, record):
-    """Copy the PR's full submitted feedback before returning to implementation."""
-    owner, repo, number = pull_request(record)
-    base = f"repos/{owner}/{repo}"
-    reviews = pr_comments(f"{base}/pulls/{number}/reviews")
-    inline = pr_comments(f"{base}/pulls/{number}/comments")
-    conversation = pr_comments(f"{base}/issues/{number}/comments")
-    feedback = render_pr_feedback(reviews, inline, conversation)
-    runner.repository.write_body(record.id, questions.replace_section(record.body, "Pull request feedback", feedback),
-                                 "pull request feedback")
-    return "completed"
-
-
-def pr_comments(endpoint):
-    """gh pagination prints consecutive JSON arrays; accept only arrays of objects."""
-    argv = ["gh", "api", endpoint, "--paginate"]
-    call = " ".join(argv)
-    try:
-        result = subprocess.run(argv, capture_output=True, text=True, errors="replace", timeout=GH_TIMEOUT)
-    except subprocess.TimeoutExpired as exc:
-        raise StepFailed(f"{call}: timed out after {GH_TIMEOUT} seconds") from exc
-    if result.returncode:
-        raise StepFailed(f"{call}: exit {result.returncode}: {result.stderr.strip()}")
-    decoder = json.JSONDecoder()
-    remaining, comments = result.stdout.strip(), []
-    try:
-        if not remaining:
-            raise ValueError("empty output")
-        while remaining:
-            page, end = decoder.raw_decode(remaining)
-            if not isinstance(page, list) or any(not isinstance(entry, dict) for entry in page):
-                raise ValueError("expected an array of objects")
-            if any(entry.get("body") is not None and not isinstance(entry["body"], str) for entry in page):
-                raise ValueError("expected comment bodies to be strings")
-            comments.extend(page)
-            remaining = remaining[end:].lstrip()
-    except ValueError as exc:
-        raise StepFailed(f"{call}: invalid JSON response: {exc}") from exc
-    return comments
-
-
-def render_pr_feedback(reviews, inline, conversation):
-    def field(value):
-        # Keep metadata on its introduction line too, even in malformed API data.
-        return " ".join(str(value).splitlines()) if value is not None else ""
-
-    entries = []
-
-    def add(kind, comment, date, location=""):
-        user = comment.get("user")
-        author = field(user.get("login")) if isinstance(user, dict) else ""
-        title = f"**{kind}** by {author or 'unknown author'}{location}"
-        stamp = field(comment.get(date))
-        if stamp:
-            title += f" ({stamp})"
-        body = comment.get("body") or ""
-        entries.append(title + ":\n" + "\n".join("> " + line for line in body.splitlines()))
-
-    for review in reviews:
-        if review.get("state") == "PENDING" or not review.get("submitted_at") or not review.get("body"):
-            continue
-        add(f"Review ({field(review.get('state'))})", review, "submitted_at")
-    for comment in inline:
-        location = f" on {field(comment.get('path'))}"
-        if comment.get("subject_type") != "file":
-            if comment.get("line") is not None:
-                location += f" line {field(comment['line'])}"
-            elif comment.get("original_line") is not None:
-                location += f" line {field(comment['original_line'])} (outdated)"
-        add("Inline comment", comment, "created_at", location)
-    for comment in conversation:
-        add("Conversation comment", comment, "created_at")
-    return "\n\n".join(entries) if entries else "There are no comments on this pull request."
-
-
-HARNESS_ACTIONS = {"merged": merged, "rejected": rejected}
+HARNESS_ACTIONS = {}
 
 
 def render(step, values, workflow="default"):
@@ -215,9 +79,6 @@ class Runner:
         self._waiting = {}
         self._active = set()
         self._runs = {}
-        self._pr_started = {}
-        self._pr_lookups = {}
-        self._pr_problems = {}
         self.checkout_user = None
         self.on_change = None
 
@@ -389,17 +250,6 @@ class Runner:
                 raise StepFailed(f"no base branch is recorded for {branch}")
             values.update(checkout=str(self.checkout), branch=branch, base=base)
         self.count_run(record)
-        if role.record:
-            copy = self.checkout / RECORDS / f"{record.id}.md"
-            copy.parent.mkdir(parents=True, exist_ok=True)
-            masked, numbers = self.repository.guard.mask(requirements(record.body))
-            text = record.path.read_bytes().decode("utf-8")
-            front = text[:len(text) - len(record.body)]
-            copy.write_bytes((front + masked).encode("utf-8"))
-            if numbers:
-                offset = len(front.splitlines())
-                self.report(f"{record.id}: copy masked lines {', '.join(str(offset + n) for n in numbers)}")
-            git.commit_all(self.checkout, f"{record.id}: record the work item", str(copy))
         if role.push:
             git.push_branch(self.checkout, branch)
         log.parent.mkdir(parents=True, exist_ok=True)
@@ -513,62 +363,12 @@ class Runner:
     def run_pass(self):
         return sum(future.result() for future in self.dispatch())
 
-    def poll_pull_requests(self):
-        """Collect completed lookups and start due ones without waiting for GitHub."""
-        for item_id, (record, future) in list(self._pr_lookups.items()):
-            if not future.done():
-                continue
-            del self._pr_lookups[item_id]
-            updated = None
-            try:
-                # The manual decision and this check/transition share the backlog lock.
-                with mutation(self.repository.root):
-                    current = self.repository.scan().valid.get(item_id)
-                    if current != record or item_id in self.failed:
-                        continue
-                    state = future.result()
-                    self._pr_problems.pop(item_id, None)
-                    if state == "MERGED":
-                        updated = self.repository.transition(item_id, "merged")
-            except Exception as exc:
-                problem = str(exc)
-                if self._pr_problems.get(item_id) != problem:
-                    self._pr_problems[item_id] = problem
-                    self.report(f"{item_id} pull-request: {problem}")
-            if updated is not None:
-                self.report(f"{item_id} pull-request: merged -> {updated.metadata['step']}")
-                if self.on_change is not None:
-                    self.on_change()
-
-        for record in self.repository.scan().valid.values():
-            if record.metadata.get("step") != "pull-request" or record.id in self.failed:
-                continue
-            step = self.repository.step(record)
-            if not step.human or "merged" not in step.transitions:
-                continue
-            now = time.monotonic()
-            if record.id in self._pr_lookups or now - self._pr_started.get(record.id, -float("inf")) < PR_POLL_SECONDS:
-                continue
-            future = Future()
-            self._pr_started[record.id] = now
-            self._pr_lookups[record.id] = (record, future)
-
-            def lookup(record=record, future=future):
-                try:
-                    future.set_result(pr_state(record))
-                except Exception as exc:
-                    future.set_exception(exc)
-
-            threading.Thread(target=lookup, name=f"{record.id}-pr", daemon=True).start()
-
     def run(self, once=False, interval=2.0, stop=None):
         """Poll for new work even while earlier steps are running; Stop only ends dispatch."""
         stop = stop if stop is not None else threading.Event()
         in_flight = []
         scan = True
         while not stop.is_set():
-            if not once:
-                self.poll_pull_requests()
             if scan:
                 in_flight.extend(self.dispatch(stop))
             completed = [future for future in in_flight if future.done()]

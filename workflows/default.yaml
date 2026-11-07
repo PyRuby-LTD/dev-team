@@ -239,6 +239,11 @@ steps:
   resolve-publish:
     owner: agent:implementer
     prompt: resolve-publish.md
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        blocked_by: {type: string}
     outcomes:
       resolved:
         next: verify-publish
@@ -269,6 +274,7 @@ steps:
     output:
       type: object
       additionalProperties: false
+      required: [pull_request, summary]
       properties:
         pull_request: {type: integer}
         summary: {type: string}
@@ -288,7 +294,7 @@ steps:
         means: The pull request is merged.
       rejected:
         next: rejected
-        means: The pull request will not be merged as it stands; its feedback goes back to the implementer.
+        means: The pull request will not be merged as it stands; its comments go back to the implementer.
       abandon:
         next: abandoning
         means: Give up on the item, keeping its branch for recovery.
@@ -302,10 +308,28 @@ steps:
 
   rejected:
     owner: harness:Rejected
+    output:
+      type: object
+      additionalProperties: false
+      required: [pull_request, comments]
+      properties:
+        pull_request: {type: integer}
+        comments:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [kind, author, body]
+            properties:
+              kind: {enum: [review, inline, conversation]}
+              author: {type: string}
+              state: {type: string}
+              location: {type: string}
+              body: {type: string}
     outcomes:
       completed:
         next: implement
-        means: The pull request's feedback is copied into the item.
+        means: The pull request's comments are recorded for the implementer.
 
   abandoning:
     owner: git:Abandon

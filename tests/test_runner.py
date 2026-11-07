@@ -6,11 +6,10 @@ import unittest
 from unittest.mock import patch
 
 from devteam import engines, git
-from devteam import runner as runners
 from devteam.backlog import Repository
 from devteam.config import Role
 from devteam.evidence import PathGuard
-from devteam.runner import Runner, StepFailed, Waiting
+from devteam.runner import Runner, Waiting
 
 WORKFLOW = {
     "initial": "captured",
@@ -215,43 +214,6 @@ class HarnessSteps(unittest.TestCase):
         record.path.write_text(record.path.read_text().replace(
             f"step: {record.metadata['step']}\n", f"step: {step}\n", 1))
         return self.repo.scan().valid[self.story.id]
-
-    def test_rejected_runs_without_engine_checkout_or_run_count(self):
-        self.repo.write_body(self.story.id, "## Pull request\nhttps://github.com/example/product/pull/2\n", "fixture")
-        record = self.at("rejected")
-        self.assertEqual([(record, self.repo.step(record))], self.runner.pending())
-        with patch.object(runners, "pr_comments", return_value=[]):
-            self.assertEqual(1, self.runner.run_pass())
-        self.assertEqual("implement", self.repo.scan().valid[record.id].metadata["step"])
-        self.assertIn("completed -> implement", self.messages[-1])
-        self.assertEqual([], self.engine.calls)
-        self.assertEqual({}, self.runner.runs)
-        self.assertEqual({}, self.runner.failed)
-
-    def test_failure_waits_for_retry_or_restart(self):
-        self.at("rejected")
-        calls = []
-
-        def fail(runner, record):
-            calls.append(record.id)
-            raise StepFailed("cannot complete")
-
-        with patch.dict(runners.HARNESS_ACTIONS, rejected=fail):
-            self.assertEqual(1, self.runner.run_pass())
-            self.assertEqual("rejected", self.repo.scan().valid[self.story.id].metadata["step"])
-            self.assertIn("FAILED - cannot complete", self.messages[-1])
-            self.assertEqual(0, self.runner.run_pass())
-            self.assertEqual([self.story.id], calls)
-            self.runner.retry(self.story.id)
-            self.assertEqual(1, self.runner.run_pass())
-            restarted = Runner(self.repo, engine=self.engine, report=self.messages.append)
-            self.assertEqual(1, restarted.run_pass())
-            self.assertEqual([self.story.id] * 3, calls)
-        self.repo.write_body(self.story.id, "## Pull request\nhttps://github.com/example/product/pull/2\n", "fixture")
-        self.runner.retry(self.story.id)
-        with patch.object(runners, "pr_comments", return_value=[]):
-            self.assertEqual(1, self.runner.run_pass())
-        self.assertEqual("implement", self.repo.scan().valid[self.story.id].metadata["step"])
 
     def test_only_checkout_steps_hold_checkout(self):
         product = self.root / "product"

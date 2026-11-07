@@ -1,13 +1,15 @@
 """The harness loop: perform each step the harness or an agent owns, then record its outcome and move the item on."""
 from datetime import datetime, timezone
 import threading
+import time
 
 from devteam import check as checks
 from devteam import engines, git
 from devteam.config import load_roles
 
 from .template import Templates
-from .steps import Check, HumanStep, InvalidStep, StepFailed, Waiting
+from .steps import Check, InvalidStep, StepFailed, Waiting
+from .work_item import MovedOn
 
 BRANCH_PREFIX = "devteam/"
 
@@ -19,9 +21,13 @@ def branch_of(item):
 def record_customer(backlog, item_id, outcome, output):
     item = backlog.get(item_id)
     step = backlog.step(item)
-    if not isinstance(step, HumanStep):
-        raise InvalidStep(f"{item.id} is at step {step.name!r}, which {step.owner} performs, not the customer")
-    return backlog.record(item.id, outcome, output)
+    if outcome not in step.customer_outcomes:
+        if not step.customer_outcomes:
+            raise InvalidStep(f"{item.id} is at step {step.name!r}, which {step.owner} performs, not the customer")
+        if outcome in step.outcomes:
+            raise InvalidStep(f"{step.owner} decides {outcome!r} at step {step.name!r}; you may choose "
+                              + ", ".join(step.customer_outcomes))
+    return backlog.record(item.id, outcome, output, at=step.name)
 
 
 class Harness:
@@ -37,6 +43,7 @@ class Harness:
         self.on_line = None
         self.failed = {}
         self.waiting = {}
+        self.not_before = {}
 
     def values(self, item):
         evidence = self.backlog.root / "log" / item.id
@@ -100,7 +107,9 @@ class Harness:
                 found.append((item, step))
         for stale in set(self.waiting) - {item.id for item, _ in found}:
             self.waiting.pop(stale, None)
-        return found
+            self.not_before.pop(stale, None)
+        now = time.monotonic()
+        return [(item, step) for item, step in found if self.not_before.get(item.id, now) <= now]
 
     def perform(self, item, step):
         """Perform one step and record its outcome; True when the item moved on."""
@@ -111,12 +120,18 @@ class Harness:
                 self.take_checkout(item)
             self.report(f"{item.id} {step.name}: started by {step.owner}")
             outcome, output = step.perform(self, item, log)
-            updated = self.backlog.record(item.id, outcome, output)
+            updated = self.backlog.record(item.id, outcome, output, at=step.name)
         except Waiting as reason:
             if self.waiting.get(item.id) != str(reason):
                 self.report(f"{item.id} {step.name}: {reason}")
             self.waiting[item.id] = str(reason)
+            if step.retry_after:
+                self.not_before[item.id] = time.monotonic() + step.retry_after
             return False
+        except MovedOn as exc:
+            self.waiting.pop(item.id, None)
+            self.report(f"{item.id} {step.name}: {exc}; its {outcome!r} is not recorded")
+            return True
         except Exception as exc:
             # One broken item must not stop the others, so anything unexpected fails just this item.
             reason = str(exc) if isinstance(exc, (StepFailed, InvalidStep, ValueError, OSError)) \
@@ -126,6 +141,7 @@ class Harness:
             self.report(f"{item.id} {step.name}: FAILED - {reason}; still at {step.name}, not retried until restart")
             return False
         self.waiting.pop(item.id, None)
+        self.not_before.pop(item.id, None)
         self.report(f"{item.id} {step.name}: {outcome} -> {updated.step}")
         return True
 

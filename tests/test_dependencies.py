@@ -5,7 +5,7 @@ import yaml
 
 from devteam import git
 from devteam.backlog import parse
-from tests import test_backlog, test_checkout, test_runner, test_merged
+from tests import test_backlog, test_checkout, test_runner
 
 
 class DependencyValidation(unittest.TestCase):
@@ -135,37 +135,6 @@ class DependencyScheduling(unittest.TestCase):
         self.assertEqual('ready', self.steps()[self.first.id])
         self.assertEqual(['analyst'], [call[1] for call in self.calls])
         self.assertEqual('main', git.current_branch(self.product))
-
-
-class DependencyMerge(unittest.TestCase):
-    setUp = test_merged.Merged.setUp
-    no_engine = test_merged.Merged.no_engine
-    advance = test_merged.Merged.advance
-
-    def test_next_scan_starts_from_merged_base_without_restart(self):
-        self.repo.set_dependencies(self.other.id, [self.item.id])
-        self.other.path.write_text(self.other.path.read_text().replace('step: captured', 'step: implement'))
-        other = self.repo.scan().valid[self.other.id]
-        self.assertFalse(self.runner.claim(other, self.repo.step(other)))
-        tip = self.advance(self.writer, 'merged-work')
-        git.must(self.writer, 'push', '-q', 'origin', 'main')
-        self.assertEqual(1, self.runner.run_pass())
-        self.assertEqual('done', self.repo.scan().valid[self.item.id].metadata['step'])
-        other = self.repo.scan().valid[self.other.id]
-        self.assertTrue(self.runner.claim(other, self.repo.step(other)))
-        self.runner.take_checkout(other)
-        self.assertEqual('main', git.base_of(self.product, f'devteam/{other.id}'))
-        self.assertEqual(tip, git.must(self.product, 'rev-parse', 'HEAD'))
-        self.assertTrue((self.product / 'merged-work.txt').exists())
-
-    def test_checks_and_harness_actions_are_exempt(self):
-        dependency = self.repo.create('bug', 'Unfinished')
-        self.repo.set_dependencies(self.item.id, [dependency.id])
-        record = self.repo.scan().valid[self.item.id]
-        for name in ('merged', 'verify'):
-            with self.subTest(step=name):
-                step = self.repo.workflow('default').steps[name]
-                self.assertIsNone(self.runner.dependency_wait(record, step, self.repo.scan()))
 
 
 class DependencyAgentEdits(unittest.TestCase):

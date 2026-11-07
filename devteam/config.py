@@ -21,7 +21,6 @@ class Role:
     command: list[str]
     permission: str
     branch: bool = False
-    record: bool = False
     push: bool = False
     stream: str = "text"
 
@@ -44,7 +43,6 @@ def load_roles(path: Path | None = None) -> dict[str, Role]:
             permission=engine["permission"],
             stream=engine.get("stream", "text"),
             branch=spec.get("branch", False),
-            record=spec.get("record", False),
             push=spec.get("push", False),
         )
     return roles

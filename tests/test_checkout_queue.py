@@ -1,23 +1,38 @@
 """Checkout ownership and dispatch ordering with real repositories."""
+import os
+from pathlib import Path
+import subprocess
+import tempfile
 import threading
 import unittest
 from unittest.mock import patch
 
 from devteam import git
-from tests import test_merged
+from devteam.backlog import Repository
+from devteam.runner import Runner
+from tests.test_checkout import IDENTITY
 
 
 class CheckoutQueue(unittest.TestCase):
     def setUp(self):
-        test_merged.Merged.setUp(self)
-        self.runner.max_runs = 20
+        self.enterContext(patch.dict(os.environ, IDENTITY))
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.product = root / 'product'
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(self.product)], check=True)
+        (self.product / 'app.txt').write_text('initial\n')
+        git.commit_all(self.product, 'initial')
+        self.repo = Repository(git.ensure_backlog(self.product))
+        epic = self.repo.create('epic', 'Delivery')
+        self.item = self.repo.create('story', 'Held', parent=epic.id)
+        self.other = self.repo.create('story', 'Next', parent=epic.id)
+        self.messages = []
+        self.runner = Runner(self.repo, engine=self.engine, report=self.messages.append, checkout=self.product,
+                             max_runs=20, check=self.check)
+        self.at(self.item, 'implement')
+        self.runner.take_checkout(self.item)
         self.at(self.item, 'accept')
         self.runner.take_checkout(self.other)
-        self.runner.check = self.check
-        self.runner.engine = self.engine
         self.calls = []
-
-    no_engine = test_merged.Merged.no_engine
 
     def at(self, record, step):
         current = self.repo.scan().valid[record.id]

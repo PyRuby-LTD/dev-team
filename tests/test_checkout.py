@@ -26,8 +26,8 @@ WORKFLOW = {
 IDENTITY = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
 
 
-def role(name, branch=False, record=False):
-    return Role(name, "fake", "m", 5, ["fake"], "w", branch, record)
+def role(name, branch=False, push=False):
+    return Role(name, "fake", "m", 5, ["fake"], "w", branch=branch, push=push)
 
 
 class CheckoutAcceptance(unittest.TestCase):
@@ -50,7 +50,7 @@ class CheckoutAcceptance(unittest.TestCase):
         workflows.mkdir()
         (workflows / "default.json").write_text(json.dumps(WORKFLOW))
         self.roles = {"analyst": role("analyst"), "implementer": role("implementer", True),
-                      "reviewer": role("reviewer", True), "publisher": Role("publisher", "fake", "m", 5, ["fake"], "w", True, True, True)}
+                      "reviewer": role("reviewer", True), "publisher": role("publisher", True, True)}
         self.backlog = git.ensure_backlog(self.product)
         self.repo = Repository(self.backlog, workflows, self.roles)
         self.epic = self.repo.create("epic", "Epic")
@@ -150,23 +150,6 @@ class CheckoutAcceptance(unittest.TestCase):
         git.must(self.product, "checkout", "--", "app.txt")
         self.runner.run(once=True)
         self.assertEqual("accept", self.steps()["STORY-001"])
-
-    def test_pr_transition_publishes_with_a_record_of_the_item(self):
-        self.repo.transition(self.first.id, "play")
-        self.runner.run(once=True)
-        self.repo.transition(self.first.id, "pr")
-        self.runner.run(once=True)
-        self.assertEqual("done", self.steps()["STORY-001"])
-        self.assertEqual("publisher", self.calls[-1][1])
-        self.assertIn("base branch is main", self.calls[-1][2])
-        self.assertEqual("origin/devteam/STORY-001",
-                         git.must(self.product, "rev-parse", "--abbrev-ref", "devteam/STORY-001@{upstream}"))
-        record = git.must(self.remote, "show", "devteam/STORY-001:docs/work-items/STORY-001.md")
-        self.assertIn("id: STORY-001", record)
-        self.assertIn("title: First", record)
-        self.assertEqual(["STORY-001: record the work item", "STORY-001: implement by implementer", "init"],
-                         self.commits(self.remote, "devteam/STORY-001"))
-        self.assertNotEqual(0, git.run(self.remote, "cat-file", "-e", "main:docs/work-items/STORY-001.md").returncode)
 
     def test_push_failure_leaves_the_item_at_publish_without_invoking(self):
         git.must(self.product, "remote", "remove", "origin")

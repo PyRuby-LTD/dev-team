@@ -125,7 +125,7 @@ class Outcomes(ModalScreen):
     def compose(self):
         options = [Option(Text.assemble((outcome.name, "bold"), f"  ->  {outcome.next}\n", (outcome.means, "dim")),
                           id=outcome.name)
-                   for outcome in self.step.outcomes.values()]
+                   for outcome in self.step.customer_outcomes.values()]
         with Vertical(classes="dialog"):
             yield Label(Text.assemble((self.item.id, "bold"), "  ", self.item.title, f"\nAt {self.step.name}."))
             yield OptionList(*options)
