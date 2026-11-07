@@ -171,13 +171,16 @@ The work proceeds in five milestones:
 ## Testing Decisions
 
 - A good test drives the harness from outside and asserts on what it leaves behind: the YAML work items in the backlog directory, their step and step history, and the git commits. Tests never assert on displayed or prompt wording.
-- The seam is the `dev-team` command run as a subprocess against a temporary product git repository, with stub `claude`, `codex` and `gh` CLIs on the path. The stubs follow a scripted plan in which each run calls `dev-team backlog submit` or `create` exactly as a real agent would.
+- The seam is the commands just below the command line: `DevTeam` in `commands.py`, called in the test's own process against a temporary product git repository. The command line itself is a thin wrapper of arguments, stdin, stdout and exit codes around those commands.
+- Agents are stood in for by a scripted engine running in the harness's process. Each invocation takes the next turn from the test's script, which does the agent's file and git work and calls `DevTeam`'s submit, create or update exactly as a real agent would through the command line. The `gh` stub stays on the path for the harness's own pull request calls.
+- Only what needs a process of its own runs `dev-team` as a subprocess with stub `claude` and `codex` CLIs: launching a copied harness from outside the product, workflows reported invalid at load, and one journey through the command line and a real engine invocation.
 - One test is one journey, for example: capture a request, analyse it into a question, answer it, analyse into drafts, approve, and find valid drafts at `captured`. Later journeys cover branches and the checkout queue, each default-workflow group, won't fix, standards at `ready`, and concurrency.
 - Failure journeys run through the same seam: an invalid submission is refused with reasons, an agent exiting without a submission leaves the item in place, a missing or failing engine is reported, an invalid workflow is reported at load.
-- Customer steps are exercised at the command seam through the same commands the TUI calls, so the journeys cover recording customer outcomes, answers, feedback and standards without driving the TUI.
+- Customer steps are exercised through `DevTeam`'s record command, the same path the TUI takes, so the journeys cover recording customer outcomes, answers, feedback and standards without driving the TUI.
 - The TUI is tested lightly: a small number of pilot tests that it opens on a backlog and that each of the five inputs reaches the harness. No assertions on labels or layout.
 - The existing module-level tests of the redesign are kept only where a behaviour is hard to reach through the command seam, such as requirement merging edge cases, and removed as journeys cover them.
 - Prior art: the launcher tests that run the command as a subprocess against temporary products with stub engines; the scripted engine stub that follows a plan per invocation; the original TUI's pilot tests for the light TUI coverage.
+- The suite stays fast enough to run on every change: journeys never start a process they do not need, and pilot tests fill text boxes rather than typing them key by key.
 
 ## Out of Scope
 
