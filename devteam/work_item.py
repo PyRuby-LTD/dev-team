@@ -1,6 +1,7 @@
 """Work items as YAML, one file per item at backlog/<kind>s/<ID>.yaml; any field may appear on any type."""
 from dataclasses import dataclass, field
 import os
+import tempfile
 from pathlib import Path
 from typing import Literal
 
@@ -8,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, mo
 import yaml
 
 from devteam import git
-from devteam.backlog import InvalidRecord, StrictLoader, mutation, valid_id
+from devteam.backlog import InvalidRecord, StrictLoader, valid_id
 
 from .workflow import InvalidWorkflow, cached
 from .steps import REQUIREMENTS
@@ -363,12 +364,15 @@ class Backlog:
             raise InvalidWorkItem(f"the harness sets {', '.join(owned)}")
         if kind not in DIRECTORIES:
             raise InvalidWorkItem(f"type must be one of {', '.join(DIRECTORIES)}")
-        with mutation(self.root):
-            if item_id is None:
-                number = 1
+        numbered = item_id is None
+        number = 1
+        while True:
+            if numbered:
                 while self.path(f"{kind.upper()}-{number:03d}").exists():
                     number += 1
                 item_id = f"{kind.upper()}-{number:03d}"
+            elif self.path(item_id).exists():
+                raise InvalidWorkItem(f"{item_id} already exists")
             data = {"id": item_id, "type": kind, "title": title, **fields}
             if kind != "epic":
                 workflow = workflow or WORKFLOWS.get(kind, DEFAULT_WORKFLOW)
@@ -377,20 +381,23 @@ class Backlog:
                 except InvalidWorkflow as exc:
                     raise InvalidWorkItem(str(exc)) from None
             item = _build(data)
-            if self.path(item_id).exists():
-                raise InvalidWorkItem(f"{item_id} already exists")
-            self._write(item, f"{item_id}: captured" + (f" at {item.step}" if item.step else ""))
+            try:
+                self._write(item, f"{item_id}: captured" + (f" at {item.step}" if item.step else ""), new=True)
+            except FileExistsError:
+                # Another writer took this number after it was chosen.
+                if not numbered:
+                    raise InvalidWorkItem(f"{item_id} already exists") from None
+                continue
             return item
 
     def update(self, item_id, fields):
         """Replace top-level fields; a None value removes the field."""
         if owned := [key for key in OWNED if key in fields]:
             raise InvalidWorkItem(f"the harness sets {', '.join(owned)}")
-        with mutation(self.root):
-            item = self.get(item_id)
-            updated = _build({**item.model_dump(exclude_none=True), **fields})
-            self._write(updated, f"{item_id}: updated {', '.join(fields)}")
-            return updated
+        item = self.get(item_id)
+        updated = _build({**item.model_dump(exclude_none=True), **fields})
+        self._write(updated, f"{item_id}: updated {', '.join(fields)}")
+        return updated
 
     def record(self, item_id, outcome, fragment=None, at=None):
         """Record the outcome of the item's current step and move the item to the step it leads to.
@@ -400,35 +407,43 @@ class Backlog:
         choice of standards replaces the item's. Given the step the outcome is for, an item already moved on from
         it is left alone.
         """
-        with mutation(self.root):
-            item = self.get(item_id)
-            if at is not None and item.step != at:
-                raise MovedOn(f"{item_id} moved on from {at} to {item.step} meanwhile")
-            step = self.step(item)
-            fragment = step.check(outcome, fragment)
-            data = merge_requirements(item, fragment) if step.output == REQUIREMENTS else item.model_dump(exclude_none=True)
-            if step.needs_you and "standards" in fragment:
-                data["standards"] = choose_standards(item, fragment["standards"])
-            target = step.outcomes[outcome].next
-            for entry in data.get("step_outputs", []):
-                if entry["to"] == step.name:
-                    entry["passed"] = True
-            data["step_outputs"] = data.get("step_outputs", []) + [
-                {"step": step.name, "outcome": outcome, "to": target, "output": fragment}]
-            data["step"] = target
-            updated = _build(data)
-            self._write(updated, f"{item_id}: {step.name} {outcome} -> {target}")
-            return updated
+        item = self.get(item_id)
+        if at is not None and item.step != at:
+            raise MovedOn(f"{item_id} moved on from {at} to {item.step} meanwhile")
+        step = self.step(item)
+        fragment = step.check(outcome, fragment)
+        data = merge_requirements(item, fragment) if step.output == REQUIREMENTS else item.model_dump(exclude_none=True)
+        if step.needs_you and "standards" in fragment:
+            data["standards"] = choose_standards(item, fragment["standards"])
+        target = step.outcomes[outcome].next
+        for entry in data.get("step_outputs", []):
+            if entry["to"] == step.name:
+                entry["passed"] = True
+        data["step_outputs"] = data.get("step_outputs", []) + [
+            {"step": step.name, "outcome": outcome, "to": target, "output": fragment}]
+        data["step"] = target
+        updated = _build(data)
+        self._write(updated, f"{item_id}: {step.name} {outcome} -> {target}")
+        return updated
 
-    def _write(self, item, message):
+    def _write(self, item, message, new=False):
+        """Write the item whole, so a reader never sees half of it; a new item is never written over another."""
         path = self.path(item.id)
         errors = self.scan(replacement=item).errors.get(path)
         if errors:
             raise InvalidWorkItem(f"{item.id}: " + "; ".join(errors))
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(path.name + ".tmp")
-        temporary.write_text(dump(item), encoding="utf-8")
-        os.replace(temporary, path)
+        handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as file:
+                file.write(dump(item))
+            if new:
+                os.link(temporary, path)
+            else:
+                os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
         self._commit(message, path)
 
     def _commit(self, message, *paths):

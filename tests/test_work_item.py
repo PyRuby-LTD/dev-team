@@ -2,6 +2,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import yaml
 
@@ -93,6 +94,23 @@ class WorkItems(unittest.TestCase):
         self.assertEqual(("default", "captured"), (story.workflow, story.step))
         self.assertEqual(self.backlog.root / "stories" / "STORY-002.yaml", self.backlog.path(second.id))
         self.assertEqual(second, self.backlog.get("STORY-002"))
+
+    def test_capture_never_takes_a_number_another_writer_claimed_while_it_was_checking(self):
+        check = self.backlog.scan
+        rival = self.backlog.root / "stories" / "STORY-001.yaml"
+
+        def claimed_meanwhile(*, replacement=None):
+            if replacement is not None and not rival.exists():
+                rival.parent.mkdir(parents=True, exist_ok=True)
+                rival.write_text("id: STORY-001\ntype: story\ntitle: Drafted by another agent\n"
+                                 "workflow: default\nstep: captured\n")
+            return check(replacement=replacement)
+
+        with patch.object(self.backlog, "scan", claimed_meanwhile):
+            story = self.backlog.create("story", "Log requests")
+        self.assertEqual("STORY-002", story.id)
+        self.assertEqual("Drafted by another agent", self.backlog.get("STORY-001").title)
+        self.assertEqual("Log requests", self.backlog.get("STORY-002").title)
 
     def test_any_field_may_appear_on_any_type(self):
         task = self.backlog.create("task", "Reproduce the hang", {"steps_to_reproduce": ["Update twice"]})

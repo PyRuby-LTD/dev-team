@@ -1,10 +1,12 @@
 """The git operations the harness relies on: the backlog branch and per-item code branches."""
 import re
 import subprocess
+import time
 from pathlib import Path
 
 BACKLOG_BRANCH = "devteam-backlog"
 BACKLOG_DIR = "backlog"
+LOCK_ATTEMPTS = 20
 
 
 class GitError(Exception):
@@ -18,7 +20,7 @@ def run(directory, *args):
 def must(directory, *args):
     out = run(directory, *args)
     if out.returncode:
-        raise GitError(f"git {' '.join(args)}: {out.stderr.strip() or out.stdout.strip()}")
+        raise GitError(f"git {' '.join(map(str, args))}: {out.stderr.strip() or out.stdout.strip()}")
     return out.stdout.strip()
 
 
@@ -70,7 +72,21 @@ def fast_forward(directory, branch, remote_ref):
 
 
 def commit_all(directory, message, *paths):
-    """Commit everything, or just the given paths; returns False when nothing changed."""
+    """Commit everything, or just the given paths; returns False when nothing changed.
+
+    Writers that commit at the same moment collide on git's index lock, so a collision is waited out and the
+    whole commit tried again; each writer commits only its own paths, so a retry takes nothing of another's.
+    """
+    for attempt in range(1, LOCK_ATTEMPTS + 1):
+        try:
+            return _commit(directory, message, paths)
+        except GitError as exc:
+            if "index.lock" not in str(exc) or attempt == LOCK_ATTEMPTS:
+                raise
+            time.sleep(0.05 * attempt)
+
+
+def _commit(directory, message, paths):
     must(directory, "add", "-A", "--", *(paths or (".",)))
     if run(directory, "diff", "--cached", "--quiet", "--", *(paths or (".",))).returncode == 0:
         return False
