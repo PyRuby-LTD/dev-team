@@ -107,5 +107,43 @@ class SubmitCommand(unittest.TestCase):
         self.assertIn("BUG-999 does not exist", str(exit.exception.code))
 
 
+class CreateAndUpdateCommands(unittest.TestCase):
+    def setUp(self):
+        self.product = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.prefix = ["--product", str(self.product), "backlog"]
+
+    def run_command(self, *args, stdin=""):
+        with mock.patch("sys.stdin", io.StringIO(stdin)), contextlib.redirect_stdout(io.StringIO()) as output:
+            main(self.prefix + list(args))
+        return output.getvalue()
+
+    def stored(self, directory, item_id):
+        return yaml.safe_load((self.product / "backlog" / directory / f"{item_id}.yaml").read_text())
+
+    def test_drafts_are_created_with_their_fields_and_requests_start_in_the_request_workflow(self):
+        self.assertEqual("EPIC-001: captured\n", self.run_command("create", "epic", "Meal planning"))
+        out = self.run_command("create", "story", "Filter recipes", stdin="parent: EPIC-001\noverview: As a cook\n")
+        self.assertEqual("STORY-001: captured at captured\n", out)
+        self.assertEqual({"id": "STORY-001", "type": "story", "title": "Filter recipes", "parent": "EPIC-001",
+                          "overview": "As a cook", "workflow": "default", "step": "captured"},
+                         self.stored("stories", "STORY-001"))
+        self.run_command("create", "request", "Plan meals")
+        self.assertEqual("request", self.stored("requests", "REQUEST-001")["workflow"])
+
+    def test_update_replaces_fields_and_null_removes_one(self):
+        self.run_command("create", "story", "Filter recipes", stdin="overview: As a cook\nscope: Search\n")
+        self.assertEqual("STORY-001: updated\n", self.run_command("update", "STORY-001", stdin="scope: null\n"))
+        self.assertNotIn("scope", self.stored("stories", "STORY-001"))
+
+    def test_refused_fields_exit_with_the_reason_and_nothing_is_written(self):
+        for stdin, message in (("parent: EPIC-009\n", "parent EPIC-009 is missing"),
+                               ("- a list\n", "must be a YAML mapping"),
+                               ("step: done\n", "the harness sets step")):
+            with self.subTest(stdin), self.assertRaises(SystemExit) as exit:
+                self.run_command("create", "story", "Filter recipes", stdin=stdin)
+            self.assertIn(message, str(exit.exception.code))
+        self.assertEqual([], list(self.product.rglob("*.yaml")))
+
+
 if __name__ == "__main__":
     unittest.main()

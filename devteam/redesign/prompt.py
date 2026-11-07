@@ -60,11 +60,13 @@ class Prompts:
                                        autoescape=False)
         self.environment.filters["yaml"] = to_yaml
 
-    def context(self, item, step, values=None):
+    def context(self, item, step, values=None, backlog=None):
         return {
             "item": item,
             "step": step,
             "pending": item.pending(step.name),
+            "work_items": [backlog.get(i) for i in item.work_items or []] if backlog else [],
+            "requirements": Requirements.model_validate(item.model_dump(include=set(Requirements.model_fields))),
             "standards": chosen_standards(item, self.standards),
             "available_standards": list(self.standards.values()),
             "requirement_fields": list(Requirements.model_fields),
@@ -72,11 +74,11 @@ class Prompts:
             **(values or {}),
         }
 
-    def render(self, item, step, values=None):
+    def render(self, item, step, values=None, backlog=None):
         """The step's prompt followed by the instructions for submitting its outcome."""
         if not isinstance(step, AgentStep):
             raise InvalidPrompt(f"step {step.name!r} is not an agent step, so it has no prompt")
-        context = self.context(item, step, values)
+        context = self.context(item, step, values, backlog)
         name = step.prompt.relative_to(self.directory).as_posix()
         try:
             return "\n".join(self.environment.get_template(template).render(context) for template in (name, SUBMIT))

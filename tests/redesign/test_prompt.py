@@ -137,6 +137,40 @@ class PromptCommand(unittest.TestCase):
         self.assertIn("==== implement: agent:implementer ====", headers)
         self.assertIn("==== publish: agent:publisher ====", headers)
 
+    def test_an_item_is_previewed_from_the_products_backlog(self):
+        product = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        tasks = product / "backlog" / "tasks"
+        tasks.mkdir(parents=True)
+        (tasks / "TASK-001.yaml").write_text("id: TASK-001\ntype: task\ntitle: Extract InputWidget\n"
+                                             "workflow: default\nstep: analysis\nchange: Add InputWidget\n")
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            main(["--product", str(product), "prompt", "analysis", "--item", "TASK-001"])
+        self.assertIn("## The task: Extract InputWidget", output.getvalue())
+        self.assertIn("## Example task", output.getvalue())
+
+    def test_a_request_is_analysed_through_every_lens_and_sees_its_drafts(self):
+        product = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        backlog = product / "backlog"
+        (backlog / "stories").mkdir(parents=True)
+        (backlog / "requests").mkdir()
+        (backlog / "stories" / "STORY-001.yaml").write_text("id: STORY-001\ntype: story\ntitle: Filter recipes\n"
+                                                             "workflow: default\nstep: captured\n")
+        (backlog / "requests" / "REQUEST-001.yaml").write_text(
+            "id: REQUEST-001\ntype: request\ntitle: Plan meals\nworkflow: request\nstep: analysis\n"
+            "overview: Let families plan meals\nwork_items: [STORY-001]\n"
+            "step_outputs:\n  - {step: review, outcome: revise, to: analysis, output: {feedback: Split search}}\n")
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            main(["--product", str(product), "prompt", "analysis", "--item", "REQUEST-001"])
+        text = output.getvalue()
+        self.assertIn("---- prompt (prompts/analysis/product-owner.md) ----", text)
+        self.assertIn("## The request: Plan meals", text)
+        self.assertIn("## Sent back by review (revise)\n\n~~~yaml\nfeedback: Split search\n~~~", text)
+        self.assertIn("## Drafts\n\n~~~yaml\nid: STORY-001\n", text)
+        for heading in ("## Lens: architect", "## Lens: platform", "## Lens: quality", "## Rule: api-contracts"):
+            self.assertIn(heading, text)
+        self.assertIn("backlog create <type>", text)
+        self.assertIn("- `drafted`: ", text)
+
     def test_a_step_without_a_prompt_is_refused(self):
         with self.assertRaises(SystemExit) as exit:
             self.preview("sync")

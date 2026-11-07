@@ -15,6 +15,7 @@ from .steps import REQUIREMENTS
 
 DIRECTORIES = {"epic": "epics", "story": "stories", "task": "tasks", "bug": "bugs", "request": "requests"}
 DEFAULT_WORKFLOW = "default"
+WORKFLOWS = {"request": "request"}
 
 
 class InvalidWorkItem(ValueError):
@@ -55,6 +56,17 @@ class Requirements(Model):
     persona_changes: list[Change] | None = None
     standards: list[StandardChoice] | None = None
     questions: list[Question] | None = None
+    work_items: list[str] | None = None  # the items a request was divided into
+
+    @field_validator("work_items")
+    @classmethod
+    def _work_items(cls, value):
+        if value is not None:
+            if not all(valid_id(i) for i in value):
+                raise ValueError("must be a list of item IDs")
+            if len(set(value)) != len(value):
+                raise ValueError("repeats an item ID")
+        return value
 
 
 class StepOutput(Model):
@@ -242,6 +254,9 @@ def _check_links(snapshot):
         for dependency in item.depends_on or []:
             if dependency not in items:
                 snapshot.error(snapshot.paths[item.id], f"dependency {dependency} is missing or invalid")
+        for work_item in item.work_items or []:
+            if work_item not in items:
+                snapshot.error(snapshot.paths[item.id], f"work item {work_item} is missing or invalid")
         chain = [item.id]
         while parent in items:
             if parent in chain:
@@ -315,7 +330,7 @@ class Backlog:
             snapshot.add(self.path(replacement.id), replacement)
         return _check_links(snapshot)
 
-    def create(self, kind, title, fields=None, *, item_id=None, workflow=DEFAULT_WORKFLOW):
+    def create(self, kind, title, fields=None, *, item_id=None, workflow=None):
         """Capture an item; every kind but an epic starts at its workflow's initial step."""
         fields = dict(fields or {})
         if owned := [key for key in OWNED if key in fields]:
@@ -330,6 +345,7 @@ class Backlog:
                 item_id = f"{kind.upper()}-{number:03d}"
             data = {"id": item_id, "type": kind, "title": title, **fields}
             if kind != "epic":
+                workflow = workflow or WORKFLOWS.get(kind, DEFAULT_WORKFLOW)
                 try:
                     data.update(workflow=workflow, step=self.workflow(workflow).initial)
                 except flow.InvalidWorkflow as exc:

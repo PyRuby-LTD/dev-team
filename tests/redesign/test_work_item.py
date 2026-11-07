@@ -118,6 +118,15 @@ class WorkItems(unittest.TestCase):
                           "step": "captured", "current_behaviour": "Hangs", "expected_behaviour": "Saves"},
                          self.stored("BUG-001"))
 
+    def test_a_request_lists_the_work_items_it_was_divided_into(self):
+        self.backlog.create("story", "Log requests")
+        self.backlog.create("bug", "Log errors", {"work_items": ["STORY-001"]})
+        self.assertEqual(["STORY-001"], self.backlog.get("BUG-001").work_items)
+        with self.assertRaisesRegex(InvalidWorkItem, "work item STORY-009 is missing"):
+            self.backlog.update("BUG-001", {"work_items": ["STORY-001", "STORY-009"]})
+        with self.assertRaisesRegex(InvalidWorkItem, "work_items: Value error, repeats an item ID"):
+            self.backlog.update("BUG-001", {"work_items": ["STORY-001", "STORY-001"]})
+
     def test_update_leaves_step_output_and_position_to_recording(self):
         self.backlog.create("bug", "Hang")
         for fields, message in (({"step": "done"}, "the harness sets step"),

@@ -10,7 +10,7 @@ from devteam.evidence import PathGuard
 from . import flow, submission
 from .prompt import RUN_VALUES, InvalidPrompt, Prompts
 from .steps import AgentStep, InvalidStep
-from .work_item import Backlog, InvalidWorkItem, parse
+from .work_item import DIRECTORIES, Backlog, InvalidWorkItem, parse
 
 EXAMPLE = ROOT / "prompts" / "examples" / "work-item.yaml"
 
@@ -39,6 +39,33 @@ def cmd_submit(args):
     print(f"{item.id} {step.name}: {args.outcome} staged")
 
 
+def _fields(text):
+    fields = submission.parse(text)
+    if not isinstance(fields, dict):
+        raise InvalidWorkItem("the fields on stdin must be a YAML mapping")
+    return fields
+
+
+def cmd_create(args):
+    checkout, root = locate(args)
+    backlog = Backlog(root, guard=PathGuard(checkout))
+    try:
+        item = backlog.create(args.type, args.title, _fields(sys.stdin.read()))
+    except (InvalidWorkItem, InvalidStep, OSError, UnicodeError) as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"{item.id}: captured" + (f" at {item.step}" if item.step else ""))
+
+
+def cmd_update(args):
+    checkout, root = locate(args)
+    backlog = Backlog(root, guard=PathGuard(checkout))
+    try:
+        item = backlog.update(args.id, _fields(sys.stdin.read()))
+    except (InvalidWorkItem, InvalidStep, OSError, UnicodeError) as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"{item.id}: updated")
+
+
 def _values(pairs):
     values = {name: f"<{name}>" for name in RUN_VALUES}
     for pair in pairs:
@@ -52,8 +79,10 @@ def _values(pairs):
 def cmd_prompt(args):
     """Print what each agent step's role would be given, for reviewing the prompts."""
     try:
+        backlog = None
         if args.item:
-            item = Backlog(locate(args)[1]).get(args.item)
+            backlog = Backlog(locate(args)[1])
+            item = backlog.get(args.item)
         else:
             item = parse(Path(args.file or EXAMPLE).read_text(encoding="utf-8"))
         if item.workflow is None:
@@ -69,7 +98,7 @@ def cmd_prompt(args):
         roles = load_roles()
         values = _values(args.set)
         for step in steps:
-            rendered = prompts.render(item, step, values)
+            rendered = prompts.render(item, step, values, backlog)
             print(f"==== {step.name}: {step.owner} ====\n")
             print(f"---- system prompt (roles/{step.role}.md) ----\n")
             print(roles[step.role].brief())
@@ -90,6 +119,14 @@ def main(argv=None):
     submit.add_argument("id")
     submit.add_argument("outcome")
     submit.set_defaults(func=cmd_submit)
+    create = actions.add_parser("create", help="capture a work item, with its other fields as YAML on stdin")
+    create.add_argument("type", choices=list(DIRECTORIES))
+    create.add_argument("title")
+    create.set_defaults(func=cmd_create)
+    update = actions.add_parser("update", help="replace a work item's fields with those given as YAML on stdin; "
+                                               "a null value removes one")
+    update.add_argument("id")
+    update.set_defaults(func=cmd_update)
 
     p = sub.add_parser("prompt", help="print the prompts agent steps would be given, to review them")
     p.add_argument("step", nargs="?", help="one agent step (default: every agent step in the item's workflow)")
