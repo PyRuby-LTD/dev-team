@@ -1,5 +1,6 @@
 """The harness loop: perform each step the harness or an agent owns, then record its outcome and move the item on."""
 from datetime import datetime, timezone
+import queue
 import threading
 import time
 
@@ -117,6 +118,11 @@ class Harness:
         now = time.monotonic()
         return [(item, step) for item, step in found if self.not_before.get(item.id, now) <= now]
 
+    def note_waiting(self, item, step, reason):
+        if self.waiting.get(item.id) != reason:
+            self.report(f"{item.id} {step.name}: {reason}")
+        self.waiting[item.id] = reason
+
     def perform(self, item, step):
         """Perform one step and record its outcome; True when the item moved on."""
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
@@ -128,9 +134,7 @@ class Harness:
             outcome, output = step.perform(self, item, log)
             updated = self.backlog.record(item.id, outcome, output, at=step.name)
         except Waiting as reason:
-            if self.waiting.get(item.id) != str(reason):
-                self.report(f"{item.id} {step.name}: {reason}")
-            self.waiting[item.id] = str(reason)
+            self.note_waiting(item, step, str(reason))
             if step.retry_after:
                 self.not_before[item.id] = time.monotonic() + step.retry_after
             return False
@@ -152,14 +156,36 @@ class Harness:
         return True
 
     def run(self, once=False, interval=2.0, stop=None):
+        """Perform each pending step on its own thread, with only one step at a time holding the checkout."""
         stop = stop or threading.Event()
+        finished = queue.Queue()
+        running = {}  # item id -> whether its step holds the checkout
+        progressed = False
         while not stop.is_set():
-            progressed = False
-            for item, step in self.pending():
-                if stop.is_set():
+            pending = self.pending()
+            if self.checkout is not None and not any(running.values()) and (holder := self.holder()):
+                # Otherwise an item waiting for the checkout could take every turn from the item holding it.
+                pending.sort(key=lambda pair: pair[0].id != holder.id)
+            for item, step in pending:
+                if item.id in running:
+                    continue
+                holds = step.uses_checkout(self)
+                if holds and (holder := next((other for other, held in running.items() if held), None)):
+                    self.note_waiting(item, step, f"waiting for the checkout, which {holder} holds")
+                    continue
+                running[item.id] = holds
+                threading.Thread(target=lambda item=item, step=step: finished.put((item.id, self.perform(item, step))),
+                                 daemon=True).start()
+            if not running:
+                if once and not progressed:
                     return
-                progressed = self.perform(item, step) or progressed
-            if once and not progressed:
-                return
-            if not progressed:
-                stop.wait(interval)
+                if not progressed:
+                    stop.wait(interval)
+                progressed = False
+                continue
+            try:
+                item_id, moved = finished.get(timeout=interval)
+            except queue.Empty:
+                continue
+            running.pop(item_id)
+            progressed = progressed or moved
