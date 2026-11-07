@@ -6,6 +6,9 @@ steps:
       analyse:
         next: analysis
         means: The item says what you want well enough for the product owner to analyse it.
+      wontfix:
+        next: wontfix
+        means: The item will not be done; it stays in the backlog with its history.
 
   analysis:
     owner: agent:product_owner
@@ -66,6 +69,9 @@ steps:
       rework:
         next: analysis
         means: The specification needs changing first; say why under Feedback before choosing this.
+      wontfix:
+        next: wontfix
+        means: The item will not be done; it stays in the backlog with its history.
 
   implement:
     owner: agent:implementer
@@ -282,6 +288,10 @@ steps:
         means: The checkout is back on the base branch, and the item's branch is kept.
 
   abandoned:
+    owner: human
+    outcomes: {}
+
+  wontfix:
     owner: human
     outcomes: {}
 

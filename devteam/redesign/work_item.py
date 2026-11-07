@@ -36,6 +36,18 @@ class Question(Model):
     answer: str | None = None
 
 
+class DroppedDraft(Model):
+    id: str
+    reason: str
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, value):
+        if not valid_id(value):
+            raise ValueError("must be an item ID")
+        return value
+
+
 class StandardChoice(Model):
     name: str
     reason: str
@@ -57,6 +69,7 @@ class Requirements(Model):
     standards: list[StandardChoice] | None = None
     questions: list[Question] | None = None
     work_items: list[str] | None = None  # the items a request was divided into
+    dropped: list[DroppedDraft] | None = None
 
     @field_validator("work_items")
     @classmethod
@@ -257,6 +270,9 @@ def _check_links(snapshot):
         for work_item in item.work_items or []:
             if work_item not in items:
                 snapshot.error(snapshot.paths[item.id], f"work item {work_item} is missing or invalid")
+        for drop in item.dropped or []:
+            if drop.id not in items:
+                snapshot.error(snapshot.paths[item.id], f"dropped item {drop.id} is missing or invalid")
         chain = [item.id]
         while parent in items:
             if parent in chain:

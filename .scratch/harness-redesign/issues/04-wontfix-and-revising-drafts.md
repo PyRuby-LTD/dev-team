@@ -6,6 +6,6 @@
 
 **Status:** ready-for-agent
 
-- [ ] A journey test revises a request: a stub product owner updates one draft and drops another from the request's work items; the customer records `wontfix` on the dropped draft, which stays in the backlog at `wontfix` with its history
-- [ ] The request analysis prompt covers revising drafts this way, drafted for the author to review
-- [ ] Nothing in the harness offers deleting a work item
+- [x] A journey test revises a request: a stub product owner updates one draft and drops another from the request's work items; the customer records `wontfix` on the dropped draft, which stays in the backlog at `wontfix` with its history
+- [x] The request analysis prompt covers revising drafts this way, drafted for the author to review
+- [x] Nothing in the harness offers deleting a work item

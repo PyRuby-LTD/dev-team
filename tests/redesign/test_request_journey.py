@@ -125,6 +125,58 @@ class RequestJourney(Product):
         self.assertEqual("", self.git("status", "--porcelain", cwd=self.product / "backlog"))
 
 
+THREE_DRAFTS = """$DEV_TEAM backlog create epic "Meal planning" <<'ITEM'
+overview: Plan a week of meals.
+ITEM
+$DEV_TEAM backlog create story "Plan a week" <<'ITEM'
+parent: EPIC-001
+overview: As a cook, I want to plan a week of meals.
+ITEM
+$DEV_TEAM backlog create story "Print the plan" <<'ITEM'
+parent: EPIC-001
+overview: As a cook, I want to print my plan.
+ITEM
+$DEV_TEAM backlog submit REQUEST-001 drafted <<'OUTPUT'
+work_items: [EPIC-001, STORY-001, STORY-002]
+OUTPUT
+"""
+
+REVISED_DRAFTS = """$DEV_TEAM backlog update STORY-001 <<'ITEM'
+overview: As a cook, I want to plan a week of meals and print it.
+ITEM
+$DEV_TEAM backlog submit REQUEST-001 drafted <<'OUTPUT'
+work_items: [EPIC-001, STORY-001]
+dropped:
+  - id: STORY-002
+    reason: Printing is now part of planning a week.
+OUTPUT
+"""
+
+
+class RevisingDrafts(Product):
+    def test_a_revised_request_updates_one_draft_and_drops_another_which_the_customer_marks_wont_fix(self):
+        self.script({"sh": THREE_DRAFTS}, {"sh": REVISED_DRAFTS})
+        self.capture_and_analyse()
+        self.ok("run", "--once")
+        self.assertEqual("review", self.request().step)
+
+        self.ok("backlog", "record", "REQUEST-001", "revise", stdin="feedback: Printing belongs with planning.\n")
+        self.ok("run", "--once")
+        request = self.request()
+        self.assertEqual("review", request.step)
+        self.assertEqual(["EPIC-001", "STORY-001"], request.work_items)
+        self.assertEqual([("STORY-002", "Printing is now part of planning a week.")],
+                         [(drop.id, drop.reason) for drop in request.dropped])
+        self.assertIn("print", self.item("stories", "STORY-001").overview)
+
+        self.ok("backlog", "record", "REQUEST-001", "approve")
+        self.ok("backlog", "record", "STORY-002", "wontfix")
+        dropped = self.item("stories", "STORY-002")
+        self.assertEqual("wontfix", dropped.step)
+        self.assertEqual([("captured", "wontfix", "wontfix")],
+                         [(entry.step, entry.outcome, entry.to) for entry in dropped.step_outputs])
+        self.assertNotEqual(0, self.dev_team("backlog", "record", "STORY-002", "analyse").returncode)
+
 class AgentFailures(Product):
     def assertStillAtAnalysis(self, result):
         self.assertNotEqual(0, result.returncode)
@@ -156,6 +208,17 @@ class AgentFailures(Product):
 
 
 class CustomerOutcomes(Product):
+    def test_an_item_at_ready_can_be_marked_wont_fix(self):
+        self.script({"sh": "$DEV_TEAM backlog submit STORY-001 analysed <<'OUTPUT'\n"
+                           "acceptance_criteria: [A week of meals can be planned]\nOUTPUT\n"},
+                    {"sh": "$DEV_TEAM backlog submit STORY-001 sound </dev/null"})
+        self.ok("backlog", "create", "story", "Plan a week", stdin="overview: As a cook, I want to plan a week.\n")
+        self.ok("backlog", "record", "STORY-001", "analyse")
+        self.ok("run", "--once")
+        self.assertEqual("ready", self.item("stories", "STORY-001").step)
+        self.ok("backlog", "record", "STORY-001", "wontfix")
+        self.assertEqual("wontfix", self.item("stories", "STORY-001").step)
+
     def test_invalid_output_is_refused_with_reasons_and_the_item_is_unchanged(self):
         self.ok("backlog", "create", "request", "Plan meals")
         path = self.product / "backlog" / "requests" / "REQUEST-001.yaml"

@@ -73,6 +73,16 @@ ITEM
 where a field set to `null` is removed. Submit `work_items` again with every
 draft the request now needs.
 
+A draft the request no longer needs comes out of `work_items`. Never delete,
+close or empty it; the customer marks it won't fix. Add it to `dropped` with
+the reason it is no longer needed, keeping any earlier entries:
+
+```
+dropped:
+  - id: STORY-NNN
+    reason: <why the request no longer needs it>
+```
+
 ## The request: {{ item.title }}
 
 ~~~yaml
