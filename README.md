@@ -122,8 +122,9 @@ their answers, chosen standards and so on) sit at its root. Every run of every
 step appends an entry to its `step_outputs` with its outcome, the step it leads
 to and what it produced. The entries addressed to an item's current step and
 not yet passed are what that step must address. See
-`prompts/examples/work-item.yaml` for every field an item can carry, and the
-other files in `prompts/examples/` for each type.
+`prompts/examples/work-item.yaml` for every field an item can carry, and
+`story.yaml`, `draft-story.yaml`, `task.yaml`, `bug.yaml` and `epic.yaml` beside
+it for what each kind usually contains.
 
 The harness reads only `.yaml` items. Markdown items from the original harness
 are left alone for you to triage by hand.
@@ -230,7 +231,7 @@ request with a reason; it never closes them. Approved drafts wait at
 The challenger attacks the analyst's work before you are asked to play it, and
 runs on a stronger model. The reviewer should be a different engine from the
 implementer; that independence is most of the value. Nothing is ever deleted
-from the backlog: `wontfix` keeps a dropped item as a record.
+from the backlog: `wontfix` keeps a dropped item there.
 
 ## How an agent step runs
 
