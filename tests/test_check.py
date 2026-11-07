@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from devteam import check, git, questions, tui
+from devteam import check, git, questions
 from devteam.backlog import Repository
 from devteam.redesign.console import main
 from devteam.config import Role
@@ -205,13 +205,6 @@ class VerifyStep(unittest.TestCase):
         self.runner.run(once=True)
         self.assertIn("already ran 5 steps", self.messages[-1])
         self.assertLessEqual(len(self.checked), 2)
-
-    def test_terminal_ui_shows_the_step_as_waiting_on_checks_not_on_you(self):
-        self.repo.transition(self.story.id, "implemented")
-        self.repo.transition(self.story.id, "written")
-        row = next(row for row in tui.rows(self.repo, self.runner) if row.key == self.story.id)
-        self.assertEqual(("verify", "checks", False), (row.step, row.waiting_on, row.needs_you))
-        self.assertEqual([record.id for record, step in self.runner.pending()], [self.story.id])
 
 
 if __name__ == "__main__":

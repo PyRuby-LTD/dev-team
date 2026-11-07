@@ -175,21 +175,33 @@ class CustomerOutcomes(Product):
 
 
 class InvalidWorkflow(Product):
-    def test_an_invalid_workflow_is_reported_at_load_naming_the_step_and_problem(self):
+    def run_with_request_workflow(self, change):
         harness = self.base / "harness"
         for directory in ("devteam", "workflows", "prompts", "config", "roles", "standards"):
             shutil.copytree(ROOT / directory, harness / directory, ignore=shutil.ignore_patterns("__pycache__"))
         workflow = harness / "workflows" / "request.yaml"
         data = yaml.safe_load(workflow.read_text())
-        data["steps"]["analysis"]["outcomes"]["drafted"]["next"] = "reviewing"
+        change(data["steps"])
         workflow.write_text(yaml.safe_dump(data))
         self.script({"sh": QUESTIONS})
         result = self.dev_team("run", "--once", env={"PYTHONPATH": str(harness)})
         self.assertNotEqual(0, result.returncode)
-        reported = result.stdout + result.stderr
+        self.assertFalse(self.prompts.exists(), "an engine ran")
+        return result.stdout + result.stderr
+
+    def test_an_invalid_workflow_is_reported_at_load_naming_the_step_and_problem(self):
+        def lead_nowhere(steps):
+            steps["analysis"]["outcomes"]["drafted"]["next"] = "reviewing"
+        reported = self.run_with_request_workflow(lead_nowhere)
         for named in ("request", "analysis", "reviewing"):
             self.assertIn(named, reported)
-        self.assertFalse(self.prompts.exists(), "an engine ran")
+
+    def test_a_customer_step_asking_for_an_input_the_tui_cannot_take_is_rejected_at_load(self):
+        def ask_for_a_priority(steps):
+            steps["review"]["output"]["properties"]["priority"] = {"type": "string"}
+        reported = self.run_with_request_workflow(ask_for_a_priority)
+        for named in ("request", "review", "priority"):
+            self.assertIn(named, reported)
 
 
 if __name__ == "__main__":

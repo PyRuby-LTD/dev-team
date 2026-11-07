@@ -5,9 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from textual.widgets import TextArea
-
-from devteam import questions, tui
+from devteam import questions
 from devteam.backlog import InvalidRecord, Repository
 from devteam.config import ROOT, harness_command, load_roles
 from devteam.runner import Runner, render
@@ -197,33 +195,4 @@ class Requests(unittest.TestCase):
         request = self.current()
         request.metadata['step'] = 'review'
         request.path.write_text(request.render())
-        rows = {row.key: row for row in tui.rows(self.repo)}
-        self.assertEqual(('review', 'YOU'), (rows[request.id].step, rows[request.id].waiting_on))
-        self.assertEqual(('review', 'reviewer'), (rows[story.id].step, rows[story.id].waiting_on))
         self.assertEqual([story.id], [record.id for record, step in runner.pending()])
-
-
-class NewRequestUI(unittest.IsolatedAsyncioTestCase):
-    async def test_new_request_preserves_text_and_derives_title(self):
-        with tempfile.TemporaryDirectory() as directory:
-            repo = Repository(Path(directory) / 'backlog')
-            app = tui.Backlog(repo)
-            async with app.run_test(size=(120, 40)) as pilot:
-                await pilot.press('n')
-                await pilot.pause()
-                self.assertIsInstance(app.screen, tui.NewRequest)
-                await pilot.press('ctrl+s')
-                self.assertIsInstance(app.screen, tui.NewRequest)
-                self.assertEqual({}, repo.scan().valid)
-                text = 'A' * 100 + '\nFull customer text with café.\n'
-                app.screen.query_one(TextArea).text = text
-                await pilot.press('ctrl+s')
-                await pilot.pause()
-                request = repo.scan().valid['REQUEST-001']
-                self.assertEqual(text, request.body)
-                self.assertEqual('A' * 80, request.metadata['title'])
-                self.assertEqual('submitted', request.metadata['step'])
-                self.assertIn('REQUEST-001', [row.key for row in app.data])
-                await pilot.press('n', 'escape')
-                await pilot.pause()
-                self.assertEqual(1, len(repo.scan().valid))

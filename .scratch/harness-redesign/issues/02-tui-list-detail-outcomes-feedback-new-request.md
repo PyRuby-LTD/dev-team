@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-- [ ] A small number of pilot tests show the TUI opens on a backlog and that choosing an outcome, giving feedback and capturing a new request each reach the harness, asserting on the resulting work items, not on labels or layout
-- [ ] Editing the detail template changes what is displayed with no code change
-- [ ] A customer step declaring an unknown output field makes the workflow fail to load with a clear reason, tested at the command seam
-- [ ] The original TUI module and its tests are deleted
+- [x] A small number of pilot tests show the TUI opens on a backlog and that choosing an outcome, giving feedback and capturing a new request each reach the harness, asserting on the resulting work items, not on labels or layout
+- [x] Editing the detail template changes what is displayed with no code change
+- [x] A customer step declaring an unknown output field makes the workflow fail to load with a clear reason, tested at the command seam
+- [x] The original TUI module and its tests are deleted

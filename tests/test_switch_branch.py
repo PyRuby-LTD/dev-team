@@ -1,7 +1,6 @@
-import threading
 import unittest
 
-from devteam import git, tui
+from devteam import git
 from devteam.runner import StepFailed, Waiting
 from tests import test_checkout as fixtures
 
@@ -62,13 +61,3 @@ class SwitchBranch(unittest.TestCase):
         self.runner.run_item(record, step, claimed=True)
         self.runner.switch_branch(self.first.id)
         self.assertEqual(self.tip, git.must(self.product, "rev-parse", "HEAD"))
-
-    def test_tui_requires_dispatch_to_be_stopped_even_between_steps(self):
-        app = tui.Backlog(self.repo, self.runner)
-        app.shown = next(row for row in tui.rows(self.repo, self.runner) if row.key == self.first.id)
-        notices = []
-        app.notify = lambda message, **kwargs: notices.append(message)
-        app.thread = threading.current_thread()
-        app.action_switch_branch()
-        self.assertEqual("main", git.current_branch(self.product))
-        self.assertIn("Press s", notices[-1])

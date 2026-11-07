@@ -12,6 +12,7 @@ from .work_item import Requirements, to_yaml
 
 RUN_VALUES = ("checkout", "branch", "base", "verify_log", "conflicted_files", "evidence_dir")
 SUBMIT = "_submit.md"
+DETAIL = "views/detail.md"
 
 
 class InvalidPrompt(ValueError):
@@ -64,7 +65,8 @@ class Prompts:
         return {
             "item": item,
             "step": step,
-            "pending": item.pending(step.name),
+            "workflow": backlog.workflow(item.workflow) if backlog and item.workflow else None,
+            "pending": item.pending(step.name) if step else [],
             "work_items": [backlog.get(i) for i in item.work_items or []] if backlog else [],
             "requirements": Requirements.model_validate(item.model_dump(include=set(Requirements.model_fields))),
             "standards": chosen_standards(item, self.standards),
@@ -78,10 +80,16 @@ class Prompts:
         """The step's prompt followed by the instructions for submitting its outcome."""
         if not isinstance(step, AgentStep):
             raise InvalidPrompt(f"step {step.name!r} is not an agent step, so it has no prompt")
-        context = self.context(item, step, values, backlog)
         name = step.prompt.relative_to(self.directory).as_posix()
+        return self._render(item, (name, SUBMIT), self.context(item, step, values, backlog))
+
+    def detail(self, item, step=None, backlog=None):
+        """The TUI's view of an item as Markdown, from the same environment and context as its prompts."""
+        return self._render(item, (DETAIL,), self.context(item, step, None, backlog))
+
+    def _render(self, item, templates, context):
         try:
-            return "\n".join(self.environment.get_template(template).render(context) for template in (name, SUBMIT))
+            return "\n".join(self.environment.get_template(template).render(context) for template in templates)
         except TemplateError as exc:
             where = f" ({exc.filename}:{exc.lineno})" if getattr(exc, "lineno", None) else ""
-            raise InvalidPrompt(f"cannot render {name} for {item.id}: {exc}{where}") from None
+            raise InvalidPrompt(f"cannot render {templates[0]} for {item.id}: {exc}{where}") from None

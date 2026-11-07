@@ -94,6 +94,18 @@ def cmd_run(args):
         raise SystemExit(1)
 
 
+def cmd_tui(args):
+    from .tui import run
+
+    try:
+        flow.load_all()
+    except flow.InvalidWorkflow as exc:
+        raise SystemExit(str(exc)) from exc
+    checkout, root = locate(args)
+    # The harness writes from its own thread, so it gets its own backlog whose notices it routes to the screen.
+    run(_backlog(args), Harness(Backlog(root, guard=PathGuard(checkout)), checkout=checkout))
+
+
 def cmd_check(args):
     from devteam import check
 
@@ -187,6 +199,9 @@ def main(argv=None):
     p = sub.add_parser("run", help="perform every step an agent or the harness owns, moving items on")
     p.add_argument("--once", action="store_true", help="exit when no step can move, rather than waiting")
     p.set_defaults(func=cmd_run)
+
+    sub.add_parser("tui", help="the customer's view of the backlog, with the harness running behind it"
+                   ).set_defaults(func=cmd_tui)
 
     p = sub.add_parser("check", help="run the project's check (its Makefile target), or one named test")
     p.add_argument("test", nargs="?", help="a single test to run, as the project's Makefile understands TEST=")

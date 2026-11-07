@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from devteam import engines, git, tui, workflow
+from devteam import engines, git, workflow
 from devteam import runner as runners
 from devteam.backlog import Repository
 from devteam.config import Role
@@ -271,9 +271,6 @@ class HarnessSteps(unittest.TestCase):
                     self.runner.take_checkout(self.other)
                 self.assertIn(f"holds the checkout at step {step}", str(raised.exception))
         self.at("pull-request")
-        row = next(row for row in tui.rows(self.repo) if row.key == self.story.id)
-        self.assertTrue(row.needs_you)
-        self.assertEqual("YOU", row.waiting_on)
         self.assertEqual([], self.runner.pending())
         for step in ("accept", "pull-request", "rejected", "done"):
             self.at(step)

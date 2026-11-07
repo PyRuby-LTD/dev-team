@@ -11,6 +11,8 @@ from devteam.config import ROOT
 
 # A step whose output is the item's requirements, merged into the item rather than kept beside it.
 REQUIREMENTS = "requirements"
+# The kinds of customer input the TUI knows; a customer step asking for anything else could never be answered.
+CUSTOMER_INPUTS = ("questions", "feedback", "standards")
 
 
 class InvalidStep(ValueError):
@@ -306,6 +308,11 @@ def build(step_name, spec, roles, prompts=None):
     outcomes = _outcomes(step_name, spec["outcomes"])
     output = _output(step_name, spec.get("output"))
     if owner == "human":
+        if isinstance(output, dict):
+            if unknown := [name for name in output.get("properties", {}) if name not in CUSTOMER_INPUTS]:
+                raise InvalidStep(f"step {step_name!r}: the customer has no way to enter "
+                                  + ", ".join(repr(name) for name in unknown)
+                                  + "; a customer step's output may only have " + ", ".join(CUSTOMER_INPUTS))
         return HumanStep(step_name, outcomes, output=output)
     if not agent:
         action = _harness_step(step_name, owner)
