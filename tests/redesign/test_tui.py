@@ -3,15 +3,16 @@ import dataclasses
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import unittest
 
-from textual.widgets import Markdown, OptionList
+from textual.widgets import Markdown, OptionList, RichLog, TextArea
 
 from devteam.config import load_roles
 from devteam.redesign import submission
 from devteam.redesign.harness import Harness
 from devteam.redesign.prompt import Prompts
-from devteam.redesign.tui import Console, Outcomes
+from devteam.redesign.tui import Answers, Console, Outcomes
 from devteam.redesign.work_item import Backlog
 
 
@@ -25,7 +26,7 @@ class Fixture(unittest.IsolatedAsyncioTestCase):
         return Harness(Backlog(self.backlog.root, notice=lambda message: None), roles=roles, engine=self.engine,
                        report=lambda message: None)
 
-    def engine(self, role, prompt, cwd, root, log):
+    def engine(self, role, prompt, cwd, root, log, on_line=None):
         item = self.backlog.get(log.parent.name)
         submission.stage(root, item, self.backlog.step(item), "questions", "questions:\n  - question: Who cooks?\n")
         return 0, ""
@@ -101,6 +102,28 @@ class Acting(Fixture):
         self.assertEqual(["captured", "analysis"], [entry.step for entry in request.step_outputs])
         self.assertEqual(["Who cooks?"], [question.question for question in request.questions])
 
+    async def test_a_running_agent_streams_its_output_to_the_screen(self):
+        self.backlog.create("request", "Shopping list")
+        self.backlog.record("REQUEST-001", "analyse")
+        release = threading.Event()
+        stub = self.engine
+
+        def engine(role, prompt, cwd, root, log, on_line=None):
+            on_line("Reading the request")
+            release.wait(10)
+            return stub(role, prompt, cwd, root, log)
+        self.engine = engine
+        app = Console(self.backlog, harness=self.harness())
+        try:
+            async with app.run_test(size=(120, 40)) as pilot:
+                stream = app.query_one("#stream", RichLog)
+                await self.settle(pilot, lambda: stream.lines)
+                self.assertEqual("analysis", self.backlog.get("REQUEST-001").step)
+                release.set()
+                await self.settle(pilot, lambda: self.backlog.get("REQUEST-001").step == "answering")
+        finally:
+            release.set()
+
     async def test_feedback_given_with_an_outcome_is_recorded_for_the_next_step(self):
         self.backlog.create("request", "Shopping list")
         self.backlog.record("REQUEST-001", "analyse")
@@ -113,6 +136,24 @@ class Acting(Fixture):
             await self.settle(pilot, lambda: self.backlog.get("REQUEST-001").step == "analysis")
         entry = self.backlog.get("REQUEST-001").step_outputs[-1]
         self.assertEqual(("review", "revise", {"feedback": "Split it"}), (entry.step, entry.outcome, entry.output))
+
+    async def test_answers_land_on_their_questions_and_blank_ones_stay_unanswered(self):
+        self.backlog.create("request", "Shopping list")
+        self.backlog.record("REQUEST-001", "analyse")
+        self.backlog.record("REQUEST-001", "questions", {"questions": [
+            {"question": "Who cooks?", "answer": "Me"}, {"question": "Which shop?"}, {"question": "Budget?"}]})
+        app = Console(self.backlog)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await self.choose(app, pilot, "REQUEST-001", "answered")
+            self.assertIsInstance(app.screen, Answers)
+            first, second = app.screen.query(TextArea)
+            first.focus()
+            await pilot.press(*"Aldi")
+            await pilot.press("ctrl+s")
+            await self.settle(pilot, lambda: self.backlog.get("REQUEST-001").step == "analysis")
+        self.assertEqual([("Who cooks?", "Me"), ("Which shop?", "Aldi"), ("Budget?", None)],
+                         [(q.question, q.answer) for q in self.backlog.get("REQUEST-001").questions])
 
     async def test_a_new_request_is_captured_from_free_text(self):
         app = Console(self.backlog)

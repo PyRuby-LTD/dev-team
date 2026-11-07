@@ -6,6 +6,6 @@
 
 **Status:** ready-for-agent
 
-- [ ] A pilot test answers some of a request's questions, leaves one blank, and finds the answers on the right questions in the work item
-- [ ] A pilot test sees a stub agent's streamed output reach the TUI while it runs, without asserting on its wording
+- [x] A pilot test answers some of a request's questions, leaves one blank, and finds the answers on the right questions in the work item
+- [x] A pilot test sees a stub agent's streamed output reach the TUI while it runs, without asserting on its wording
 - [ ] The milestone 1 demonstration works by hand against a real product owner: capture, analyse, answer, draft, approve

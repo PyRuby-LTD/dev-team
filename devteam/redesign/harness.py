@@ -28,12 +28,17 @@ class Harness:
         self.engine = engine
         self.check = check
         self.report = report
+        self.on_line = None
         self.failed = {}
         self.waiting = {}
 
     def values(self, item):
         return {"checkout": str(self.checkout or self.backlog.root),
                 "evidence_dir": str(self.backlog.root / "log" / item.id)}
+
+    def listener(self, item):
+        on_line = self.on_line
+        return None if on_line is None else lambda line: on_line(item.id, line)
 
     def pending(self):
         found = []

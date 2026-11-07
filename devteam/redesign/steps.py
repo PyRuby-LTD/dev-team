@@ -134,7 +134,7 @@ class AgentStep(Step):
         # A submission left by an earlier run must not be taken for this one.
         submission.take(root, item.id, self.name)
         log.parent.mkdir(parents=True, exist_ok=True)
-        code, _ = harness.engine(role, prompt, harness.checkout or root, root, log)
+        code, _ = harness.engine(role, prompt, harness.checkout or root, root, log, on_line=harness.listener(item))
         if code != 0:
             submission.take(root, item.id, self.name)
             raise StepFailed(f"{role.command[0]} exited with code {code}; see {log}")

@@ -12,7 +12,7 @@ from textual.widgets.option_list import Option
 
 from .harness import record_customer
 from .prompt import InvalidPrompt, Prompts
-from .steps import InvalidStep
+from .steps import REQUIREMENTS, InvalidStep
 from .work_item import InvalidWorkItem
 
 REFRESH_SECONDS = 2
@@ -103,6 +103,14 @@ def takes_feedback(step):
     return isinstance(step.output, dict) and "feedback" in step.output.get("properties", {})
 
 
+def takes_answers(step):
+    return step.output == REQUIREMENTS or (isinstance(step.output, dict) and "questions" in step.output.get("properties", {}))
+
+
+def unanswered(item):
+    return [question.question for question in item.questions or [] if not question.answer]
+
+
 class Outcomes(ModalScreen):
     BINDINGS = [("escape", "dismiss(None)", "Cancel")]
 
@@ -121,6 +129,39 @@ class Outcomes(ModalScreen):
 
     def on_option_list_option_selected(self, event):
         self.dismiss(event.option.id)
+
+
+class Answers(ModalScreen):
+    BINDINGS = [("escape", "dismiss(None)", "Cancel"), ("ctrl+s", "save", "Save")]
+
+    def __init__(self, heading, questions):
+        super().__init__()
+        self.heading, self.questions = heading, questions
+
+    def compose(self):
+        with Vertical(classes="dialog wide"):
+            yield Label(self.heading)
+            with VerticalScroll(classes="answers"):
+                for number, question in enumerate(self.questions, 1):
+                    yield Label(Text(f"{number}. {question}", "bold"), shrink=True, classes="question")
+                    yield TextArea(soft_wrap=True)
+            with Horizontal(classes="buttons"):
+                yield Button("Save answers (ctrl+s)", variant="primary", id="save")
+                yield Button("Cancel (esc)", id="cancel")
+            yield Label(Text("tab: next answer    blank answers stay unanswered", "dim"))
+
+    def on_mount(self):
+        self.query(TextArea).first().focus()
+
+    def action_save(self):
+        self.dismiss([{"question": question, "answer": area.text.strip()}
+                      for question, area in zip(self.questions, self.query(TextArea)) if area.text.strip()])
+
+    def on_button_pressed(self, event):
+        if event.button.id == "save":
+            self.action_save()
+        else:
+            self.dismiss(None)
 
 
 class FreeText(ModalScreen):
@@ -168,6 +209,7 @@ class Console(App):
     #items:focus-within { border: round $accent; }
     #detail { width: 1fr; border: round $primary; padding: 0 1; }
     #detail:focus { border: round $accent; }
+    #stream { height: 10; border: round $primary; padding: 0 1; }
     #activity { height: 7; border: round $primary; padding: 0 1; }
     ModalScreen { align: center middle; }
     .dialog { width: 80; max-width: 90%; height: auto; max-height: 85%; border: thick $accent;
@@ -176,6 +218,9 @@ class Console(App):
     .dialog Label { margin-bottom: 1; }
     .dialog OptionList { height: auto; max-height: 20; margin-bottom: 1; }
     .dialog TextArea { height: 8; margin-bottom: 1; }
+    .dialog .answers { height: auto; max-height: 24; }
+    .dialog .answers TextArea { height: 4; }
+    .dialog .question { margin-bottom: 0; }
     .buttons { height: auto; margin-bottom: 1; }
     .buttons Button { margin-right: 2; }
     """
@@ -207,6 +252,7 @@ class Console(App):
             yield ItemTree("Backlog", id="items")
             with VerticalScroll(id="detail"):
                 yield Markdown(id="detail-body")
+        yield RichLog(id="stream", wrap=True, markup=False, max_lines=2000)
         yield RichLog(id="activity", wrap=True, markup=False)
         yield Footer()
 
@@ -217,6 +263,8 @@ class Console(App):
         self.detail_view = self.query_one("#detail-body", Markdown)
         self.activity = self.query_one("#activity", RichLog)
         self.activity.can_focus = False
+        self.agent_stream = self.query_one("#stream", RichLog)
+        self.agent_stream.border_title = "Agent stream"
         self.item_tree.show_root = False
         self.item_tree.guide_depth = 3
         self.item_tree.focus()
@@ -229,6 +277,7 @@ class Console(App):
             self.activity.border_title = "Harness"
             self.harness.report = lambda message: self.from_harness(self.reported, message)
             self.harness.backlog.notice = lambda message: self.from_harness(self.notify, message)
+            self.harness.on_line = lambda item_id, line: self.from_harness(self.agent_stream.write, f"{item_id} | {line}")
             threading.Thread(target=self.harness.run, kwargs={"interval": REFRESH_SECONDS, "stop": self.stop},
                              daemon=True).start()
 
@@ -345,16 +394,27 @@ class Console(App):
     def chosen(self, item, step, outcome):
         if outcome is None:
             return
-        if not takes_feedback(step):
-            self.record(item, step, outcome, {})
-            return
-        heading = Text.assemble((item.id, "bold"), f"  {outcome}  ->  {step.outcomes[outcome].next}\n\n",
-                                ("Feedback for the next step (optional)", "bold"))
+        heading = Text.assemble((item.id, "bold"), f"  {outcome}  ->  {step.outcomes[outcome].next}")
+        questions = unanswered(item) if takes_answers(step) else []
 
-        def given(text):
-            if text is not None:
-                self.record(item, step, outcome, {"feedback": text.strip()} if text.strip() else {})
-        self.push_screen(FreeText(heading, "Record", "Leave it blank to just move on."), given)
+        def answered(answers):
+            if answers is None:
+                return
+            output = {"questions": answers} if answers else {}
+            if not takes_feedback(step):
+                self.record(item, step, outcome, output)
+                return
+
+            def given(text):
+                if text is not None:
+                    self.record(item, step, outcome, {**output, "feedback": text.strip()} if text.strip() else output)
+            self.push_screen(FreeText(heading + Text("\n\nFeedback for the next step (optional)", "bold"), "Record",
+                                      "Leave it blank to just move on."), given)
+
+        if questions:
+            self.push_screen(Answers(heading, questions), answered)
+        else:
+            answered([])
 
     def record(self, item, step, outcome, output):
         try:
