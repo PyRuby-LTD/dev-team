@@ -33,6 +33,20 @@ def has_regression(text: str) -> bool:
     return False
 
 
+def missing(directory: Path) -> list[str]:
+    """What the product lacks before workflows can run in it; empty when it is set up."""
+    top = git.checkout(directory)
+    if top is None:
+        return ["it is not a Git repository"]
+    gaps = []
+    if not git.has_backlog(top):
+        gaps.append(f"it has no {git.BACKLOG_BRANCH} branch; run dev-team init")
+    makefile = top / "Makefile"
+    if not (makefile.is_file() and has_regression(makefile.read_text())):
+        gaps.append("its Makefile has no regression target; add one that runs the product's checks")
+    return gaps
+
+
 def quick_start(top: Path) -> bool:
     if not git.has_ref(top, "HEAD"):
         return True

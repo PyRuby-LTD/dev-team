@@ -24,9 +24,24 @@ def locate(args):
     if top is None:
         return None, directory / git.BACKLOG_DIR
     try:
-        return top, git.ensure_backlog(top)
+        return top, git.ensure_backlog(top, create=False)
     except git.GitError as exc:
         raise SystemExit(str(exc)) from exc
+
+
+def launch(args):
+    """Load the harness's workflows and check the product is set up before anything runs in it."""
+    from devteam.initialise import missing
+
+    try:
+        flow.load_all()
+    except flow.InvalidWorkflow as exc:
+        raise SystemExit(str(exc)) from exc
+    product = Path(args.product).resolve()
+    gaps = missing(product)
+    if gaps:
+        raise SystemExit(f"{product} is not set up for dev-team:\n" + "\n".join(f"  {gap}" for gap in gaps))
+    return locate(args)
 
 
 def _backlog(args):
@@ -80,11 +95,7 @@ def cmd_record(args):
 
 
 def cmd_run(args):
-    try:
-        flow.load_all()
-    except flow.InvalidWorkflow as exc:
-        raise SystemExit(str(exc)) from exc
-    checkout, root = locate(args)
+    checkout, root = launch(args)
     harness = Harness(Backlog(root, guard=PathGuard(checkout)), checkout=checkout)
     try:
         harness.run(once=args.once)
@@ -97,11 +108,7 @@ def cmd_run(args):
 def cmd_tui(args):
     from .tui import run
 
-    try:
-        flow.load_all()
-    except flow.InvalidWorkflow as exc:
-        raise SystemExit(str(exc)) from exc
-    checkout, root = locate(args)
+    checkout, root = launch(args)
     # The harness writes from its own thread, so it gets its own backlog whose notices it routes to the screen.
     run(_backlog(args), Harness(Backlog(root, guard=PathGuard(checkout)), checkout=checkout))
 

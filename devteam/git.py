@@ -79,11 +79,18 @@ def commit_all(directory, message, *paths):
     return True
 
 
-def ensure_backlog(top):
-    """Check out the backlog branch at backlog/, creating the branch if it does not exist anywhere."""
+def has_backlog(top):
+    return (Path(top) / BACKLOG_DIR / ".git").exists() or has_ref(top, f"refs/heads/{BACKLOG_BRANCH}") \
+        or has_ref(top, f"refs/remotes/origin/{BACKLOG_BRANCH}")
+
+
+def ensure_backlog(top, create=True):
+    """Check out the backlog branch at backlog/, creating the branch if it does not exist anywhere and create is set."""
     path = Path(top) / BACKLOG_DIR
     if (path / ".git").exists():
         return path
+    if not create and not has_backlog(top):
+        raise GitError(f"{top} has no {BACKLOG_BRANCH} branch; run dev-team init")
     if path.exists() and any(path.iterdir()):
         raise GitError(f"{path} exists but is not the {BACKLOG_BRANCH} worktree")
     common = Path(top, must(top, "rev-parse", "--git-common-dir"))

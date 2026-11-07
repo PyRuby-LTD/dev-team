@@ -6,6 +6,6 @@
 
 **Status:** ready-for-agent
 
-- [ ] A test launches from a product outside the harness checkout and finds work items written to that product's backlog only
-- [ ] Launching in a product that is not set up reports what is missing and starts no agent
-- [ ] `dev-team init` in an empty repository sets it up; a second run changes nothing
+- [x] A test launches from a product outside the harness checkout and finds work items written to that product's backlog only
+- [x] Launching in a product that is not set up reports what is missing and starts no agent
+- [x] `dev-team init` in an empty repository sets it up; a second run changes nothing

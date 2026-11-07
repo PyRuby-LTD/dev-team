@@ -51,6 +51,7 @@ class Product(unittest.TestCase):
         (self.product / "README.md").write_text("A meal planner.\n")
         self.git("add", "-A")
         self.git("commit", "-q", "-m", "Start")
+        self.git("remote", "add", "origin", "git@github.com:o/meals.git")
         self.prompts = self.base / "prompts"
         self.plan = self.base / "plan.json"
         self.bin = self.base / "bin"
@@ -58,6 +59,13 @@ class Product(unittest.TestCase):
         for tool in TOOLS:
             (self.bin / tool).symlink_to(shutil.which(tool))
         self.engines()
+        self.set_up_product()
+
+    def set_up_product(self):
+        (self.product / "Makefile").write_text("regression:\n\ttrue\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "Add a regression target")
+        self.ok("init")
 
     def engines(self, *names):
         for name in names or ("claude", "codex"):
