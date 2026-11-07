@@ -1,3 +1,3 @@
-from .cli import main
+from .redesign.console import main
 
 main()

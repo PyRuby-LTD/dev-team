@@ -1,6 +1,4 @@
 """Request analysis acceptance checks, using the configured workflow and fake agents."""
-import contextlib
-import io
 import json
 from pathlib import Path
 import tempfile
@@ -11,7 +9,6 @@ from textual.widgets import TextArea
 
 from devteam import questions, tui
 from devteam.backlog import InvalidRecord, Repository
-from devteam.cli import main
 from devteam.config import ROOT, harness_command, load_roles
 from devteam.runner import Runner, render
 from devteam.workflow import load
@@ -49,18 +46,6 @@ class Requests(unittest.TestCase):
         with self.assertRaisesRegex(InvalidRecord, 'requests must have no parent'):
             self.repo.create('request', 'Bad', parent=epic.id)
         self.assertEqual({}, self.repo.scan().errors)
-
-    def test_cli_capture_list_and_parent_diagnostic(self):
-        prefix = ['--product', self.temp.name, 'backlog']
-        with contextlib.redirect_stdout(io.StringIO()) as output:
-            main(prefix + ['capture', 'request', 'Another idea'])
-            main(prefix + ['list'])
-        self.assertIn('created REQUEST-002', output.getvalue())
-        self.assertRegex(output.getvalue(), r'REQUEST-002\s+submitted\s+human\s+Another idea')
-        with self.assertRaises(SystemExit) as raised:
-            main(prefix + ['capture', 'request', 'Bad', '--parent', 'EPIC-001'])
-        self.assertIn('requests must have no parent', str(raised.exception))
-        self.assertNotIn('REQUEST-003', self.repo.scan().valid)
 
     def test_workflow_roles_prompts_and_hub_transitions(self):
         workflow = load('analysis')

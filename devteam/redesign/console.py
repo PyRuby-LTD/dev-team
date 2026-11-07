@@ -1,5 +1,6 @@
-"""The redesigned command line, built up beside devteam/cli.py until it replaces it."""
+"""The dev-team command line."""
 import argparse
+from datetime import datetime, timezone
 import sys
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from devteam.config import ROOT, load_roles
 from devteam.evidence import PathGuard
 
 from . import flow, submission
+from .harness import Harness, record_customer
 from .prompt import RUN_VALUES, InvalidPrompt, Prompts
 from .steps import AgentStep, InvalidStep
 from .work_item import DIRECTORIES, Backlog, InvalidWorkItem, parse
@@ -27,13 +29,17 @@ def locate(args):
         raise SystemExit(str(exc)) from exc
 
 
-def cmd_submit(args):
+def _backlog(args):
     checkout, root = locate(args)
-    backlog = Backlog(root, guard=PathGuard(checkout))
+    return Backlog(root, guard=PathGuard(checkout))
+
+
+def cmd_submit(args):
+    backlog = _backlog(args)
     try:
         item = backlog.get(args.id)
         step = backlog.step(item)
-        submission.stage(root, item, step, args.outcome, sys.stdin.read())
+        submission.stage(backlog.root, item, step, args.outcome, sys.stdin.read())
     except (InvalidWorkItem, InvalidStep, OSError, UnicodeError) as exc:
         raise SystemExit(str(exc)) from exc
     print(f"{item.id} {step.name}: {args.outcome} staged")
@@ -47,8 +53,7 @@ def _fields(text):
 
 
 def cmd_create(args):
-    checkout, root = locate(args)
-    backlog = Backlog(root, guard=PathGuard(checkout))
+    backlog = _backlog(args)
     try:
         item = backlog.create(args.type, args.title, _fields(sys.stdin.read()))
     except (InvalidWorkItem, InvalidStep, OSError, UnicodeError) as exc:
@@ -57,13 +62,59 @@ def cmd_create(args):
 
 
 def cmd_update(args):
-    checkout, root = locate(args)
-    backlog = Backlog(root, guard=PathGuard(checkout))
+    backlog = _backlog(args)
     try:
         item = backlog.update(args.id, _fields(sys.stdin.read()))
     except (InvalidWorkItem, InvalidStep, OSError, UnicodeError) as exc:
         raise SystemExit(str(exc)) from exc
     print(f"{item.id}: updated")
+
+
+def cmd_record(args):
+    backlog = _backlog(args)
+    try:
+        item = record_customer(backlog, args.id, args.outcome, submission.parse(sys.stdin.read()))
+    except (InvalidWorkItem, InvalidStep, OSError, UnicodeError) as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"{item.id}: {args.outcome} -> {item.step}")
+
+
+def cmd_run(args):
+    try:
+        flow.load_all()
+    except flow.InvalidWorkflow as exc:
+        raise SystemExit(str(exc)) from exc
+    checkout, root = locate(args)
+    harness = Harness(Backlog(root, guard=PathGuard(checkout)), checkout=checkout)
+    try:
+        harness.run(once=args.once)
+    except KeyboardInterrupt:
+        pass
+    if harness.failed:
+        raise SystemExit(1)
+
+
+def cmd_check(args):
+    from devteam import check
+
+    checkout, root = locate(args)
+    directory = checkout or Path(args.product).resolve()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+    log = root / "log" / "check" / f"{stamp}.log"
+    code, output = check.run(directory, args.test, log)
+    # Agents read this, so a pass stays short and a failure shows only its end.
+    print(check.tail(output, 8 if code == 0 else check.TAIL_LINES))
+    print(f"\ncheck {'passed' if code == 0 else f'FAILED (exit {code})'}; full output: {log.relative_to(directory)}")
+    raise SystemExit(code)
+
+
+def cmd_init(args):
+    from devteam.initialise import initialise
+
+    try:
+        initialise(Path(args.product).resolve())
+    except (git.GitError, OSError) as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def _values(pairs):
@@ -109,7 +160,7 @@ def cmd_prompt(args):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="devteam")
+    parser = argparse.ArgumentParser(prog="dev-team")
     parser.add_argument("--product", default=".", help="the product repository; its work items live in backlog/ (default: here)")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -127,6 +178,21 @@ def main(argv=None):
                                                "a null value removes one")
     update.add_argument("id")
     update.set_defaults(func=cmd_update)
+    record = actions.add_parser("record", help="record the customer's outcome for an item's step, "
+                                               "with its YAML output on stdin")
+    record.add_argument("id")
+    record.add_argument("outcome")
+    record.set_defaults(func=cmd_record)
+
+    p = sub.add_parser("run", help="perform every step an agent or the harness owns, moving items on")
+    p.add_argument("--once", action="store_true", help="exit when no step can move, rather than waiting")
+    p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser("check", help="run the project's check (its Makefile target), or one named test")
+    p.add_argument("test", nargs="?", help="a single test to run, as the project's Makefile understands TEST=")
+    p.set_defaults(func=cmd_check)
+
+    sub.add_parser("init", help="set up a product with a GitHub origin and backlog").set_defaults(func=cmd_init)
 
     p = sub.add_parser("prompt", help="print the prompts agent steps would be given, to review them")
     p.add_argument("step", nargs="?", help="one agent step (default: every agent step in the item's workflow)")

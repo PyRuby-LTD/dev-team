@@ -70,7 +70,7 @@ class Prompts:
             "standards": chosen_standards(item, self.standards),
             "available_standards": list(self.standards.values()),
             "requirement_fields": list(Requirements.model_fields),
-            "harness_command": harness_command("devteam.redesign"),
+            "harness_command": harness_command(),
             **(values or {}),
         }
 

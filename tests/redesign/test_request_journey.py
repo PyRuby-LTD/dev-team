@@ -1,0 +1,196 @@
+"""The request workflow driven through the dev-team command, with stub engines following a scripted plan."""
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+
+import yaml
+
+from devteam.redesign.work_item import load
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPTED = ROOT / "tests" / "stubs" / "scripted"
+DEV_TEAM = f"{sys.executable} -P -m devteam"
+GIT = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+       "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
+TOOLS = ("git", "sh", "env", "python3")
+
+QUESTIONS = """$DEV_TEAM backlog submit REQUEST-001 questions <<'OUTPUT'
+questions:
+  - question: Who plans the meals?
+OUTPUT
+"""
+
+DRAFTS = """$DEV_TEAM backlog submit REQUEST-001 divided <<'OUTPUT'
+work_items: [EPIC-001]
+OUTPUT
+echo "refused=$?"
+$DEV_TEAM backlog create epic "Meal planning" <<'ITEM'
+overview: Plan a week of meals.
+ITEM
+$DEV_TEAM backlog create story "Plan a week" <<'ITEM'
+parent: EPIC-001
+overview: As a cook, I want to plan a week of meals.
+ITEM
+$DEV_TEAM backlog submit REQUEST-001 drafted <<'OUTPUT'
+work_items: [EPIC-001, STORY-001]
+OUTPUT
+"""
+
+
+class Product(unittest.TestCase):
+    def setUp(self):
+        self.base = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
+        self.product = self.base / "product"
+        self.product.mkdir()
+        self.git("init", "-q", "-b", "main")
+        (self.product / "README.md").write_text("A meal planner.\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "Start")
+        self.prompts = self.base / "prompts"
+        self.plan = self.base / "plan.json"
+        self.bin = self.base / "bin"
+        self.bin.mkdir()
+        for tool in TOOLS:
+            (self.bin / tool).symlink_to(shutil.which(tool))
+        self.engines()
+
+    def engines(self, *names):
+        for name in names or ("claude", "codex"):
+            shutil.copy(SCRIPTED, self.bin / name)
+            (self.bin / name).chmod(0o755)
+
+    def git(self, *args, cwd=None):
+        return subprocess.run(["git", *args], cwd=cwd or self.product, env={**os.environ, **GIT},
+                              capture_output=True, text=True, check=True).stdout
+
+    def dev_team(self, *args, stdin="", command=DEV_TEAM, env=None):
+        environment = {**os.environ, **GIT, "PATH": str(self.bin), "DEV_TEAM": DEV_TEAM,
+                       "STUB_PLAN": str(self.plan), "STUB_PROMPTS": str(self.prompts), **(env or {})}
+        return subprocess.run([*command.split(), *args], cwd=self.product, env=environment, input=stdin,
+                              capture_output=True, text=True, timeout=120)
+
+    def ok(self, *args, stdin=""):
+        result = self.dev_team(*args, stdin=stdin)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        return result
+
+    def script(self, *entries):
+        self.plan.write_text(json.dumps(list(entries)))
+
+    def item(self, directory, item_id):
+        return load(self.product / "backlog" / directory / f"{item_id}.yaml")
+
+    def request(self):
+        return self.item("requests", "REQUEST-001")
+
+    def capture_and_analyse(self):
+        self.ok("backlog", "create", "request", "Plan meals", stdin="overview: I want to plan a week of meals.\n")
+        self.ok("backlog", "record", "REQUEST-001", "analyse")
+
+
+class RequestJourney(Product):
+    def test_a_request_is_analysed_into_a_question_answered_and_divided_into_drafts(self):
+        self.script({"sh": QUESTIONS}, {"sh": DRAFTS})
+        self.capture_and_analyse()
+        self.assertEqual("analysis", self.request().step)
+
+        self.ok("run", "--once")
+        self.assertEqual("answering", self.request().step)
+        self.assertEqual(["Who plans the meals?"], [q.question for q in self.request().questions])
+
+        self.ok("backlog", "record", "REQUEST-001", "answered",
+                stdin="questions:\n  - question: Who plans the meals?\n    answer: The household cook.\n")
+        self.assertEqual("analysis", self.request().step)
+
+        self.ok("run", "--once")
+        shell = (self.prompts / "02-claude.out").read_text()
+        self.assertIn("refused=1", shell)
+        self.assertGreater(len(shell.replace("refused=1", "").strip()), 0, "the refusal gave no reasons")
+        request = self.request()
+        self.assertEqual("review", request.step)
+        self.assertEqual(["EPIC-001", "STORY-001"], request.work_items)
+        self.assertEqual("drafted", request.step_outputs[-1].outcome)
+
+        self.ok("backlog", "record", "REQUEST-001", "approve")
+        self.assertEqual("done", self.request().step)
+        self.assertEqual("The household cook.", self.request().questions[0].answer)
+        story = self.item("stories", "STORY-001")
+        self.assertEqual(("default", "captured", "EPIC-001"), (story.workflow, story.step, story.parent))
+        self.assertIsNone(self.item("epics", "EPIC-001").step)
+        self.assertEqual("", self.git("status", "--porcelain", cwd=self.product / "backlog"))
+
+
+class AgentFailures(Product):
+    def assertStillAtAnalysis(self, result):
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("REQUEST-001", result.stdout + result.stderr)
+        request = self.request()
+        self.assertEqual("analysis", request.step)
+        self.assertEqual(["captured"], [entry.step for entry in request.step_outputs])
+
+    def test_an_agent_that_exits_without_submitting_leaves_the_item_at_its_step(self):
+        self.script({})
+        self.capture_and_analyse()
+        self.assertStillAtAnalysis(self.dev_team("run", "--once"))
+        self.assertTrue((self.prompts / "01-claude.txt").exists(), "the engine did not run")
+
+    def test_an_engine_exiting_with_an_error_leaves_the_item_at_its_step_despite_a_submission(self):
+        self.script({"sh": QUESTIONS, "exit": 3})
+        self.capture_and_analyse()
+        self.assertStillAtAnalysis(self.dev_team("run", "--once"))
+        self.assertTrue((self.prompts / "01-claude.txt").exists(), "the engine did not run")
+
+    def test_a_missing_engine_command_is_reported_and_the_item_stays_at_its_step(self):
+        (self.bin / "claude").unlink()
+        self.script({"sh": QUESTIONS})
+        self.capture_and_analyse()
+        result = self.dev_team("run", "--once")
+        self.assertStillAtAnalysis(result)
+        self.assertIn("claude", result.stdout + result.stderr)
+        self.assertFalse(self.prompts.exists(), "an engine ran")
+
+
+class CustomerOutcomes(Product):
+    def test_invalid_output_is_refused_with_reasons_and_the_item_is_unchanged(self):
+        self.ok("backlog", "create", "request", "Plan meals")
+        path = self.product / "backlog" / "requests" / "REQUEST-001.yaml"
+        before = path.read_bytes()
+        for outcome, stdin in (("analyse", "feedback: Go\n"), ("finish", ""), ("analyse", "- a list\n")):
+            with self.subTest(outcome=outcome, stdin=stdin):
+                result = self.dev_team("backlog", "record", "REQUEST-001", outcome, stdin=stdin)
+                self.assertNotEqual(0, result.returncode)
+                self.assertTrue(result.stderr.strip(), "no reason given")
+        self.assertEqual(before, path.read_bytes())
+
+    def test_an_agent_step_is_not_recorded_as_the_customer(self):
+        self.capture_and_analyse()
+        result = self.dev_team("backlog", "record", "REQUEST-001", "questions", stdin="questions: []\n")
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("analysis", self.request().step)
+
+
+class InvalidWorkflow(Product):
+    def test_an_invalid_workflow_is_reported_at_load_naming_the_step_and_problem(self):
+        harness = self.base / "harness"
+        for directory in ("devteam", "workflows", "prompts", "config", "roles", "standards"):
+            shutil.copytree(ROOT / directory, harness / directory, ignore=shutil.ignore_patterns("__pycache__"))
+        workflow = harness / "workflows" / "request.yaml"
+        data = yaml.safe_load(workflow.read_text())
+        data["steps"]["analysis"]["outcomes"]["drafted"]["next"] = "reviewing"
+        workflow.write_text(yaml.safe_dump(data))
+        self.script({"sh": QUESTIONS})
+        result = self.dev_team("run", "--once", env={"PYTHONPATH": str(harness)})
+        self.assertNotEqual(0, result.returncode)
+        reported = result.stdout + result.stderr
+        for named in ("request", "analysis", "reviewing"):
+            self.assertIn(named, reported)
+        self.assertFalse(self.prompts.exists(), "an engine ran")
+
+
+if __name__ == "__main__":
+    unittest.main()

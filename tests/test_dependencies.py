@@ -1,15 +1,11 @@
 """Dependency validation, isolated edits and scheduling with real backlogs and Git."""
-import contextlib
-import io
 import unittest
 
 import yaml
 
 from devteam import git
-from devteam.backlog import InvalidRecord, Repository, parse
-from devteam.cli import main
-from devteam.runner import Runner
-from tests import test_backlog, test_backlog_writes, test_checkout, test_runner, test_merged
+from devteam.backlog import parse
+from tests import test_backlog, test_checkout, test_runner, test_merged
 
 
 class DependencyValidation(unittest.TestCase):
@@ -82,61 +78,6 @@ class DependencyValidation(unittest.TestCase):
                 self.assertIn(intermediate.id, str(snapshot.errors[self.story.path]))
                 self.assertIn(self.story.id, str(snapshot.errors[child.path]))
                 self.assertEqual({self.epic.id}, set(snapshot.valid))
-
-
-class DependencyWrites(unittest.TestCase):
-    setUp = test_backlog_writes.BacklogWrites.setUp
-
-    def command(self, *args):
-        with contextlib.redirect_stdout(io.StringIO()):
-            main(['--product', str(self.top), 'backlog', *args])
-
-    def test_cli_capture_and_replace_commit_only_item_and_reject_without_writing(self):
-        self.command('capture', 'story', 'Third', '--parent', self.epic.id,
-                     '--depends-on', self.story.id, '--depends-on', self.other.id)
-        third = self.repo.scan().valid['STORY-003']
-        self.assertEqual([self.story.id, self.other.id], third.metadata['depends_on'])
-        self.assertEqual('STORY-003: captured at captured', git.must(self.root, 'log', '-1', '--format=%s'))
-        before = third.path.read_bytes()
-        self.command('depends-on', third.id, self.other.id)
-        self.assertEqual(before.replace(b'depends_on:\n- STORY-001\n- STORY-002\n', b'depends_on: [STORY-002]\n'), third.path.read_bytes())
-        self.assertEqual('stories/STORY-003.md', git.must(self.root, 'show', '--format=', '--name-only'))
-        self.assertEqual('STORY-003: set depends_on', git.must(self.root, 'log', '-1', '--format=%s'))
-        for args in [('depends-on', third.id, 'BUG-missing'),
-                     ('capture', 'bug', 'Invalid', '--depends-on', 'BUG-missing')]:
-            with self.subTest(args=args):
-                files = {p: p.read_bytes() for p in self.root.rglob('*.md')}
-                tip = git.must(self.root, 'rev-parse', 'HEAD')
-                with self.assertRaisesRegex(SystemExit, 'BUG-missing'):
-                    self.command(*args)
-                self.assertEqual(files, {p: p.read_bytes() for p in self.root.rglob('*.md')})
-                self.assertEqual(tip, git.must(self.root, 'rev-parse', 'HEAD'))
-        self.command('depends-on', third.id)
-        self.assertEqual([], self.repo.scan().valid[third.id].metadata['depends_on'])
-
-    def test_value_rewrite_preserves_other_front_matter_and_body_and_move_only_changes_step(self):
-        original = self.story.path.read_text().replace('title: First', "title: 'First' # comment")
-        for field in ('depends_on: [] # keep\n', 'depends_on: [STORY-002]\n',
-                      'depends_on:\n- STORY-002\n', ''):
-            with self.subTest(field=field):
-                text = original.replace('workflow: default\n', field + 'workflow: default\n')
-                self.story.path.write_bytes(text.replace('\n', '\r\n').encode())
-                self.repo.set_dependencies(self.story.id, [self.other.id])
-                updated = self.story.path.read_bytes()
-                expected = text.replace(field, 'depends_on: [STORY-002]' + (' # keep' if '# keep' in field else '') + '\n', 1) if field else text.replace('step: captured\n', 'step: captured\ndepends_on: [STORY-002]\n')
-                self.assertEqual(expected.replace('\n', '\r\n').encode(), updated)
-                self.repo.transition(self.story.id, 'analyse')
-                self.assertEqual(updated.replace(b'step: captured', b'step: analysis'), self.story.path.read_bytes())
-
-    def test_command_repairs_invalid_link_and_rejects_cycle_before_writing(self):
-        self.repo.set_dependencies(self.story.id, [self.other.id])
-        before = self.other.path.read_bytes()
-        with self.assertRaisesRegex(InvalidRecord, 'dependency cycle'):
-            self.repo.set_dependencies(self.other.id, [self.story.id])
-        self.assertEqual(before, self.other.path.read_bytes())
-        self.story.path.write_text(self.story.path.read_text().replace('[STORY-002]', '[BUG-missing]'))
-        self.repo.set_dependencies(self.story.id, [])
-        self.assertIn(self.story.id, self.repo.scan().valid)
 
 
 class DependencyScheduling(unittest.TestCase):

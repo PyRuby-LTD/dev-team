@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 from devteam import git
 from devteam.backlog import Repository
-from devteam.cli import main
 from devteam.config import Role
 from devteam.runner import Runner
 
@@ -100,15 +99,6 @@ class CheckoutAcceptance(unittest.TestCase):
         after = self.commits(self.backlog)
         self.assertEqual(["STORY-001: play -> implement"], after[:len(after) - len(before)])
         self.assertEqual("", git.must(self.backlog, "status", "--porcelain"))
-
-    def test_cli_sets_up_the_backlog_in_a_new_product(self):
-        product = Path(self.temp.name).resolve() / "fresh"
-        subprocess.run(["git", "init", "-q", "-b", "main", str(product)], check=True)
-        with patch("builtins.print"):
-            main(["--product", str(product), "backlog", "capture", "epic", "Fresh"])
-        self.assertTrue((product / "backlog" / "epics" / "EPIC-001.md").exists())
-        self.assertEqual(["EPIC-001: captured", "Start the backlog"], self.commits(product / "backlog"))
-        self.assertEqual("", git.must(product, "status", "--porcelain"))
 
     def test_implementer_and_reviewer_work_in_the_checkout_on_the_item_branch(self):
         self.repo.transition(self.first.id, "play")

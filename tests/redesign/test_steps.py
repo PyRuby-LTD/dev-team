@@ -8,10 +8,11 @@ from unittest import mock
 
 import yaml
 
-from devteam import runner as harness
+from devteam import runner as original
+from devteam.check import Result
 from devteam.redesign import steps
 from devteam.redesign.steps import (Abandon, AgentStep, Check, HarnessStep, HumanStep, InvalidStep, Merged,
-                           Outcome, PullRequest, Rejected, Step, Sync, build)
+                           Outcome, PullRequest, Rejected, Step, StepFailed, Sync, Waiting, build)
 
 DEFINITION = """
 accept:
@@ -37,14 +38,9 @@ done:
 ROLES = {"implementer"}
 
 
-class FakeRunner:
+class FakeHarness:
     def __init__(self, branch):
         self.roles = {"implementer": SimpleNamespace(branch=branch)}
-        self.invoked = []
-
-    def invoke(self, record, step, log):
-        self.invoked.append((record, step, log))
-        return "implemented", record
 
 
 class StepDefinitions(unittest.TestCase):
@@ -204,31 +200,42 @@ class ActionSteps(unittest.TestCase):
             self.assertTrue(cls.automatic)
 
     def test_only_steps_that_work_on_the_branch_use_the_checkout(self):
-        runner = FakeRunner(branch=False)
-        using = {cls for cls in KINDS if cls("step", {}).uses_checkout(runner)}
+        harness = FakeHarness(branch=False)
+        using = {cls for cls in KINDS if cls("step", {}).uses_checkout(harness)}
         self.assertEqual({Check, Sync, Merged, Abandon}, using)
 
-    def test_actions_return_the_runner_action_outcome(self):
+    def test_git_steps_return_the_outcome_without_output(self):
         for cls, action in ((Sync, "sync"), (Merged, "merged"), (Abandon, "abandon"), (Rejected, "rejected")):
-            with self.subTest(action), mock.patch.object(harness, action, return_value="completed") as performed:
-                self.assertEqual("completed", cls("step", {}).perform("runner", "record", "log"))
-                performed.assert_called_once_with("runner", "record")
+            with self.subTest(action), mock.patch.object(original, action, return_value="completed") as performed:
+                self.assertEqual(("completed", {}), cls("step", {}).perform("harness", "item", "log"))
+                performed.assert_called_once_with("harness", "item")
+
+    def test_a_git_step_that_cannot_run_yet_waits_and_one_that_cannot_run_fails(self):
+        with mock.patch.object(original, "sync", side_effect=original.Waiting("held")):
+            with self.assertRaisesRegex(Waiting, "held"):
+                Sync("sync", {}).perform("harness", "item", "log")
+        with mock.patch.object(original, "sync", side_effect=original.StepFailed("broken")):
+            with self.assertRaisesRegex(StepFailed, "broken"):
+                Sync("sync", {}).perform("harness", "item", "log")
 
     def test_a_check_returns_the_verdict(self):
-        runner = mock.Mock()
-        runner.verify.return_value = ("failed", "record")
         step = Check("verify", outcomes("passed", "failed"))
-        self.assertEqual("failed", step.perform(runner, "record", "log"))
-        runner.verify.assert_called_once_with("record", step, "log")
+        for code, verdict in ((0, "passed"), (2, "failed")):
+            with self.subTest(verdict):
+                checked = SimpleNamespace(checkout="checkout", check=mock.Mock(return_value=Result(code, "output")))
+                self.assertEqual((verdict, {}), step.perform(checked, "item", "log"))
+                checked.check.assert_called_once_with("checkout", log="log")
+        with self.assertRaisesRegex(StepFailed, "needs a git repository"):
+            step.perform(SimpleNamespace(checkout=None), "item", "log")
 
     def test_a_pull_request_waits_until_github_reports_it_merged(self):
         step = PullRequest("pull-request", outcomes("merged"))
         for state in ("OPEN", "CLOSED"):
-            with self.subTest(state), mock.patch.object(harness, "pr_state", return_value=state):
-                with self.assertRaisesRegex(harness.Waiting, f"the pull request is {state.lower()}"):
-                    step.perform("runner", "record", "log")
-        with mock.patch.object(harness, "pr_state", return_value="MERGED"):
-            self.assertEqual("merged", step.perform("runner", "record", "log"))
+            with self.subTest(state), mock.patch.object(original, "pr_state", return_value=state):
+                with self.assertRaisesRegex(Waiting, f"the pull request is {state.lower()}"):
+                    step.perform("harness", "item", "log")
+        with mock.patch.object(original, "pr_state", return_value="MERGED"):
+            self.assertEqual(("merged", {}), step.perform("harness", "item", "log"))
 
 
 class HumanSteps(unittest.TestCase):
@@ -238,9 +245,9 @@ class HumanSteps(unittest.TestCase):
         self.assertFalse(step.automatic)
         self.assertTrue(step.needs_you)
         self.assertEqual("YOU", step.label())
-        self.assertFalse(step.uses_checkout(FakeRunner(branch=True)))
+        self.assertFalse(step.uses_checkout(FakeHarness(branch=True)))
         with self.assertRaises(NotImplementedError):
-            step.perform(FakeRunner(branch=True), "record", "log")
+            step.perform(FakeHarness(branch=True), "item", "log")
 
     def test_a_step_without_outcomes_is_finished(self):
         step = HumanStep("done", {})
@@ -263,14 +270,8 @@ class AgentSteps(unittest.TestCase):
         self.assertIsNone(step.produces)
 
     def test_checkout_use_follows_the_role_configuration(self):
-        self.assertTrue(self.step().uses_checkout(FakeRunner(branch=True)))
-        self.assertFalse(self.step().uses_checkout(FakeRunner(branch=False)))
-
-    def test_perform_returns_the_outcome_the_agent_chose(self):
-        runner = FakeRunner(branch=True)
-        step = self.step()
-        self.assertEqual("implemented", step.perform(runner, "record", "log"))
-        self.assertEqual([("record", step, "log")], runner.invoked)
+        self.assertTrue(self.step().uses_checkout(FakeHarness(branch=True)))
+        self.assertFalse(self.step().uses_checkout(FakeHarness(branch=False)))
 
 
 class BaseStep(unittest.TestCase):

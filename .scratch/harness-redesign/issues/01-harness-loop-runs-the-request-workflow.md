@@ -8,10 +8,10 @@ See the spec: `.scratch/harness-redesign/spec.md` (The harness; Testing Decision
 
 **Status:** ready-for-agent
 
-- [ ] A journey test at the command seam (subprocess against a temporary product repo, stub engines on the path following a scripted plan) captures a request, analyses it into a question, records the customer's answer, analyses it into drafts created through `dev-team backlog create`, approves it, and finds each draft as a valid YAML work item at `captured` and listed in the request's work items
-- [ ] In that journey a stub agent's first submission is invalid (unknown outcome or output that does not fit), it receives the reasons from the command, and its corrected second submission is the one recorded
-- [ ] An agent that exits with nothing staged leaves the item at its step, with the reason reported
-- [ ] A missing engine command, or an engine exiting non-zero, is reported and the item stays at its step
-- [ ] An invalid workflow is reported at load, naming the step and the problem
-- [ ] Recording a customer outcome with invalid output is refused with reasons, leaving the item unchanged
-- [ ] Original modules this supersedes on the branch are deleted, along with their tests
+- [x] A journey test at the command seam (subprocess against a temporary product repo, stub engines on the path following a scripted plan) captures a request, analyses it into a question, records the customer's answer, analyses it into drafts created through `dev-team backlog create`, approves it, and finds each draft as a valid YAML work item at `captured` and listed in the request's work items
+- [x] In that journey a stub agent's first submission is invalid (unknown outcome or output that does not fit), it receives the reasons from the command, and its corrected second submission is the one recorded
+- [x] An agent that exits with nothing staged leaves the item at its step, with the reason reported
+- [x] A missing engine command, or an engine exiting non-zero, is reported and the item stays at its step
+- [x] An invalid workflow is reported at load, naming the step and the problem
+- [x] Recording a customer outcome with invalid output is refused with reasons, leaving the item unchanged
+- [x] Original modules this supersedes on the branch are deleted, along with their tests

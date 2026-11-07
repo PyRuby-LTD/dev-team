@@ -1,6 +1,7 @@
-"""Workflow steps: the common interface the runner dispatches and the TUI displays, one class per kind of owner."""
+"""Workflow steps: the common interface the harness dispatches and the TUI displays, one class per kind of owner."""
 from dataclasses import dataclass, field
 from pathlib import Path
+import shutil
 from typing import ClassVar
 
 from jsonschema import Draft202012Validator
@@ -14,6 +15,14 @@ REQUIREMENTS = "requirements"
 
 class InvalidStep(ValueError):
     pass
+
+
+class StepFailed(Exception):
+    """The step could not produce an outcome; the item stays where it is."""
+
+
+class Waiting(Exception):
+    """The step cannot run yet and is tried again later."""
 
 
 @dataclass(frozen=True)
@@ -51,11 +60,11 @@ class Step:
     def label(self):
         return "finished" if self.terminal else self.owner
 
-    def uses_checkout(self, runner):
+    def uses_checkout(self, harness):
         return False
 
-    def perform(self, runner, record, log):
-        """Return the outcome's name, or raise Waiting to be tried again later."""
+    def perform(self, harness, item, log):
+        """Return the outcome's name and the output, or raise Waiting to be tried again later."""
         raise NotImplementedError(f"step {self.name!r} is not performed by the harness")
 
     def check(self, outcome, fragment):
@@ -109,19 +118,39 @@ class AgentStep(Step):
     def label(self):
         return "finished" if self.terminal else self.role
 
-    def uses_checkout(self, runner):
-        return runner.roles[self.role].branch
+    def uses_checkout(self, harness):
+        return harness.roles[self.role].branch
 
-    def perform(self, runner, record, log):
-        # invoke still applies the transition itself; that moves to the runner when steps are integrated.
-        name, _ = runner.invoke(record, self, log)
-        return name
+    def perform(self, harness, item, log):
+        from . import submission
+
+        role = harness.roles[self.role]
+        if shutil.which(role.command[0]) is None:
+            raise StepFailed(f"the {role.engine} engine's command {role.command[0]!r} is not on the PATH")
+        root = harness.backlog.root
+        prompt = harness.prompts.render(item, self, harness.values(item), harness.backlog)
+        # A submission left by an earlier run must not be taken for this one.
+        submission.take(root, item.id, self.name)
+        log.parent.mkdir(parents=True, exist_ok=True)
+        code, _ = harness.engine(role, prompt, harness.checkout or root, root, log)
+        if code != 0:
+            submission.take(root, item.id, self.name)
+            raise StepFailed(f"{role.command[0]} exited with code {code}; see {log}")
+        staged = submission.take(root, item.id, self.name)
+        if staged is None:
+            raise StepFailed(f"{role.name} exited without submitting an outcome; see {log}")
+        return staged
 
 
-def _actions():
-    # The actions still live in the runner, which will import this module once steps are integrated.
+def _original(name, *args):
+    # Syncing, merging, abandoning and pull request lookups stay in devteam.runner until these steps own them.
     from devteam import runner
-    return runner
+    try:
+        return getattr(runner, name)(*args), {}
+    except runner.Waiting as exc:
+        raise Waiting(str(exc)) from None
+    except runner.StepFailed as exc:
+        raise StepFailed(str(exc)) from None
 
 
 @dataclass
@@ -142,28 +171,29 @@ class HarnessStep(Step):
 class Check(HarnessStep):
     produces: ClassVar[frozenset] = frozenset({"passed", "failed"})
 
-    def uses_checkout(self, runner):
+    def uses_checkout(self, harness):
         return True
 
-    def perform(self, runner, record, log):
-        # verify still applies the transition itself, as invoke does.
-        name, _ = runner.verify(record, self, log)
-        return name
+    def perform(self, harness, item, log):
+        if harness.checkout is None:
+            raise StepFailed("the check needs a git repository")
+        result = harness.check(harness.checkout, log=log)
+        return ("passed" if result[0] == 0 and result.status == "finished" else "failed"), {}
 
 
 @dataclass
 class Rejected(HarnessStep):
     produces: ClassVar[frozenset] = frozenset({"completed"})
 
-    def perform(self, runner, record, log):
-        return _actions().rejected(runner, record)
+    def perform(self, harness, item, log):
+        return _original("rejected", harness, item)
 
 
 @dataclass
 class GitStep(HarnessStep):
     kind: ClassVar[str] = "git"
 
-    def uses_checkout(self, runner):
+    def uses_checkout(self, harness):
         return True
 
 
@@ -171,24 +201,24 @@ class GitStep(HarnessStep):
 class Sync(GitStep):
     produces: ClassVar[frozenset] = frozenset({"completed", "conflicted"})
 
-    def perform(self, runner, record, log):
-        return _actions().sync(runner, record)
+    def perform(self, harness, item, log):
+        return _original("sync", harness, item)
 
 
 @dataclass
 class Merged(GitStep):
     produces: ClassVar[frozenset] = frozenset({"completed"})
 
-    def perform(self, runner, record, log):
-        return _actions().merged(runner, record)
+    def perform(self, harness, item, log):
+        return _original("merged", harness, item)
 
 
 @dataclass
 class Abandon(GitStep):
     produces: ClassVar[frozenset] = frozenset({"completed"})
 
-    def perform(self, runner, record, log):
-        return _actions().abandon(runner, record)
+    def perform(self, harness, item, log):
+        return _original("abandon", harness, item)
 
 
 @dataclass
@@ -196,15 +226,14 @@ class PullRequest(GitStep):
     produces: ClassVar[frozenset] = frozenset({"merged"})
     retry_after: ClassVar[float] = 60
 
-    def uses_checkout(self, runner):
+    def uses_checkout(self, harness):
         return False
 
-    def perform(self, runner, record, log):
-        actions = _actions()
-        state = actions.pr_state(record)
+    def perform(self, harness, item, log):
+        state, _ = _original("pr_state", item)
         if state == "MERGED":
-            return "merged"
-        raise actions.Waiting(f"the pull request is {state.lower()}")
+            return "merged", {}
+        raise Waiting(f"the pull request is {state.lower()}")
 
 
 def _outcomes(step_name, spec):

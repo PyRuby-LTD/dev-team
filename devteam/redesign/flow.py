@@ -58,3 +58,9 @@ def load(name, directory=None, roles=None, prompts=None):
         return build(name, data, load_roles().keys() if roles is None else roles, prompts)
     except InvalidWorkflow as exc:
         raise InvalidWorkflow(f"workflow {name!r}: {exc}") from None
+
+
+def load_all(directory=None, roles=None, prompts=None):
+    """Every workflow the harness defines, so a broken one is reported before anything runs."""
+    directory = Path(directory or ROOT / "workflows")
+    return {path.stem: load(path.stem, directory, roles, prompts) for path in sorted(directory.glob("*.yaml"))}

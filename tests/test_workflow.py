@@ -1,12 +1,9 @@
-import contextlib
-import io
 import json
 from pathlib import Path
 import tempfile
 import unittest
 
 from devteam.backlog import InvalidRecord, Repository
-from devteam.cli import main
 from devteam.workflow import InvalidWorkflow, build, load
 
 ROLES = {"analyst", "implementer", "reviewer"}
@@ -155,19 +152,6 @@ class ItemSteps(unittest.TestCase):
         self.assertIn("terminal", str(raised.exception))
         self.assertNotEqual(before, after)
         self.assertEqual(after, self.story.path.read_bytes())
-
-    def test_cli_move_and_validate_show_step_and_owner(self):
-        prefix = ["--product", str(Path(self.temp.name) / "cli"), "backlog"]
-        with contextlib.redirect_stdout(io.StringIO()) as output:
-            main(prefix + ["capture", "bug", "CLI bug"])
-            main(prefix + ["move", "BUG-001", "analyse"])
-            main(prefix + ["validate"])
-        self.assertIn("BUG-001 -> analysis (agent:analyst)", output.getvalue())
-        self.assertRegex(output.getvalue(), r"BUG-001\s+analysis\s+agent:analyst\s+CLI bug")
-        with self.assertRaises(SystemExit) as exit:
-            main(prefix + ["move", "BUG-001", "play"])
-        self.assertIn("not a transition", str(exit.exception.code))
-
 
 if __name__ == "__main__":
     unittest.main()

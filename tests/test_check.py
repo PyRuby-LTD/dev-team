@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from devteam import check, git, questions, tui
 from devteam.backlog import Repository
-from devteam.cli import main
+from devteam.redesign.console import main
 from devteam.config import Role
 from devteam.runner import Runner
 

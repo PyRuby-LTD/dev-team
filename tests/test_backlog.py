@@ -1,11 +1,8 @@
-import contextlib
-import io
 from pathlib import Path
 import tempfile
 import unittest
 
 from devteam.backlog import InvalidRecord, Repository, parse
-from devteam.cli import main
 
 
 class BacklogAcceptance(unittest.TestCase):
@@ -124,19 +121,6 @@ class BacklogAcceptance(unittest.TestCase):
             with self.assertRaises(InvalidRecord):
                 self.repo.create("bug", "No escape")
             self.assertEqual([], list(Path(external).iterdir()))
-
-    def test_cli_capture_validate_and_nonzero_errors(self):
-        prefix = ["--product", self.temp.name, "backlog"]
-        with contextlib.redirect_stdout(io.StringIO()) as output:
-            main(prefix + ["capture", "bug", "CLI bug"])
-            main(prefix + ["validate"])
-        self.assertRegex(output.getvalue(), r"BUG-001\s+captured\s+human")
-        self.story.path.write_text("broken")
-        with contextlib.redirect_stdout(io.StringIO()) as output, self.assertRaises(SystemExit) as exit:
-            main(prefix + ["validate"])
-        self.assertEqual(1, exit.exception.code)
-        self.assertIn(str(self.story.path), output.getvalue())
-
 
 if __name__ == "__main__":
     unittest.main()

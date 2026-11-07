@@ -9,7 +9,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from devteam import cli, git
+from devteam import git
 from devteam.backlog import Repository
 from devteam.runner import Runner, StepFailed, HARNESS_ACTIONS, merged
 from devteam import runner as runners
@@ -408,39 +408,3 @@ class Dispatch(unittest.TestCase):
         self.assertEqual("parallel file", git.must(self.product, "show", "HEAD:stray.txt"))
         self.assertEqual(f"devteam/{branch.id}", git.current_branch(self.product))
 
-    def test_cli_run_dispatches_new_work_while_the_first_engine_is_blocked(self):
-        first = self.item("analyse")
-        stop = threading.Event()
-        fixture = self
-        errors = []
-
-        class ConfiguredRunner(Runner):
-            def __init__(self, repository, checkout=None):
-                # Inject only the fixture's workflow and fake engine at the CLI boundary.
-                repository.workflow_dir = fixture.repo.workflow_dir
-                repository.roles = fixture.roles
-                super().__init__(repository, fixture.roles, fixture.engine, fixture.messages.append,
-                                 checkout=checkout)
-                fixture.runner = self
-
-            def run(self, once=False):
-                return super().run(once=once, interval=.01, stop=stop)
-
-        def command():
-            try:
-                cli.main(["--product", str(self.root), "run"])
-            except Exception as exc:
-                errors.append(exc)
-
-        with patch("devteam.runner.Runner", ConfiguredRunner):
-            thread = threading.Thread(target=command)
-            self.loops.append((stop, thread))
-            thread.start()
-            self.assertTrue(self.started[first.id].wait(2))
-            later = self.item("analyse")
-            self.assertTrue(self.started[later.id].wait(2))
-            self.assertFalse(self.release.is_set())
-            stop.set()
-            thread.join(2)
-            self.assertFalse(thread.is_alive())
-            self.assertEqual([], errors)
