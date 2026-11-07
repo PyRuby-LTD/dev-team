@@ -1,49 +1,35 @@
 """The default workflow's third group, sync, resolve and verify, on the item's branch against its base on origin."""
-import shutil
 import subprocess
 import unittest
 
-from devteam.redesign.work_item import parse
-
+from .journey import submit
 from .test_implement_journey import Played, blocked, implemented
 
-WRITTEN = """$DEV_TEAM backlog submit STORY-001 written <<'OUTPUT'
-journeys:
-  - journey: Plan a week
-    action: new
-OUTPUT
-"""
+WRITTEN = submit("written", "journeys:\n  - journey: Plan a week\n    action: new\n")
 
-RESOLVED = """python3 -c 'import os, shutil; shutil.copy("backlog/stories/STORY-001.yaml", os.environ["STUB_PROMPTS"] + "/item-seen-by-resolve.yaml")'
-printf 'A meal planner for the week.\\n' > README.md
-$DEV_TEAM backlog submit STORY-001 resolved
-"""
 
-BLOCKED_RESOLVE = """echo half-done > README.md
-echo scratch > notes.txt
-$DEV_TEAM backlog submit STORY-001 blocked <<'OUTPUT'
-blocked_by: The base renames the planner the story changes
-OUTPUT
-"""
+def resolved(agent):
+    agent.write("README.md", "A meal planner for the week.\n")
+    agent.submit("resolved")
 
-DEFECT_FROM_CHECK = """python3 -c 'import os, shutil; shutil.copy("backlog/stories/STORY-001.yaml", os.environ["STUB_PROMPTS"] + "/item-seen-by-tester.yaml")'
-$DEV_TEAM backlog submit STORY-001 defect <<'OUTPUT'
-defects: [The meals check fails]
-OUTPUT
-"""
 
-FAILING_CHECK = """printf 'regression:\\n\\t@echo the meals check found no meals; false\\n' > Makefile
-$DEV_TEAM backlog submit STORY-001 implemented <<'OUTPUT'
-branch: devteam/STORY-001
-OUTPUT
-"""
+def blocked_resolve(agent):
+    agent.write("README.md", "half-done\n")
+    agent.write("notes.txt", "scratch\n")
+    agent.submit("blocked", "blocked_by: The base renames the planner the story changes\n")
+
+
+DEFECT_FROM_CHECK = submit("defect", "defects: [The meals check fails]\n")
+
+
+def failing_check(agent):
+    agent.write("Makefile", "regression:\n\t@echo the meals check found no meals; false\n")
+    agent.submit("implemented", "branch: devteam/STORY-001\n")
 
 
 class Synced(Played):
     def setUp(self):
         super().setUp()
-        for tool in ("make", "true", "false"):
-            (self.bin / tool).symlink_to(shutil.which(tool))
         origin = self.base / "origin.git"
         self.git("init", "-q", "--bare", "-b", "main", str(origin))
         self.git("remote", "set-url", "origin", str(origin))
@@ -58,10 +44,10 @@ class Synced(Played):
         self.git("push", "-q", "origin", "main", cwd=self.writer)
         return self.git("rev-parse", "HEAD", cwd=self.writer).strip()
 
-    def play(self, *steps):
-        self.script(*self.ready("STORY-001"), *({"sh": sh} for sh in steps))
-        self.ok("run", "--once")
-        self.ok("backlog", "record", "STORY-001", "play")
+    def play(self, *turns):
+        self.script(*self.ready("STORY-001"), *turns)
+        self.run_once()
+        self.team.record("STORY-001", "play")
 
     def succeeds(self, *args):
         return subprocess.run(["git", *args], cwd=self.product, capture_output=True).returncode == 0
@@ -75,10 +61,10 @@ class Synced(Played):
 
 class SyncVerifyResolve(Synced):
     def test_a_clean_sync_and_a_passing_check_reach_review(self):
-        self.play(implemented("STORY-001", "planner.txt"), WRITTEN)
+        self.play(implemented("planner.txt"), WRITTEN)
         base = self.base_change("pantry.txt", "flour\n")
 
-        self.dev_team("run", "--once")
+        self.team.run(once=True)
 
         self.assertEqual("review", self.story("STORY-001").step)
         self.assertEqual([("test", "written", "sync"), ("sync", "completed", "verify"),
@@ -88,26 +74,25 @@ class SyncVerifyResolve(Synced):
         self.assertTrue(any((self.product / "backlog" / "log" / "STORY-001").glob("verify-*.log")))
 
     def test_a_conflicting_sync_goes_to_the_implementer_who_resolves_it(self):
-        self.play(implemented("STORY-001", "README.md"), WRITTEN, RESOLVED)
+        self.play(implemented("README.md"), WRITTEN, resolved)
         base = self.base_change("README.md", "A meal planner for a household.\n")
 
-        self.dev_team("run", "--once")
+        self.team.run(once=True)
 
         self.assertEqual([("sync", "conflicted", "resolve"), ("resolve", "resolved", "verify"),
                           ("verify", "passed", "review")], self.history("STORY-001")[-3:])
-        seen = parse((self.prompts / "item-seen-by-resolve.yaml").read_text())
         self.assertEqual([("sync", "conflicted", {"conflicts": ["README.md"]})],
-                         [(entry.step, entry.outcome, entry.output) for entry in seen.pending("resolve")])
+                         [(entry.step, entry.outcome, entry.output) for entry in self.seen_at("resolve").pending("resolve")])
         self.assertTrue(self.ancestor(base, "devteam/STORY-001"), "the merge was not committed")
         self.assertFalse(self.merging())
         self.assertEqual("A meal planner for the week.\n", self.git("show", "devteam/STORY-001:README.md"))
         self.assertEqual("", self.git("status", "--porcelain"))
 
     def test_a_resolve_the_implementer_cannot_do_returns_to_ready_with_the_merge_aborted(self):
-        self.play(implemented("STORY-001", "README.md"), WRITTEN, BLOCKED_RESOLVE)
+        self.play(implemented("README.md"), WRITTEN, blocked_resolve)
         self.base_change("README.md", "A meal planner for a household.\n")
 
-        self.ok("run", "--once")
+        self.run_once()
 
         self.assertEqual("ready", self.story("STORY-001").step)
         self.assertEqual([("sync", "conflicted", "resolve"), ("resolve", "blocked", "ready")],
@@ -119,22 +104,21 @@ class SyncVerifyResolve(Synced):
         self.assertEqual("changed\n", (self.product / "README.md").read_text())
 
     def test_a_failing_check_sends_the_item_back_to_test_with_the_checks_summary(self):
-        self.play(FAILING_CHECK, WRITTEN, DEFECT_FROM_CHECK, blocked("STORY-001"))
+        self.play(failing_check, WRITTEN, DEFECT_FROM_CHECK, blocked)
 
-        self.ok("run", "--once")
+        self.run_once()
 
         self.assertEqual([("test", "written", "sync"), ("sync", "completed", "verify"), ("verify", "failed", "test"),
                           ("test", "defect", "implement"), ("implement", "blocked", "ready")],
                          self.history("STORY-001")[-5:])
-        seen = parse((self.prompts / "item-seen-by-tester.yaml").read_text())
-        [check] = [entry for entry in seen.pending("test") if entry.step == "verify"]
+        [check] = [entry for entry in self.seen_at("test").pending("test") if entry.step == "verify"]
         self.assertEqual("failed", check.outcome)
         self.assertIn("the meals check found no meals", check.output["summary"])
 
     def test_the_resolve_prompt_is_previewable(self):
         self.script(*self.ready("STORY-001"))
-        self.ok("run", "--once")
-        self.assertTrue(self.ok("prompt", "resolve", "--item", "STORY-001").stdout.strip())
+        self.run_once()
+        self.previewable("resolve", "STORY-001")
 
 
 if __name__ == "__main__":

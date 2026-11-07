@@ -2,7 +2,6 @@
 import subprocess
 import tomllib
 from dataclasses import dataclass
-from pathlib import Path
 
 from .config import ROOT
 

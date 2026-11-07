@@ -17,7 +17,7 @@ from devteam.redesign.template import Templates
 from devteam.redesign.tui import Answers, Console, Outcomes, Standards
 from devteam.redesign.work_item import Backlog
 
-from .test_request_journey import GIT
+from .journey import GIT
 
 
 class Fixture(unittest.IsolatedAsyncioTestCase):

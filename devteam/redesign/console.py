@@ -1,143 +1,59 @@
-"""The dev-team command line."""
+"""The dev-team command line: arguments, stdin, stdout and exit codes around the commands."""
 import argparse
-from datetime import datetime, timezone
 import sys
-from pathlib import Path
 
-from devteam import git
-from devteam.config import ROOT, load_roles
-from devteam.evidence import PathGuard
+from devteam import check
 
-from . import flow, submission
-from .harness import Harness, record_customer
-from .template import RUN_VALUES, InvalidTemplate, Templates
-from .steps import AgentStep, InvalidStep
-from .work_item import DIRECTORIES, Backlog, InvalidWorkItem, parse
-
-EXAMPLE = ROOT / "prompts" / "examples" / "work-item.yaml"
+from .commands import CommandFailed, DevTeam
+from .work_item import DIRECTORIES
 
 
-def locate(args):
-    """The product's checkout (None outside git) and its backlog directory."""
-    directory = Path(args.product).resolve()
-    top = git.checkout(directory)
-    if top is None:
-        return None, directory / git.BACKLOG_DIR
-    try:
-        return top, git.ensure_backlog(top, create=False)
-    except git.GitError as exc:
-        raise SystemExit(str(exc)) from exc
-
-
-def launch(args):
-    """Load the harness's workflows and check the product is set up before anything runs in it."""
-    from devteam.initialise import missing
-
-    try:
-        flow.load_all()
-    except flow.InvalidWorkflow as exc:
-        raise SystemExit(str(exc)) from exc
-    product = Path(args.product).resolve()
-    gaps = missing(product)
-    if gaps:
-        raise SystemExit(f"{product} is not set up for dev-team:\n" + "\n".join(f"  {gap}" for gap in gaps))
-    return locate(args)
-
-
-def _backlog(args):
-    checkout, root = locate(args)
-    return Backlog(root, guard=PathGuard(checkout))
-
-
-def cmd_submit(args):
-    backlog = _backlog(args)
-    try:
-        item = backlog.get(args.id)
-        step = backlog.step(item)
-        submission.stage(backlog.root, item, step, args.outcome, sys.stdin.read())
-    except (InvalidWorkItem, InvalidStep, OSError, UnicodeError) as exc:
-        raise SystemExit(str(exc)) from exc
+def cmd_submit(team, args):
+    item, step = team.submit(args.id, args.outcome, sys.stdin.read())
     print(f"{item.id} {step.name}: {args.outcome} staged")
 
 
-def _fields(text):
-    fields = submission.parse(text)
-    if not isinstance(fields, dict):
-        raise InvalidWorkItem("the fields on stdin must be a YAML mapping")
-    return fields
-
-
-def cmd_create(args):
-    backlog = _backlog(args)
-    try:
-        item = backlog.create(args.type, args.title, _fields(sys.stdin.read()))
-    except (InvalidWorkItem, InvalidStep, OSError, UnicodeError) as exc:
-        raise SystemExit(str(exc)) from exc
+def cmd_create(team, args):
+    item = team.create(args.type, args.title, sys.stdin.read())
     print(f"{item.id}: captured" + (f" at {item.step}" if item.step else ""))
 
 
-def cmd_update(args):
-    backlog = _backlog(args)
-    try:
-        item = backlog.update(args.id, _fields(sys.stdin.read()))
-    except (InvalidWorkItem, InvalidStep, OSError, UnicodeError) as exc:
-        raise SystemExit(str(exc)) from exc
-    print(f"{item.id}: updated")
+def cmd_update(team, args):
+    print(f"{team.update(args.id, sys.stdin.read()).id}: updated")
 
 
-def cmd_record(args):
-    backlog = _backlog(args)
-    try:
-        item = record_customer(backlog, args.id, args.outcome, submission.parse(sys.stdin.read()))
-    except (InvalidWorkItem, InvalidStep, OSError, UnicodeError) as exc:
-        raise SystemExit(str(exc)) from exc
+def cmd_record(team, args):
+    item = team.record(args.id, args.outcome, sys.stdin.read())
     print(f"{item.id}: {args.outcome} -> {item.step}")
 
 
-def cmd_run(args):
-    checkout, root = launch(args)
-    harness = Harness(Backlog(root, guard=PathGuard(checkout)), checkout=checkout)
-    try:
-        harness.run(once=args.once)
-    except KeyboardInterrupt:
-        pass
-    if harness.failed:
+def cmd_run(team, args):
+    if team.run(once=args.once):
         raise SystemExit(1)
 
 
-def cmd_tui(args):
+def cmd_tui(team, args):
     from .tui import run
 
-    checkout, root = launch(args)
     # The harness writes from its own thread, so it gets its own backlog whose notices it routes to the screen.
-    run(_backlog(args), Harness(Backlog(root, guard=PathGuard(checkout)), checkout=checkout))
+    harness = team.harness()
+    run(team.backlog(), harness)
 
 
-def cmd_check(args):
-    from devteam import check
-
-    checkout, root = locate(args)
-    directory = checkout or Path(args.product).resolve()
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
-    log = root / "log" / "check" / f"{stamp}.log"
-    code, output = check.run(directory, args.test, log)
+def cmd_check(team, args):
+    result = team.check(args.test)
     # Agents read this, so a pass stays short and a failure shows only its end.
-    print(check.tail(output, 8 if code == 0 else check.TAIL_LINES))
-    print(f"\ncheck {'passed' if code == 0 else f'FAILED (exit {code})'}; full output: {log.relative_to(directory)}")
-    raise SystemExit(code)
+    print(check.tail(result.output, 8 if result.code == 0 else check.TAIL_LINES))
+    print(f"\ncheck {'passed' if result.code == 0 else f'FAILED (exit {result.code})'}; full output: {result.log}")
+    raise SystemExit(result.code)
 
 
-def cmd_init(args):
-    from devteam.initialise import initialise
-
-    try:
-        initialise(Path(args.product).resolve())
-    except (git.GitError, OSError) as exc:
-        raise SystemExit(str(exc)) from exc
+def cmd_init(team, args):
+    team.init()
 
 
 def _values(pairs):
-    values = {name: f"<{name}>" for name in RUN_VALUES}
+    values = {}
     for pair in pairs:
         name, sep, value = pair.partition("=")
         if not sep:
@@ -146,36 +62,14 @@ def _values(pairs):
     return values
 
 
-def cmd_prompt(args):
+def cmd_prompt(team, args):
     """Print what each agent step's role would be given, for reviewing the prompts."""
-    try:
-        backlog = None
-        if args.item:
-            backlog = Backlog(locate(args)[1])
-            item = backlog.get(args.item)
-        else:
-            item = parse(Path(args.file or EXAMPLE).read_text(encoding="utf-8"))
-        if item.workflow is None:
-            raise InvalidWorkItem(f"{item.id} is not in a workflow")
-        workflow = flow.harness(item.workflow)
-        if args.step is None:
-            steps = [step for step in workflow.steps.values() if isinstance(step, AgentStep)]
-        elif args.step in workflow.steps:
-            steps = [workflow.steps[args.step]]
-        else:
-            raise InvalidStep(f"workflow {item.workflow!r} has no step {args.step!r}")
-        templates = Templates()
-        roles = load_roles()
-        values = _values(args.set)
-        for step in steps:
-            rendered = templates.prompt(item, step, values, backlog)
-            print(f"==== {step.name}: {step.owner} ====\n")
-            print(f"---- system prompt (roles/{step.role}.md) ----\n")
-            print(roles[step.role].brief())
-            print(f"---- prompt ({step.prompt.relative_to(templates.directory.parent).as_posix()}) ----\n")
-            print(rendered)
-    except (InvalidWorkItem, InvalidStep, InvalidTemplate, flow.InvalidWorkflow, OSError, UnicodeError) as exc:
-        raise SystemExit(str(exc)) from exc
+    for prompt in team.prompts(args.step, item=args.item, file=args.file, values=_values(args.set)):
+        print(f"==== {prompt.step.name}: {prompt.step.owner} ====\n")
+        print(f"---- system prompt (roles/{prompt.step.role}.md) ----\n")
+        print(prompt.brief)
+        print(f"---- prompt ({prompt.source}) ----\n")
+        print(prompt.text)
 
 
 def main(argv=None):
@@ -226,5 +120,8 @@ def main(argv=None):
     p.set_defaults(func=cmd_prompt)
 
     args = parser.parse_args(argv)
-    args.func(args)
+    try:
+        args.func(DevTeam(args.product), args)
+    except CommandFailed as exc:
+        raise SystemExit(str(exc)) from None
 

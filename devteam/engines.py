@@ -1,4 +1,5 @@
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 from threading import Lock, Thread
@@ -6,6 +7,10 @@ from collections.abc import Callable
 
 from .config import Role, harness_command
 from .render import STREAMS
+
+
+class EngineMissing(Exception):
+    """The engine's command is not on the PATH, so the agent never ran."""
 
 
 def build_argv(role: Role, prompt: str, cwd: Path, extra_dir: Path) -> list[str]:
@@ -30,6 +35,8 @@ def build_argv(role: Role, prompt: str, cwd: Path, extra_dir: Path) -> list[str]
 def run(role: Role, prompt: str, cwd: Path, extra_dir: Path, log: Path,
         *, on_line: Callable[[str], None] | None = None) -> tuple[int, str]:
     """Drain both pipes live, keeping raw output in log and stdout as the reply source."""
+    if shutil.which(role.command[0]) is None:
+        raise EngineMissing(f"the {role.engine} engine's command {role.command[0]!r} is not on the PATH")
     argv = build_argv(role, prompt, cwd, extra_dir)
     header = f"# {role.name} via {role.engine} ({role.model})\n# cwd: {cwd}\n# {shlex.join(argv)}\n\n"
     renderer, extract_reply = STREAMS.get(role.stream, STREAMS["text"])

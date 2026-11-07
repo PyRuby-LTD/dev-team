@@ -1,69 +1,41 @@
-"""The default workflow's second group, implement and test, each item on its own branch with a queue for the checkout."""
+"""The default workflow's second group: each played item is implemented and tested on its own branch, one at a time."""
 import unittest
 
-from devteam.redesign.work_item import parse
-
-from .test_default_journey import SOUND
-from .test_request_journey import Product
+from .journey import Product, submit
 
 
-def analysed(item_id):
-    return f"""$DEV_TEAM backlog submit {item_id} analysed <<'OUTPUT'
-acceptance_criteria:
-  - A week of meals can be planned
-OUTPUT
-"""
+analysed = submit("analysed", "acceptance_criteria:\n  - A week of meals can be planned\n")
+sound = submit("sound", "findings: []\n")
 
 
-def sound(item_id):
-    return SOUND.replace("STORY-001", item_id)
-
-
-def implemented(item_id, change):
-    return f"""git branch --show-current
-echo changed > {change}
-$DEV_TEAM backlog submit {item_id} implemented <<'OUTPUT'
-branch: devteam/{item_id}
+def implemented(change):
+    def turn(agent):
+        agent.write(change, "changed\n")
+        agent.submit("implemented", f"""branch: devteam/{agent.item_id}
 libraries_added:
   - name: left-pad
     licence: MIT
 tech_tasks: [Extract the planner]
 surprises: [Weeks start on Sunday in the seed data]
 opinions: [The planner wants a service]
-OUTPUT
-"""
+""")
+    return turn
 
 
-def defect(item_id):
-    return f"""git branch --show-current
-git branch --list 'devteam/*'
-echo journey > journey_test.txt
-$DEV_TEAM backlog submit {item_id} defect <<'OUTPUT'
-journeys:
-  - journey: Plan a week
-    action: new
-defects: [Planning a week shows no meals]
-OUTPUT
-"""
+def defect(agent):
+    agent.write("journey_test.txt", "journey\n")
+    agent.submit("defect", "journeys:\n  - journey: Plan a week\n    action: new\ndefects: [Planning a week shows no meals]\n")
 
 
-def blocked(item_id, keep=None):
-    copy = (f"python3 -c 'import os, shutil; shutil.copy(\"backlog/stories/{item_id}.yaml\", "
-            f"os.environ[\"STUB_PROMPTS\"] + \"/{keep}\")'\n" if keep else "")
-    return f"""git branch --show-current
-{copy}$DEV_TEAM backlog submit {item_id} blocked <<'OUTPUT'
-blocked_by: The meals need a supplier only the customer can choose
-OUTPUT
-"""
+blocked = submit("blocked", "blocked_by: The meals need a supplier only the customer can choose\n")
 
 
 class Played(Product):
-    def ready(self, *item_ids):
-        plan = [{"sh": analysed(item_id)} for item_id in item_ids] + [{"sh": sound(item_id)} for item_id in item_ids]
-        for item_id in item_ids:
-            self.ok("backlog", "create", "story", f"Plan {item_id}", stdin="overview: As a cook, I want to plan.\n")
-            self.ok("backlog", "record", item_id, "analyse")
-        return plan
+    def ready(self, item_id):
+        """Capture a story for analysis; the agent turns that take it to ready."""
+        self.team.create("story", f"Plan {item_id}", "overview: As a cook, I want to plan.\n")
+        self.team.record(item_id, "analyse")
+        return [analysed, sound]
 
     def story(self, item_id):
         return self.item("stories", item_id)
@@ -71,36 +43,28 @@ class Played(Product):
     def history(self, item_id):
         return [(entry.step, entry.outcome, entry.to) for entry in self.story(item_id).step_outputs]
 
-    def out(self, number, engine):
-        return (self.prompts / f"{number:02d}-{engine}.out").read_text().split()
-
     def files(self, ref):
         return self.git("ls-tree", "-r", "--name-only", ref).split()
 
 
 class ImplementAndTest(Played):
     def test_two_played_items_queue_for_the_checkout_and_each_works_on_its_own_branch(self):
-        # Analysed one after the other: run in parallel, either item's agent could take the other's plan entry.
-        plan = self.ready("STORY-001")
-        self.script(*plan, {"sh": analysed("STORY-002")}, {"sh": sound("STORY-002")},
-                    {"sh": implemented("STORY-001", "planner.txt")}, {"sh": defect("STORY-001")},
-                    {"sh": blocked("STORY-001")}, {"sh": implemented("STORY-002", "printer.txt")}, {"sh": defect("STORY-002")},
-                    {"sh": blocked("STORY-002")})
-        self.ok("run", "--once")
+        # Analysed one after the other: run in parallel, either item's agent could take the other's turn.
+        self.script(*self.ready("STORY-001"), analysed, sound, implemented("planner.txt"), defect, blocked,
+                    implemented("printer.txt"), defect, blocked)
+        self.run_once()
         self.ready("STORY-002")
-        self.ok("run", "--once")
-        self.ok("backlog", "record", "STORY-001", "play", stdin="feedback: Start with breakfast.\n")
-        self.ok("backlog", "record", "STORY-002", "play")
+        self.run_once()
+        self.team.record("STORY-001", "play", "feedback: Start with breakfast.\n")
+        self.team.record("STORY-002", "play")
 
-        self.ok("run", "--once")
+        self.run_once()
 
-        self.assertEqual("devteam/STORY-001", self.out(5, "codex")[0])
-        self.assertEqual("devteam/STORY-001", self.out(6, "claude")[0])
-        self.assertNotIn("devteam/STORY-002", self.out(6, "claude"),
+        self.assertEqual([("STORY-001", "devteam/STORY-001", "codex"), ("STORY-001", "devteam/STORY-001", "claude"),
+                          ("STORY-001", "devteam/STORY-001", "codex"), ("STORY-002", "devteam/STORY-002", "codex"),
+                          ("STORY-002", "devteam/STORY-002", "claude"), ("STORY-002", "devteam/STORY-002", "codex")],
+                         [(agent.item_id, agent.branch, agent.engine) for agent in self.agent.agents[4:]],
                          "STORY-002 started while STORY-001 held the checkout")
-        self.assertEqual("devteam/STORY-001", self.out(7, "codex")[0])
-        self.assertEqual("devteam/STORY-002", self.out(8, "codex")[0])
-        self.assertEqual("devteam/STORY-002", self.out(9, "claude")[0])
 
         first, second = self.files("devteam/STORY-001"), self.files("devteam/STORY-002")
         self.assertIn("planner.txt", first)
@@ -123,27 +87,23 @@ class ImplementAndTest(Played):
                           "opinions": ["The planner wants a service"]}, implementation)
 
     def test_a_tester_defect_returns_the_item_to_implement_with_the_defects_pending(self):
-        plan = self.ready("STORY-001")
-        self.script(*plan, {"sh": implemented("STORY-001", "planner.txt")}, {"sh": defect("STORY-001")},
-                    {"sh": blocked("STORY-001", keep="item-seen-after-defect.yaml")})
-        self.ok("run", "--once")
-        self.ok("backlog", "record", "STORY-001", "play")
+        self.script(*self.ready("STORY-001"), implemented("planner.txt"), defect, blocked)
+        self.run_once()
+        self.team.record("STORY-001", "play")
 
-        self.ok("run", "--once")
+        self.run_once()
 
-        seen = parse((self.prompts / "item-seen-after-defect.yaml").read_text())
+        seen = self.seen(5).item
         self.assertEqual("implement", seen.step)
         self.assertEqual([("test", "defect", ["Planning a week shows no meals"])],
                          [(entry.step, entry.outcome, entry.output["defects"]) for entry in seen.pending("implement")])
 
     def test_the_backlog_stays_on_its_own_branch_apart_from_product_code(self):
-        plan = self.ready("STORY-001")
-        self.script(*plan, {"sh": implemented("STORY-001", "planner.txt")}, {"sh": defect("STORY-001")},
-                    {"sh": blocked("STORY-001")})
-        self.ok("run", "--once")
-        self.ok("backlog", "record", "STORY-001", "play")
+        self.script(*self.ready("STORY-001"), implemented("planner.txt"), defect, blocked)
+        self.run_once()
+        self.team.record("STORY-001", "play")
 
-        self.ok("run", "--once")
+        self.run_once()
 
         product = self.files("devteam/STORY-001")
         self.assertIn("planner.txt", product)
@@ -155,10 +115,10 @@ class ImplementAndTest(Played):
 
     def test_implement_and_test_prompts_are_previewable(self):
         self.script(*self.ready("STORY-001"))
-        self.ok("run", "--once")
+        self.run_once()
         for step in ("implement", "test"):
             with self.subTest(step=step):
-                self.assertTrue(self.ok("prompt", step, "--item", "STORY-001").stdout.strip())
+                self.previewable(step, "STORY-001")
 
 
 if __name__ == "__main__":

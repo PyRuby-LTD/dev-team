@@ -1,14 +1,13 @@
 """Workflow steps: the common interface the harness dispatches and the TUI displays, one class per kind of owner."""
 from dataclasses import dataclass, field
 from pathlib import Path
-import shutil
 from typing import ClassVar
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
 from devteam import check as checks
-from devteam import git
+from devteam import engines, git
 from devteam.config import ROOT
 
 from . import github
@@ -140,8 +139,6 @@ class AgentStep(Step):
         from . import submission
 
         role = harness.roles[self.role]
-        if shutil.which(role.command[0]) is None:
-            raise StepFailed(f"the {role.engine} engine's command {role.command[0]!r} is not on the PATH")
         root = harness.backlog.root
         if role.push:
             # Agents often cannot write .git from their sandbox, so the harness pushes the branch for them.
@@ -153,7 +150,10 @@ class AgentStep(Step):
         # A submission left by an earlier run must not be taken for this one.
         submission.take(root, item.id, self.name)
         log.parent.mkdir(parents=True, exist_ok=True)
-        code, _ = harness.engine(role, prompt, harness.checkout or root, root, log, on_line=harness.listener(item))
+        try:
+            code, _ = harness.engine(role, prompt, harness.checkout or root, root, log, on_line=harness.listener(item))
+        except engines.EngineMissing as exc:
+            raise StepFailed(str(exc)) from None
         if code != 0:
             submission.take(root, item.id, self.name)
             raise StepFailed(f"{role.command[0]} exited with code {code}; see {log}")
