@@ -330,6 +330,11 @@ class Console(App):
 
     def on_unmount(self):
         self.stop.set()
+        self.wake_harness()
+
+    def wake_harness(self):
+        if self.harness is not None:
+            self.harness.wake()
 
     def from_harness(self, callback, *args):
         # The harness thread can outlive the screen; a report after shutdown has nowhere to go.
@@ -485,6 +490,7 @@ class Console(App):
             self.notify(str(exc), severity="error")
         else:
             self.activity.write(f"{item.id} {step.name}: {outcome} -> {updated.step}")
+            self.wake_harness()
         self.action_reload()
 
     def action_new_request(self):
@@ -502,6 +508,7 @@ class Console(App):
         else:
             self.activity.write(f"{item.id}: captured at {item.step}")
             self.selected = item.id
+            self.wake_harness()
         self.action_reload()
 
     def action_toggle_mine(self):

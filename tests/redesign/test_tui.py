@@ -1,4 +1,5 @@
 """Pilot tests: the TUI opens on a backlog, and what the customer does in it reaches the harness."""
+import asyncio
 import dataclasses
 import os
 from pathlib import Path
@@ -7,6 +8,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 from textual.widgets import Markdown, OptionList, RichLog, SelectionList, TextArea
 
@@ -25,6 +27,10 @@ class Fixture(unittest.IsolatedAsyncioTestCase):
         self.base = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
         self.backlog = Backlog(self.base / "backlog", notice=lambda message: None)
 
+    async def asyncSetUp(self):
+        # The test case turns on asyncio's debug mode, which records a traceback for every callback.
+        asyncio.get_running_loop().set_debug(False)
+
     def harness(self):
         roles = {name: dataclasses.replace(role, command=[sys.executable]) for name, role in load_roles().items()}
         return Harness(Backlog(self.backlog.root, notice=lambda message: None), roles=roles, engine=self.engine,
@@ -41,6 +47,11 @@ class Fixture(unittest.IsolatedAsyncioTestCase):
             if condition():
                 return
         self.fail("the backlog did not reach the expected state")
+
+    async def write(self, pilot, area, text):
+        """Fill a text box and save the dialog; typing it key by key waits for the app to go idle after each key."""
+        area.text = text
+        await pilot.press("ctrl+s")
 
     async def open(self, app, pilot, item_id):
         app.select(item_id)
@@ -124,13 +135,15 @@ class Opening(Fixture):
 
 
 class Acting(Fixture):
-    async def test_choosing_analyse_records_the_outcome_and_the_harness_runs_the_product_owner(self):
+    async def test_choosing_analyse_records_the_outcome_and_the_harness_runs_the_product_owner_at_once(self):
         self.backlog.create("request", "Shopping list")
         app = Console(self.backlog, harness=self.harness())
-        async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause()
-            await self.choose(app, pilot, "REQUEST-001", "analyse")
-            await self.settle(pilot, lambda: self.backlog.get("REQUEST-001").step == "answering")
+        # Far longer than settling allows, so only waking the harness on recording can move the item in time.
+        with patch("devteam.redesign.tui.REFRESH_SECONDS", 60):
+            async with app.run_test(size=(120, 40)) as pilot:
+                await pilot.pause()
+                await self.choose(app, pilot, "REQUEST-001", "analyse")
+                await self.settle(pilot, lambda: self.backlog.get("REQUEST-001").step == "answering")
         request = self.backlog.get("REQUEST-001")
         self.assertEqual(["captured", "analysis"], [entry.step for entry in request.step_outputs])
         self.assertEqual(["Who cooks?"], [question.question for question in request.questions])
@@ -165,7 +178,7 @@ class Acting(Fixture):
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await self.choose(app, pilot, "REQUEST-001", "revise")
-            await pilot.press(*"Split", "space", *"it", "ctrl+s")
+            await self.write(pilot, app.screen.query_one(TextArea), "Split it")
             await self.settle(pilot, lambda: self.backlog.get("REQUEST-001").step == "analysis")
         entry = self.backlog.get("REQUEST-001").step_outputs[-1]
         self.assertEqual(("review", "revise", {"feedback": "Split it"}), (entry.step, entry.outcome, entry.output))
@@ -181,12 +194,10 @@ class Acting(Fixture):
             await self.open(app, pilot, "REQUEST-001")
             self.assertIsInstance(app.screen, Answers)
             first, second = app.screen.query(TextArea)
-            first.focus()
-            await pilot.press(*"Aldi", "ctrl+s")
+            await self.write(pilot, first, "Aldi")
             await pilot.pause()
             self.assertIsInstance(app.screen, Answers)
-            second.focus()
-            await pilot.press(*"n/a", "ctrl+s")
+            await self.write(pilot, second, "n/a")
             await pilot.pause()
             await self.pick(app, pilot, "answered")
             await self.settle(pilot, lambda: self.backlog.get("REQUEST-001").step == "analysis")
@@ -221,7 +232,7 @@ class Acting(Fixture):
             await pilot.pause()
             await pilot.press("n")
             await pilot.pause()
-            await pilot.press(*"Plan", "space", *"meals", "ctrl+s")
+            await self.write(pilot, app.screen.query_one(TextArea), "Plan meals")
             await self.settle(pilot, lambda: self.backlog.path("REQUEST-001").exists())
         request = self.backlog.get("REQUEST-001")
         self.assertEqual(("Plan meals", "captured", "Plan meals"), (request.title, request.step, request.overview))

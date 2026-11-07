@@ -51,6 +51,11 @@ class Harness:
         self.failed = {}
         self.waiting = {}
         self.not_before = {}
+        self.events = queue.Queue()  # finished steps, and wake-ups with nothing in them
+
+    def wake(self):
+        """Look for steps to perform now rather than after the interval, such as once the customer records an outcome."""
+        self.events.put(None)
 
     def values(self, item):
         evidence = self.backlog.root / "log" / item.id
@@ -158,7 +163,6 @@ class Harness:
     def run(self, once=False, interval=2.0, stop=None):
         """Perform each pending step on its own thread, with only one step at a time holding the checkout."""
         stop = stop or threading.Event()
-        finished = queue.Queue()
         running = {}  # item id -> whether its step holds the checkout
         progressed = False
         while not stop.is_set():
@@ -174,18 +178,19 @@ class Harness:
                     self.note_waiting(item, step, f"waiting for the checkout, which {holder} holds")
                     continue
                 running[item.id] = holds
-                threading.Thread(target=lambda item=item, step=step: finished.put((item.id, self.perform(item, step))),
+                threading.Thread(target=lambda item=item, step=step: self.events.put((item.id, self.perform(item, step))),
                                  daemon=True).start()
             if not running:
                 if once and not progressed:
                     return
-                if not progressed:
-                    stop.wait(interval)
-                progressed = False
-                continue
+                if progressed:
+                    progressed = False
+                    continue
             try:
-                item_id, moved = finished.get(timeout=interval)
+                event = self.events.get(timeout=interval)
             except queue.Empty:
                 continue
-            running.pop(item_id)
-            progressed = progressed or moved
+            if event is not None:
+                item_id, moved = event
+                running.pop(item_id)
+                progressed = progressed or moved
