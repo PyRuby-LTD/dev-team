@@ -10,6 +10,8 @@ from devteam.backlog import InvalidRecord, StrictLoader
 from devteam.config import ROOT, load_roles
 
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
+# The harness's own workflows, by name, once loaded in this process.
+LOADED = {}
 
 
 class InvalidWorkflow(ValueError):
@@ -23,7 +25,7 @@ class Workflow:
     steps: dict
 
 
-def build(name, data, roles, prompts=None):
+def build(name, data, roles, prompts=None, schemas=True):
     if not isinstance(data, dict) or set(data) != {"initial", "steps"}:
         raise InvalidWorkflow("a workflow has exactly 'initial' and 'steps'")
     if not isinstance(data["steps"], dict) or not data["steps"]:
@@ -31,7 +33,7 @@ def build(name, data, roles, prompts=None):
     built = {}
     for step_name, spec in data["steps"].items():
         try:
-            built[step_name] = steps.build(step_name, spec, roles, prompts)
+            built[step_name] = steps.build(step_name, spec, roles, prompts, schemas)
         except steps.InvalidStep as exc:
             raise InvalidWorkflow(str(exc)) from None
     for step in built.values():
@@ -44,7 +46,7 @@ def build(name, data, roles, prompts=None):
     return Workflow(name, data["initial"], built)
 
 
-def load(name, directory=None, roles=None, prompts=None):
+def load(name, directory=None, roles=None, prompts=None, schemas=True):
     if not isinstance(name, str) or not NAME.fullmatch(name):
         raise InvalidWorkflow(f"invalid workflow name {name!r}")
     path = Path(directory or ROOT / "workflows") / f"{name}.yaml"
@@ -55,12 +57,23 @@ def load(name, directory=None, roles=None, prompts=None):
     except (OSError, yaml.YAMLError, InvalidRecord) as exc:
         raise InvalidWorkflow(f"workflow {name!r}: {exc}") from None
     try:
-        return build(name, data, load_roles().keys() if roles is None else roles, prompts)
+        return build(name, data, load_roles().keys() if roles is None else roles, prompts, schemas)
     except InvalidWorkflow as exc:
         raise InvalidWorkflow(f"workflow {name!r}: {exc}") from None
 
 
 def load_all(directory=None, roles=None, prompts=None):
     """Every workflow the harness defines, so a broken one is reported before anything runs."""
+    own = directory is None and roles is None and prompts is None
     directory = Path(directory or ROOT / "workflows")
-    return {path.stem: load(path.stem, directory, roles, prompts) for path in sorted(directory.glob("*.yaml"))}
+    loaded = {path.stem: load(path.stem, directory, roles, prompts) for path in sorted(directory.glob("*.yaml"))}
+    if own:
+        LOADED.update(loaded)
+    return loaded
+
+
+def harness(name):
+    """One of the harness's own workflows, loaded once per process."""
+    if name not in LOADED:
+        LOADED[name] = load(name, schemas=False)
+    return LOADED[name]

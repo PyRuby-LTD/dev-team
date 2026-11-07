@@ -12,7 +12,7 @@ class InvalidRecord(ValueError):
     pass
 
 
-class StrictLoader(yaml.SafeLoader):
+class StrictLoader(getattr(yaml, "CSafeLoader", yaml.SafeLoader)):
     def construct_mapping(self, node, deep=False):
         result = {}
         for key_node, value_node in node.value:

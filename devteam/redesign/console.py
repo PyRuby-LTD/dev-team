@@ -157,7 +157,7 @@ def cmd_prompt(args):
             item = parse(Path(args.file or EXAMPLE).read_text(encoding="utf-8"))
         if item.workflow is None:
             raise InvalidWorkItem(f"{item.id} is not in a workflow")
-        workflow = flow.load(item.workflow)
+        workflow = flow.harness(item.workflow)
         if args.step is None:
             steps = [step for step in workflow.steps.values() if isinstance(step, AgentStep)]
         elif args.step in workflow.steps:

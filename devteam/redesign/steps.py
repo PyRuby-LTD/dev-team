@@ -348,11 +348,13 @@ def _prompt(step_name, name, prompts):
     return prompt
 
 
-def _output(step_name, output):
+def _output(step_name, output, schemas):
     if output is None or output == REQUIREMENTS:
         return output
     if not isinstance(output, dict):
         raise InvalidStep(f"step {step_name!r}: 'output' must be {REQUIREMENTS!r} or a JSON Schema")
+    if not schemas:
+        return output
     try:
         Draft202012Validator.check_schema(output)
     except SchemaError as exc:
@@ -375,8 +377,12 @@ def _harness_step(step_name, owner):
     return cls
 
 
-def build(step_name, spec, roles, prompts=None):
-    """One step from its workflow definition; whether each outcome's next step exists is the workflow's concern."""
+def build(step_name, spec, roles, prompts=None, schemas=True):
+    """One step from its workflow definition; whether each outcome's next step exists is the workflow's concern.
+
+    Checking output schemas against the JSON Schema metaschema is most of the cost of loading a workflow, so
+    schemas=False skips it where launch has already checked them.
+    """
     if not isinstance(spec, dict) or "owner" not in spec:
         raise InvalidStep(f"step {step_name!r} must have an 'owner'")
     owner = spec["owner"]
@@ -389,7 +395,7 @@ def build(step_name, spec, roles, prompts=None):
         raise InvalidStep(f"step {step_name!r} owned by {owner!r} must have exactly "
                           + ", ".join(repr(key) for key in sorted(expected)) + ", and may have 'output'")
     outcomes = _outcomes(step_name, spec["outcomes"])
-    output = _output(step_name, spec.get("output"))
+    output = _output(step_name, spec.get("output"), schemas)
     if owner == "human":
         if isinstance(output, dict):
             if unknown := [name for name in output.get("properties", {}) if name not in CUSTOMER_INPUTS]:

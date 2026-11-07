@@ -303,7 +303,7 @@ class Backlog:
 
     def __init__(self, root, workflows=None, guard=None, notice=print):
         self.root = Path(root).resolve()
-        self._load_workflow = workflows or flow.load
+        self._load_workflow = workflows or flow.harness
         self._workflows = {}
         self.guard = guard
         self.notice = notice
