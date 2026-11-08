@@ -11,7 +11,8 @@ from devteam.evidence import PathGuard
 from . import submission
 from .steps import AgentStep, InvalidStep
 from .workflow import InvalidWorkflow, cached, load_all
-from .work_item import Backlog, InvalidWorkItem, parse
+from .work_item import Backlog, InvalidWorkItem, parse as parse_item
+from .yaml_format import InvalidYaml, parse
 
 EXAMPLE = ROOT / "prompts" / "examples" / "work-item.yaml"
 FAILURES = (InvalidWorkItem, InvalidStep, InvalidWorkflow, git.GitError, OSError, UnicodeError)
@@ -36,8 +37,15 @@ class CheckRun:
     log: Path
 
 
+def _yaml(text, what):
+    try:
+        return parse(text)
+    except InvalidYaml as exc:
+        raise InvalidWorkItem(f"{what} must be valid YAML: {exc}") from None
+
+
 def _fields(text):
-    fields = submission.parse(text)
+    fields = _yaml(text, "the fields")
     if not isinstance(fields, dict):
         raise InvalidWorkItem("the fields must be a YAML mapping")
     return fields
@@ -113,7 +121,7 @@ class DevTeam:
         from .harness import record_customer
 
         try:
-            return record_customer(self.backlog(), item_id, outcome, submission.parse(output))
+            return record_customer(self.backlog(), item_id, outcome, _yaml(output, "the step's output"))
         except FAILURES as exc:
             raise CommandFailed(str(exc)) from None
 
@@ -152,7 +160,7 @@ class DevTeam:
                 backlog = Backlog(self.locate()[1])
                 work_item = backlog.get(item)
             else:
-                work_item = parse(Path(file or EXAMPLE).read_text(encoding="utf-8"))
+                work_item = parse_item(Path(file or EXAMPLE).read_text(encoding="utf-8"))
             if work_item.workflow is None:
                 raise InvalidWorkItem(f"{work_item.id} is not in a workflow")
             workflow = cached(work_item.workflow)

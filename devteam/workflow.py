@@ -3,10 +3,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
-
 from . import steps
-from devteam.backlog import InvalidRecord, StrictLoader
+from devteam.yaml_format import InvalidYaml, parse
 from devteam.config import ROOT, load_roles
 
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
@@ -51,10 +49,10 @@ def load(name, directory=None, roles=None, prompts=None, schemas=True):
         raise InvalidWorkflow(f"invalid workflow name {name!r}")
     path = Path(directory or ROOT / "workflows") / f"{name}.yaml"
     try:
-        data = yaml.load(path.read_text(encoding="utf-8"), Loader=StrictLoader)
+        data = parse(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise InvalidWorkflow(f"workflow {name!r} is not defined ({path})") from None
-    except (OSError, yaml.YAMLError, InvalidRecord) as exc:
+    except (OSError, InvalidYaml) as exc:
         raise InvalidWorkflow(f"workflow {name!r}: {exc}") from None
     try:
         return build(name, data, load_roles().keys() if roles is None else roles, prompts, schemas)

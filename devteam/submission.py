@@ -2,19 +2,9 @@
 import os
 from pathlib import Path
 
-import yaml
-
-from devteam.backlog import InvalidRecord, StrictLoader
+from devteam.yaml_format import InvalidYaml, parse, to_yaml
 
 from .steps import AgentStep, InvalidStep
-
-
-def parse(text):
-    try:
-        fragment = yaml.load(text, Loader=StrictLoader)
-    except (yaml.YAMLError, InvalidRecord) as exc:
-        raise InvalidStep(f"the output is not valid YAML: {exc}") from None
-    return {} if fragment is None else fragment
 
 
 def _path(root, item_id, step_name):
@@ -24,12 +14,14 @@ def _path(root, item_id, step_name):
 def stage(root, record, step, outcome, text):
     if not isinstance(step, AgentStep):
         raise InvalidStep(f"{record.id} is at step {step.name!r}, which is not an agent step")
-    fragment = step.check(outcome, parse(text))
+    try:
+        fragment = step.check(outcome, parse(text))
+    except InvalidYaml as exc:
+        raise InvalidStep(f"the output is not valid YAML: {exc}") from None
     path = _path(root, record.id, step.name)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(yaml.safe_dump({"outcome": outcome, "fragment": fragment}, sort_keys=False,
-                                        allow_unicode=True), encoding="utf-8")
+    temporary.write_text(to_yaml({"outcome": outcome, "fragment": fragment}), encoding="utf-8")
     os.replace(temporary, path)
     return path
 
@@ -37,7 +29,7 @@ def stage(root, record, step, outcome, text):
 def take(root, item_id, step_name):
     path = _path(root, item_id, step_name)
     try:
-        staged = yaml.safe_load(path.read_text(encoding="utf-8"))
+        staged = parse(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
     path.unlink()

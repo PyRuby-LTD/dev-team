@@ -1,15 +1,14 @@
 """Work items as YAML, one file per item at backlog/<kind>s/<ID>.yaml; any field may appear on any type."""
 from dataclasses import dataclass, field
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
-import yaml
-
 from devteam import git
-from devteam.backlog import InvalidRecord, StrictLoader, valid_id
+from devteam.yaml_format import InvalidYaml, parse as parse_yaml, to_yaml
 
 from .workflow import InvalidWorkflow, cached
 from .steps import REQUIREMENTS
@@ -151,6 +150,13 @@ class WorkItem(Requirements, Identity):
 OWNED = ("id", "type", "workflow", "step", "step_outputs")
 
 
+ID = re.compile(r"[A-Z][A-Z0-9]*-[A-Za-z0-9][A-Za-z0-9_-]*\Z")
+
+
+def valid_id(value):
+    return isinstance(value, str) and ID.fullmatch(value) is not None
+
+
 def _problems(exc):
     return "; ".join(f"{'.'.join(str(p) for p in error['loc']) or 'item'}: {error['msg']}" for error in exc.errors())
 
@@ -194,36 +200,9 @@ def _build(data):
 
 def parse(text):
     try:
-        data = yaml.load(text, Loader=StrictLoader)
-    except (yaml.YAMLError, InvalidRecord) as exc:
+        return _build(parse_yaml(text))
+    except InvalidYaml as exc:
         raise InvalidWorkItem(f"not valid YAML: {exc}") from None
-    return _build(data)
-
-
-class _Dumper(yaml.SafeDumper):
-    def ignore_aliases(self, data):
-        return True
-
-    def increase_indent(self, flow=False, indentless=False):
-        # Indent lists under their key, as the examples are written.
-        return super().increase_indent(flow, False)
-
-
-def _text(dumper, value):
-    return dumper.represent_scalar("tag:yaml.org,2002:str", value, style="|" if "\n" in value else None)
-
-
-_Dumper.add_representer(str, _text)
-
-
-def to_yaml(value):
-    """Models and plain data alike, as the work-item files write them."""
-    if isinstance(value, BaseModel):
-        value = value.model_dump(exclude_none=True, exclude_defaults=True)
-    elif isinstance(value, list):
-        value = [v.model_dump(exclude_none=True, exclude_defaults=True) if isinstance(v, BaseModel) else v
-                 for v in value]
-    return yaml.dump(value, Dumper=_Dumper, sort_keys=False, allow_unicode=True, width=float("inf"))
 
 
 def dump(item):

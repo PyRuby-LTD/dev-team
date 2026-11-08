@@ -3,12 +3,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, TemplateError
-import yaml
 
 from devteam.config import ROOT, harness_command
 
 from .steps import AgentStep
-from .work_item import Requirements, to_yaml
+from .work_item import Requirements
+from .yaml_format import InvalidYaml, parse, to_yaml
 
 RUN_VALUES = ("checkout", "branch", "base", "verify_log", "conflicted_files", "evidence_dir")
 SUBMIT = "_submit.md"
@@ -31,7 +31,10 @@ def load_standards(directory=None):
     standards = {}
     for path in sorted(Path(directory or ROOT / "standards").glob("*.md")):
         _, front, body = path.read_text(encoding="utf-8").split("---\n", 2)
-        meta = yaml.safe_load(front)
+        try:
+            meta = parse(front)
+        except InvalidYaml as exc:
+            raise InvalidTemplate(f"{path}: not valid YAML: {exc}") from None
         standards[meta["name"]] = Standard(meta["name"], meta["kind"], meta["description"], body.strip())
     return standards
 
