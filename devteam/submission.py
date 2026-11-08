@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 
-from devteam.yaml_format import InvalidYaml, parse, to_yaml
+from devteam.yaml_format import parse, to_yaml
 
 from .steps import AgentStep, InvalidStep
 
@@ -14,10 +14,7 @@ def _path(root, item_id, step_name):
 def stage(root, record, step, outcome, text):
     if not isinstance(step, AgentStep):
         raise InvalidStep(f"{record.id} is at step {step.name!r}, which is not an agent step")
-    try:
-        fragment = step.check(outcome, parse(text))
-    except InvalidYaml as exc:
-        raise InvalidStep(f"the output is not valid YAML: {exc}") from None
+    fragment = step.check(outcome, parse(text))
     path = _path(root, record.id, step.name)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")

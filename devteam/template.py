@@ -34,7 +34,7 @@ def load_standards(directory=None):
         try:
             meta = parse(front)
         except InvalidYaml as exc:
-            raise InvalidTemplate(f"{path}: not valid YAML: {exc}") from None
+            raise InvalidTemplate(f"{path}: {exc}") from None
         standards[meta["name"]] = Standard(meta["name"], meta["kind"], meta["description"], body.strip())
     return standards
 

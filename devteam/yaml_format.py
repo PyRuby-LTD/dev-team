@@ -16,9 +16,9 @@ class _Loader(getattr(yaml, "CSafeLoader", yaml.SafeLoader)):
         for key_node, value_node in node.value:
             key = self.construct_object(key_node, deep=deep)
             if not isinstance(key, str):
-                raise InvalidYaml("mapping keys must be strings")
+                raise InvalidYaml("not valid YAML: mapping keys must be strings")
             if key in result:
-                raise InvalidYaml(f"duplicate key {key!r}; keep one value")
+                raise InvalidYaml(f"not valid YAML: duplicate key {key!r}; keep one value")
             result[key] = self.construct_object(value_node, deep=deep)
         return result
 
@@ -28,7 +28,7 @@ def parse(text):
     try:
         return yaml.load(text, Loader=_Loader) or {}
     except yaml.YAMLError as exc:
-        raise InvalidYaml(str(exc)) from None
+        raise InvalidYaml(f"not valid YAML: {exc}") from None
 
 
 class _Dumper(yaml.SafeDumper):

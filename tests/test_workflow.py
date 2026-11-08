@@ -106,7 +106,7 @@ class LoadingWorkflows(unittest.TestCase):
             "missing": (None, "workflow 'default' is not defined"),
             "malformed": ("steps: [", "workflow 'default': "),
             "duplicate step": (DEFINITION + "  done:\n    owner: human\n    outcomes: {}\n",
-                               "workflow 'default': duplicate key 'done'"),
+                               "workflow 'default': not valid YAML: duplicate key 'done'"),
             "invalid step": (DEFINITION.replace("harness:Check", "harness:Lint"),
                              "workflow 'default': step 'verify': 'Lint' is not a harness step"),
         }

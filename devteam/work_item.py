@@ -199,10 +199,7 @@ def _build(data):
 
 
 def parse(text):
-    try:
-        return _build(parse_yaml(text))
-    except InvalidYaml as exc:
-        raise InvalidWorkItem(f"not valid YAML: {exc}") from None
+    return _build(parse_yaml(text))
 
 
 def dump(item):
@@ -299,7 +296,7 @@ class Backlog:
             return load(path)
         except FileNotFoundError:
             raise InvalidWorkItem(f"{item_id} does not exist") from None
-        except (InvalidWorkItem, OSError, UnicodeError) as exc:
+        except (InvalidWorkItem, InvalidYaml, OSError, UnicodeError) as exc:
             raise InvalidWorkItem(f"{path}: {exc}") from None
 
     def workflow(self, name):
@@ -330,7 +327,7 @@ class Backlog:
                     if item.workflow is not None:
                         self.step(item)
                     snapshot.add(path, item)
-                except (InvalidWorkItem, OSError, UnicodeError) as exc:
+                except (InvalidWorkItem, InvalidYaml, OSError, UnicodeError) as exc:
                     snapshot.error(path, str(exc))
         if replacement is not None and replacement.id not in snapshot.items:
             snapshot.add(self.path(replacement.id), replacement)

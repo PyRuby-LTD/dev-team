@@ -15,7 +15,7 @@ from .work_item import Backlog, InvalidWorkItem, parse as parse_item
 from .yaml_format import InvalidYaml, parse
 
 EXAMPLE = ROOT / "prompts" / "examples" / "work-item.yaml"
-FAILURES = (InvalidWorkItem, InvalidStep, InvalidWorkflow, git.GitError, OSError, UnicodeError)
+FAILURES = (InvalidWorkItem, InvalidStep, InvalidWorkflow, InvalidYaml, git.GitError, OSError, UnicodeError)
 
 
 class CommandFailed(Exception):
@@ -37,15 +37,8 @@ class CheckRun:
     log: Path
 
 
-def _yaml(text, what):
-    try:
-        return parse(text)
-    except InvalidYaml as exc:
-        raise InvalidWorkItem(f"{what} must be valid YAML: {exc}") from None
-
-
 def _fields(text):
-    fields = _yaml(text, "the fields")
+    fields = parse(text)
     if not isinstance(fields, dict):
         raise InvalidWorkItem("the fields must be a YAML mapping")
     return fields
@@ -121,7 +114,7 @@ class DevTeam:
         from .harness import record_customer
 
         try:
-            return record_customer(self.backlog(), item_id, outcome, _yaml(output, "the step's output"))
+            return record_customer(self.backlog(), item_id, outcome, parse(output))
         except FAILURES as exc:
             raise CommandFailed(str(exc)) from None
 

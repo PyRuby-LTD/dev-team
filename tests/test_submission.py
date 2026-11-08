@@ -12,6 +12,7 @@ import yaml
 from devteam import submission
 from devteam.console import main
 from devteam.steps import AgentStep, HumanStep, InvalidStep, Outcome
+from devteam.yaml_format import InvalidYaml
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -58,16 +59,17 @@ class StagingOutput(unittest.TestCase):
 
     def test_invalid_output_is_refused_and_nothing_is_staged(self):
         cases = {
-            "unknown outcome": ("merge", FINDINGS, "'merge' is not an outcome of step 'review'; valid: approve, revise"),
-            "not a mapping": ("revise", "- a finding\n", "must be a mapping"),
-            "sets the outcome": ("revise", "outcome: approve\n", "must not set 'outcome'"),
-            "duplicate key": ("revise", "findings: []\nfindings: []\n", "duplicate key 'findings'"),
-            "malformed": ("revise", "findings: [\n", "not valid YAML"),
-            "breaks the schema": ("revise", "findings:\n  - concern: glossary\n",
+            "unknown outcome": ("merge", FINDINGS, InvalidStep,
+                                "'merge' is not an outcome of step 'review'; valid: approve, revise"),
+            "not a mapping": ("revise", "- a finding\n", InvalidStep, "must be a mapping"),
+            "sets the outcome": ("revise", "outcome: approve\n", InvalidStep, "must not set 'outcome'"),
+            "duplicate key": ("revise", "findings: []\nfindings: []\n", InvalidYaml, "duplicate key 'findings'"),
+            "malformed": ("revise", "findings: [\n", InvalidYaml, "not valid YAML"),
+            "breaks the schema": ("revise", "findings:\n  - concern: glossary\n", InvalidStep,
                                   "does not fit its schema: findings.0: 'finding' is a required property"),
         }
-        for label, (outcome, text, message) in cases.items():
-            with self.subTest(label), self.assertRaisesRegex(InvalidStep, message):
+        for label, (outcome, text, error, message) in cases.items():
+            with self.subTest(label), self.assertRaisesRegex(error, message):
                 self.stage(outcome, text)
         self.assertIsNone(submission.take(self.root, "BUG-001", "review"))
 
