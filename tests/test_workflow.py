@@ -1,172 +1,134 @@
-import contextlib
-import io
-import json
 from pathlib import Path
 import tempfile
 import unittest
 
-from devteam.backlog import InvalidRecord, Repository
-from devteam.cli import main
+import yaml
+
 from devteam.workflow import InvalidWorkflow, build, load
+from devteam.steps import AgentStep, Check, HumanStep, PullRequest
 
-ROLES = {"analyst", "implementer", "reviewer"}
-
-
-def definition():
-    return {
-        "initial": "captured",
-        "steps": {
-            "captured": {"owner": "human", "transitions": {"analyse": "analysis"}},
-            "analysis": {"owner": "agent:analyst", "transitions": {"ready": "done", "back": "captured"}},
-            "done": {"owner": "human", "transitions": {}},
-        },
-    }
+ROLES = {"implementer"}
+DEFINITION = """
+initial: ready
+steps:
+  ready:
+    owner: human
+    outcomes:
+      play:
+        next: implement
+        means: Start work on the story.
+  implement:
+    owner: agent:implementer
+    prompt: implement.md
+    outcomes:
+      implemented:
+        next: verify
+        means: Every acceptance criterion is met and the work is committed.
+  verify:
+    owner: harness:Check
+    outcomes:
+      passed:
+        next: done
+        means: The project's checks pass on the branch.
+      failed:
+        next: implement
+        means: The project's checks fail on the branch.
+  done:
+    owner: human
+    outcomes: {}
+"""
 
 
 class WorkflowDefinition(unittest.TestCase):
-    def test_default_workflow_loads_against_configured_roles(self):
+    def setUp(self):
+        self.directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.prompts = self.directory / "prompts"
+        self.prompts.mkdir()
+        (self.prompts / "implement.md").write_text("Implement the story.\n")
+        self.data = yaml.safe_load(DEFINITION)
+
+    def build(self):
+        return build("default", self.data, ROLES, self.prompts)
+
+    def assertInvalid(self, message):
+        with self.assertRaisesRegex(InvalidWorkflow, message):
+            self.build()
+
+    def test_a_workflow_builds_each_step_from_its_owner(self):
+        workflow = self.build()
+        self.assertEqual("ready", workflow.initial)
+        self.assertEqual(["ready", "implement", "verify", "done"], list(workflow.steps))
+        self.assertIsInstance(workflow.steps["ready"], HumanStep)
+        self.assertIsInstance(workflow.steps["implement"], AgentStep)
+        self.assertIsInstance(workflow.steps["verify"], Check)
+        self.assertEqual({"passed": "done", "failed": "implement"}, workflow.steps["verify"].transitions)
+
+    def test_every_outcome_leads_to_a_defined_step(self):
+        self.data["steps"]["verify"]["outcomes"]["passed"]["next"] = "review"
+        self.assertInvalid("step 'verify': outcome 'passed' leads to undefined step 'review'")
+
+    def test_the_initial_step_is_defined(self):
+        self.data["initial"] = "captured"
+        self.assertInvalid("initial step 'captured' is not defined")
+
+    def test_step_errors_name_the_step(self):
+        del self.data["steps"]["verify"]["outcomes"]["failed"]
+        self.assertInvalid("step 'verify': Check needs the outcomes 'failed'")
+
+    def test_the_shape_of_the_workflow_is_checked(self):
+        cases = {
+            "not a mapping": ([], "exactly 'initial' and 'steps'"),
+            "extra key": (dict(self.data, name="default"), "exactly 'initial' and 'steps'"),
+            "no steps": ({"initial": "ready", "steps": {}}, "'steps' must map"),
+            "steps as a list": ({"initial": "ready", "steps": ["ready"]}, "'steps' must map"),
+        }
+        for label, (data, message) in cases.items():
+            with self.subTest(label), self.assertRaisesRegex(InvalidWorkflow, message):
+                build("default", data, ROLES, self.prompts)
+
+
+class LoadingWorkflows(unittest.TestCase):
+    def setUp(self):
+        self.directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.prompts = self.directory / "prompts"
+        self.prompts.mkdir()
+        (self.prompts / "implement.md").write_text("Implement the story.\n")
+
+    def load(self, name="default"):
+        return load(name, self.directory, ROLES, self.prompts)
+
+    def test_a_named_workflow_loads_from_its_yaml_file(self):
+        (self.directory / "default.yaml").write_text(DEFINITION)
+        self.assertEqual("ready", self.load().initial)
+
+    def test_loading_errors_name_the_workflow(self):
+        cases = {
+            "missing": (None, "workflow 'default' is not defined"),
+            "malformed": ("steps: [", "workflow 'default': "),
+            "duplicate step": (DEFINITION + "  done:\n    owner: human\n    outcomes: {}\n",
+                               "workflow 'default': not valid YAML: duplicate key 'done'"),
+            "invalid step": (DEFINITION.replace("harness:Check", "harness:Lint"),
+                             "workflow 'default': step 'verify': 'Lint' is not a harness step"),
+        }
+        for label, (text, message) in cases.items():
+            with self.subTest(label):
+                path = self.directory / "default.yaml"
+                path.unlink(missing_ok=True)
+                if text is not None:
+                    path.write_text(text)
+                with self.assertRaisesRegex(InvalidWorkflow, message):
+                    self.load()
+
+    def test_the_default_workflow_loads_against_configured_roles_and_prompts(self):
         workflow = load("default")
         self.assertEqual("captured", workflow.initial)
-        for step in workflow.steps.values():
-            self.assertTrue(step.human or step.check or step.harness or step.role)
-            self.assertLessEqual(set(step.transitions.values()), set(workflow.steps))
-        self.assertEqual("analyst", workflow.steps["analysis"].role)
-        # Implementation cannot reach review without passing the tester; a stuck implementer has a way out.
-        self.assertEqual({"implemented": "test", "blocked": "ready"}, workflow.steps["implement"].transitions)
-        self.assertEqual({"written": "sync", "defect": "implement"}, workflow.steps["test"].transitions)
-        # Only the harness's own run of the suite lets an item reach review.
-        self.assertTrue(workflow.steps["verify"].check)
-        self.assertEqual({"passed": "review", "failed": "test"}, workflow.steps["verify"].transitions)
-        self.assertEqual(["verify"], [n for n, s in workflow.steps.items() if "review" in s.transitions.values()])
-        self.assertEqual("tester", workflow.steps["test"].role)
-        # Analysis cannot reach the customer's play decision without passing the challenger.
-        self.assertEqual({"answering", "challenge"}, set(workflow.steps["analysis"].transitions.values()))
-        self.assertEqual("challenger", workflow.steps["challenge"].role)
-        self.assertEqual({"sound": "ready", "rework": "analysis"}, workflow.steps["challenge"].transitions)
-        self.assertIsNone(workflow.steps["ready"].role)
-        self.assertTrue(workflow.steps["done"].terminal)
+        self.assertIsInstance(workflow.steps["pull-request"], PullRequest)
+        self.assertEqual({"merged": "merged", "rejected": "rejected", "abandon": "abandoning"},
+                         workflow.steps["pull-request"].transitions)
 
-    def test_pr_decision_gates_completion_after_publish(self):
-        steps = load("default").steps
-        self.assertEqual({"published": "pull-request"}, steps["publish"].transitions)
-        self.assertTrue(steps["pull-request"].human)
-        self.assertEqual({"merged": "merged", "rejected": "rejected", "abandon": "abandoning"}, steps["pull-request"].transitions)
-        self.assertEqual({"pr": "sync-publish", "revise": "implement", "abandon": "abandoning"}, steps["accept"].transitions)
-        for action, target in (("merged", "done"), ("rejected", "implement")):
-            self.assertTrue(steps[action].harness)
-            self.assertIsNone(steps[action].role)
-            self.assertEqual(action, steps[action].action)
-            self.assertEqual({"completed": target}, steps[action].transitions)
-
-    def test_invalid_harness_actions_and_outcomes_name_the_step(self):
-        for owner, transitions, reason in (
-            ("harness:unknown", {"completed": "done"}, "unknown harness action"),
-            ("harness:merged", {}, "exactly the transition 'completed'"),
-            ("harness:rejected", {"completed": "done", "failed": "captured"}, "exactly the transition 'completed'"),
-            ("harness:merged", {"ready": "done"}, "exactly the transition 'completed'"),
-        ):
-            with self.subTest(owner=owner, transitions=transitions):
-                data = definition()
-                data["steps"]["analysis"] = {"owner": owner, "transitions": transitions}
-                with self.assertRaises(InvalidWorkflow) as raised:
-                    build("w", data, ROLES)
-                self.assertIn("step 'analysis'", str(raised.exception))
-                self.assertIn(reason, str(raised.exception))
-
-    def test_invalid_definitions_name_the_step(self):
-        def change(mutate):
-            data = definition()
-            mutate(data)
-            return data
-        cases = {
-            "no owner": (change(lambda d: d["steps"]["analysis"].pop("owner")), "'analysis'"),
-            "two owners": (change(lambda d: d["steps"]["analysis"].update(owner=["agent:analyst", "human"])), "'analysis'"),
-            "extra key": (change(lambda d: d["steps"]["analysis"].update(collaborators=[])), "'analysis'"),
-            "bad owner": (change(lambda d: d["steps"]["analysis"].update(owner="analyst")), "'analysis'"),
-            "unknown target": (change(lambda d: d["steps"]["captured"]["transitions"].update(go="nowhere")), "'captured'"),
-            "unknown role": (change(lambda d: d["steps"]["analysis"].update(owner="agent:wizard")), "'wizard'"),
-            "unknown initial": (change(lambda d: d.update(initial="start")), "'start'"),
-            "no steps": ({"initial": "a", "steps": {}}, "steps"),
-            "check with other outcomes": (change(lambda d: d["steps"]["analysis"].update(owner="check")), "'passed' and 'failed'"),
-        }
-        for name, (data, expected) in cases.items():
-            with self.subTest(case=name), self.assertRaises(InvalidWorkflow) as raised:
-                build("w", data, ROLES)
-            self.assertIn(expected, str(raised.exception))
-
-    def test_missing_malformed_and_duplicate_step_files(self):
-        with tempfile.TemporaryDirectory() as directory:
-            Path(directory, "broken.json").write_text("{")
-            Path(directory, "twice.json").write_text(
-                '{"initial": "a", "steps": {"a": {"owner": "human", "transitions": {}},'
-                ' "a": {"owner": "human", "transitions": {}}}}')
-            for name in ("absent", "broken", "twice", "../escape"):
-                with self.subTest(name=name), self.assertRaises(InvalidWorkflow):
-                    load(name, directory, ROLES)
-
-
-class ItemSteps(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name) / "backlog"
-        self.workflows = Path(self.temp.name) / "workflows"
-        self.workflows.mkdir()
-        data = definition()
-        data["initial"] = "analysis"
-        (self.workflows / "default.json").write_text(json.dumps(data))
-        self.repo = Repository(self.root, self.workflows, ROLES)
-        self.epic = self.repo.create("epic", "An epic")
-        self.story = self.repo.create("story", "A story", "\r\nBody --- text  \r\n", parent=self.epic.id)
-
-    def test_capture_uses_the_workflow_initial_step(self):
-        self.assertEqual("analysis", self.story.metadata["step"])
-
-    def test_undefined_workflow_or_step_is_reported_and_not_actionable(self):
-        original = self.story.path.read_text()
-        for field, expected in (("workflow: default", "workflow: absent"), ("step: analysis", "step: nowhere")):
-            with self.subTest(field=field):
-                self.story.path.write_text(original.replace(field, expected))
-                snapshot = self.repo.scan()
-                self.assertIn(self.story.path, snapshot.errors)
-                self.assertNotIn(self.story.id, snapshot.valid)
-                with self.assertRaises(InvalidRecord):
-                    self.repo.transition(self.story.id, "ready")
-
-    def test_transition_changes_only_the_step_line(self):
-        text = '---\nid: STORY-001\ntype: story\ntitle: "Quoted: title"\nparent: EPIC-001\nworkflow: default\nstep: analysis\n---\n\r\nBody\r\n---\nstep: analysis\n'
-        self.story.path.write_bytes(text.encode())
-        updated = self.repo.transition(self.story.id, "ready")
-        self.assertEqual("done", updated.metadata["step"])
-        self.assertEqual(text.replace("step: analysis\n---", "step: done\n---", 1), self.story.path.read_bytes().decode())
-        self.assertEqual([], list(self.root.rglob("*.tmp")))
-
-    def test_invalid_transition_is_refused_and_file_untouched(self):
-        before = self.story.path.read_bytes()
-        for name in ("analyse", "done", "nonsense"):
-            with self.subTest(name=name), self.assertRaises(InvalidRecord):
-                self.repo.transition(self.story.id, name)
-        with self.assertRaises(InvalidRecord):
-            self.repo.transition(self.epic.id, "ready")
-        self.repo.transition(self.story.id, "ready")
-        after = self.story.path.read_bytes()
-        with self.assertRaises(InvalidRecord) as raised:
-            self.repo.transition(self.story.id, "ready")
-        self.assertIn("terminal", str(raised.exception))
-        self.assertNotEqual(before, after)
-        self.assertEqual(after, self.story.path.read_bytes())
-
-    def test_cli_move_and_validate_show_step_and_owner(self):
-        prefix = ["--product", str(Path(self.temp.name) / "cli"), "backlog"]
-        with contextlib.redirect_stdout(io.StringIO()) as output:
-            main(prefix + ["capture", "bug", "CLI bug"])
-            main(prefix + ["move", "BUG-001", "analyse"])
-            main(prefix + ["validate"])
-        self.assertIn("BUG-001 -> analysis (agent:analyst)", output.getvalue())
-        self.assertRegex(output.getvalue(), r"BUG-001\s+analysis\s+agent:analyst\s+CLI bug")
-        with self.assertRaises(SystemExit) as exit:
-            main(prefix + ["move", "BUG-001", "play"])
-        self.assertIn("not a transition", str(exit.exception.code))
+    def test_a_workflow_name_cannot_reach_outside_the_directory(self):
+        with self.assertRaisesRegex(InvalidWorkflow, "invalid workflow name '../default'"):
+            self.load("../default")
 
 
 if __name__ == "__main__":

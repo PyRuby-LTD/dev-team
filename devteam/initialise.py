@@ -33,6 +33,20 @@ def has_regression(text: str) -> bool:
     return False
 
 
+def missing(directory: Path) -> list[str]:
+    """What the product lacks before workflows can run in it; empty when it is set up."""
+    top = git.checkout(directory)
+    if top is None:
+        return ["it is not a Git repository"]
+    gaps = []
+    if not git.has_backlog(top):
+        gaps.append(f"it has no {git.BACKLOG_BRANCH} branch; run dev-team init")
+    makefile = top / "Makefile"
+    if not (makefile.is_file() and has_regression(makefile.read_text())):
+        gaps.append("its Makefile has no regression target; add one that runs the product's checks")
+    return gaps
+
+
 def quick_start(top: Path) -> bool:
     if not git.has_ref(top, "HEAD"):
         return True
@@ -42,7 +56,7 @@ def quick_start(top: Path) -> bool:
     ).splitlines() == ["Makefile"]
 
 
-def initialise(directory: Path):
+def initialise(directory: Path, report=print):
     top = git.checkout(directory)
     if top is None:
         raise git.GitError("init requires a Git repository")
@@ -57,32 +71,32 @@ def initialise(directory: Path):
 
     for command in ("claude", "codex", "gh"):
         if shutil.which(command) is None:
-            print(f"WARNING: {command} is missing from PATH")
+            report(f"WARNING: {command} is missing from PATH")
 
     makefile = top / "Makefile"
     created = not makefile.exists()
     if created:
         makefile.write_text(PLACEHOLDER)
     elif not has_regression(makefile.read_text()):
-        print("WARNING: Makefile has no regression target; wire up make regression and commit before dev-team tui")
+        report("WARNING: Makefile has no regression target; wire up make regression and commit before dev-team tui")
 
     if quick_start(top):
         if not git.has_ref(top, "HEAD"):
             git.commit_all(top, "Set up product regression target", "Makefile")
-            print(f"Committed Makefile on {branch}")
+            report(f"Committed Makefile on {branch}")
         head = git.must(top, "rev-parse", "HEAD")
         remote = git.run(top, "ls-remote", "--exit-code", "origin", f"refs/heads/{branch}")
         if remote.returncode == 2:
             git.must(top, "push", "-u", "origin", branch)
-            print(f"Pushed {branch} to origin")
+            report(f"Pushed {branch} to origin")
         elif remote.returncode:
             raise git.GitError(remote.stderr.strip() or remote.stdout.strip())
         elif remote.stdout.split()[0] == head:
-            print(f"Product is already set up on {branch}")
+            report(f"Product is already set up on {branch}")
         else:
-            print(f"WARNING: origin already has {branch} at a different commit; nothing pushed")
+            report(f"WARNING: origin already has {branch} at a different commit; nothing pushed")
     elif created:
-        print("Wire up make regression and commit before running dev-team tui")
+        report("Wire up make regression and commit before running dev-team tui")
 
     backlog = git.ensure_backlog(top)
-    print(f"Backlog is set up at {backlog}")
+    report(f"Backlog is set up at {backlog}")

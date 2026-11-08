@@ -1,0 +1,351 @@
+initial: captured
+steps:
+  captured:
+    owner: human
+    outcomes:
+      analyse:
+        next: analysis
+        means: The item says what you want well enough for the product owner to analyse it.
+      wontfix:
+        next: wontfix
+        means: The item will not be done; it stays in the backlog with its history.
+
+  analysis:
+    owner: agent:product_owner
+    prompt: analysis.md
+    output: requirements
+    outcomes:
+      questions:
+        next: answering
+        means: Analysis cannot go on without the customer's answers to the questions added to the item.
+      analysed:
+        next: challenge
+        means: The item is specified well enough to build and to judge, and every earlier challenge finding is addressed.
+
+  challenge:
+    owner: agent:challenger
+    prompt: challenge.md
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        findings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [concern, finding]
+            properties:
+              concern: {type: string}
+              finding: {type: string}
+    outcomes:
+      sound:
+        next: ready
+        means: A competent engineer could implement the item as written, and a reviewer could tell whether they had.
+      rework:
+        next: analysis
+        means: A finding would change what gets built or how it is judged, including one that needs the customer's answer.
+
+  answering:
+    owner: human
+    output: requirements
+    outcomes:
+      answered:
+        next: analysis
+        means: Every question in the item has an answer beneath it.
+
+  ready:
+    owner: human
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        standards: {type: array, uniqueItems: true, items: {type: string}}
+        feedback: {type: string}
+    outcomes:
+      play:
+        next: implement
+        means: Start building the item as specified.
+      rework:
+        next: analysis
+        means: The specification needs changing first; say why under Feedback before choosing this.
+      wontfix:
+        next: wontfix
+        means: The item will not be done; it stays in the backlog with its history.
+
+  implement:
+    owner: agent:implementer
+    prompt: implement.md
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        branch: {type: string}
+        blocked_by: {type: string}
+        libraries_added:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, licence]
+            properties:
+              name: {type: string}
+              licence: {type: string}
+        tech_tasks: {type: array, items: {type: string}}
+        surprises: {type: array, items: {type: string}}
+        opinions: {type: array, items: {type: string}}
+    outcomes:
+      implemented:
+        next: test
+        means: The code meets the criteria and every finding that can be met from here.
+      blocked:
+        next: ready
+        means: No further progress is possible without the customer, or what remains cannot be done from here.
+
+  test:
+    owner: agent:tester
+    prompt: test.md
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        journeys:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [journey, action]
+            properties:
+              journey: {type: string}
+              action: {enum: [extend, new, none]}
+              personas: {type: array, items: {type: string}}
+              reason: {type: string}
+        defects: {type: array, items: {type: string}}
+    outcomes:
+      written:
+        next: sync
+        means: Every journey the item adds or changes has a journey test, and the whole suite passes.
+      defect:
+        next: implement
+        means: A test shows the code misses a criterion or breaks existing behaviour.
+
+  sync:
+    owner: git:Sync
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        conflicts: {type: array, items: {type: string}}
+    outcomes:
+      completed:
+        next: verify
+        means: The branch has merged its base cleanly.
+      conflicted:
+        next: resolve
+        means: Merging the base left conflicts on the branch.
+
+  resolve:
+    owner: agent:implementer
+    prompt: resolve.md
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        blocked_by: {type: string}
+    outcomes:
+      resolved:
+        next: verify
+        means: Every conflict is resolved, keeping the intent of both branches.
+      blocked:
+        next: ready
+        means: The conflicts cannot be resolved from here; the harness aborts the merge.
+
+  verify:
+    owner: harness:Check
+    output:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary: {type: string}
+    outcomes:
+      passed:
+        next: review
+        means: The project's checks pass on the branch.
+      failed:
+        next: test
+        means: The project's checks fail on the branch.
+
+  review:
+    owner: agent:reviewer
+    prompt: review.md
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        findings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [concern, finding, outcome]
+            properties:
+              location: {type: string}
+              concern: {type: string}
+              finding: {type: string}
+              outcome: {enum: [fix, task]}
+              task: {type: string}
+    outcomes:
+      approve:
+        next: accept
+        means: Every criterion is met and either proven by a test or accepted without one for its recorded reason.
+      revise:
+        next: implement
+        means: A criterion is unmet or unproven, or there is no change to approve.
+
+  accept:
+    owner: human
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        feedback: {type: string}
+    outcomes:
+      pr:
+        next: sync-publish
+        means: The change is what you wanted; publish it as a pull request.
+      revise:
+        next: implement
+        means: The change needs more work; say what under Feedback before choosing this.
+      abandon:
+        next: abandoning
+        means: Give up on the item, keeping its branch for recovery.
+
+  sync-publish:
+    owner: git:Sync
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        conflicts: {type: array, items: {type: string}}
+    outcomes:
+      completed:
+        next: verify-publish
+        means: The branch has merged its base cleanly.
+      conflicted:
+        next: resolve-publish
+        means: Merging the base left conflicts on the branch.
+
+  resolve-publish:
+    owner: agent:implementer
+    prompt: resolve-publish.md
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        blocked_by: {type: string}
+    outcomes:
+      resolved:
+        next: verify-publish
+        means: Every conflict is resolved, keeping the intent of both branches.
+      blocked:
+        next: ready
+        means: The conflicts cannot be resolved from here; the harness aborts the merge.
+
+  verify-publish:
+    owner: harness:Check
+    output:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary: {type: string}
+    outcomes:
+      passed:
+        next: publish
+        means: The project's checks pass on the branch.
+      failed:
+        next: implement
+        means: The project's checks fail on the branch.
+
+  publish:
+    owner: agent:publisher
+    prompt: publish.md
+    output:
+      type: object
+      additionalProperties: false
+      required: [pull_request, summary]
+      properties:
+        pull_request: {type: integer}
+        summary: {type: string}
+        api_changes: {type: string}
+        surprises: {type: array, items: {type: string}}
+        opinions: {type: array, items: {type: string}}
+    outcomes:
+      published:
+        next: pull-request
+        means: The pull request exists.
+
+  pull-request:
+    owner: git:PullRequest
+    outcomes:
+      merged:
+        next: merged
+        means: The pull request is merged.
+      rejected:
+        next: rejected
+        means: The pull request will not be merged as it stands; its comments go back to the implementer.
+      abandon:
+        next: abandoning
+        means: Give up on the item, keeping its branch for recovery.
+
+  merged:
+    owner: git:Merged
+    outcomes:
+      completed:
+        next: done
+        means: The base branch is up to date with the merge.
+
+  rejected:
+    owner: harness:Rejected
+    output:
+      type: object
+      additionalProperties: false
+      required: [pull_request, comments]
+      properties:
+        pull_request: {type: integer}
+        comments:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [kind, author, body]
+            properties:
+              kind: {enum: [review, inline, conversation]}
+              author: {type: string}
+              state: {type: string}
+              location: {type: string}
+              body: {type: string}
+    outcomes:
+      completed:
+        next: implement
+        means: The pull request's comments are recorded for the implementer.
+
+  abandoning:
+    owner: git:Abandon
+    outcomes:
+      completed:
+        next: abandoned
+        means: The checkout is back on the base branch, and the item's branch is kept.
+
+  abandoned:
+    owner: human
+    outcomes: {}
+
+  wontfix:
+    owner: human
+    outcomes: {}
+
+  done:
+    owner: human
+    outcomes: {}

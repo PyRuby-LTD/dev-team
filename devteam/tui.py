@@ -1,122 +1,81 @@
-"""Terminal view of the backlog: every work item, its step and who that step is waiting on."""
-import threading
-from collections import deque
+"""The customer's view of the YAML backlog: where each item stands, and the outcomes, answers, feedback, standards and requests only they give."""
 from dataclasses import dataclass
+import threading
 
 from rich.text import Text
 from textual.app import App
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Header, Label, Markdown, OptionList, RichLog, Static, TextArea, Tree
+from textual.widgets import (Button, Footer, Header, Label, Markdown, OptionList, RichLog, SelectionList, TextArea,
+                             Tree)
 from textual.widgets.option_list import Option
+from textual.widgets.selection_list import Selection
 
-from . import git, questions
-from .backlog import InvalidRecord
-from .workflow import InvalidWorkflow
-from .runner import StepFailed, Waiting
+from .harness import record_customer
+from .template import InvalidTemplate, Templates
+from .steps import REQUIREMENTS, InvalidStep
+from .work_item import InvalidWorkItem
 
 REFRESH_SECONDS = 2
 YOU, AGENT, DONE, INVALID = "bold yellow", "cyan", "green", "bold red"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Row:
     key: str
     label: str
     title: str
+    depth: int = 0
     step: str = ""
-    step_order: int = 0
     waiting_on: str = ""
     needs_you: bool = False
-    depth: int = 0
-    body: str = ""
-    parent: str = ""
-    transitions: tuple = ()
     errors: tuple = ()
-    unanswered: int = 0
-    running: bool = False
     failure: str = ""
-    held: str = ""
-    questions_step: bool = False
-
-    @property
-    def questions_notice(self):
-        if not self.questions_step or not self.needs_you or self.unanswered:
-            return ""
-        count = len(questions.parse(self.body))
-        status = (f"All {count} question{'s' if count != 1 else ''} in the body "
-                  f"{'are' if count != 1 else 'is'} answered." if count else "No questions found in the body.")
-        asked = "anything else" if count else "anything"
-        return (f"{status} If the analyst asked {asked}, "
-                "it is not written as a list under a Questions heading.")
-
-    @property
-    def is_item(self):
-        return bool(self.step) and not self.errors
+    waiting: str = ""
 
     @property
     def style(self):
-        if self.errors:
+        if self.errors or self.failure:
             return INVALID
         if self.needs_you:
             return YOU
         return AGENT if self.waiting_on else DONE
 
 
-def owner_label(step):
-    if step.terminal:
-        return "finished"
-    if step.check:
-        return "checks"
-    if step.harness:
-        return "harness"
-    return "YOU" if step.human else step.role
-
-
-def rows(repository, runner=None):
-    """Epics with their descendants, then items without an epic, then files that failed validation."""
-    snapshot = repository.scan()
+def rows(backlog, failed=None, waiting=None):
+    """Epics with their descendants, then items outside any epic, then files that failed to load."""
+    snapshot = backlog.scan()
+    items = snapshot.valid
     children = {}
-    for record in snapshot.valid.values():
-        children.setdefault(record.metadata.get("parent"), []).append(record)
+    for item in items.values():
+        children.setdefault(item.parent if item.parent in items else None, []).append(item)
     result = []
 
-    def add(record, depth):
-        row = Row(record.id, record.id, record.metadata["title"], depth=depth, body=record.body,
-                  parent=record.metadata.get("parent") or "")
-        if record.metadata["type"] != "epic":
-            step = repository.step(record)
-            steps = repository.workflow(record.metadata["workflow"]).steps
-            row.step, row.step_order = step.name, list(steps).index(step.name)
-            row.transitions = tuple((name, target, owner_label(steps[target])) for name, target in step.transitions.items())
-            if not step.terminal:
-                row.needs_you = step.human
-                row.waiting_on = owner_label(step)
-            if row.needs_you:
-                row.unanswered = sum(not question.answered for question in questions.parse(record.body))
-                row.questions_step = any(source.transitions.get("questions") == step.name for source in steps.values())
-            if runner is not None and not row.needs_you:
-                row.running = record.id in runner.active_ids()
-                row.failure = runner.failed.get(record.id, "")
-                row.held = "" if row.running else runner.waiting.get(record.id, "")
-        result.append(row)
-        for child in sorted(children.get(record.id, []), key=lambda r: r.id):
+    def add(item, depth):
+        if item.workflow is None:
+            result.append(Row(item.id, item.id, item.title, depth))
+        else:
+            step = backlog.step(item)
+            result.append(Row(item.id, item.id, item.title, depth, step.name,
+                              "" if step.terminal else step.label(), step.needs_you,
+                              failure=(failed or {}).get(item.id, ""), waiting=(waiting or {}).get(item.id, "")))
+        for child in sorted(children.get(item.id, []), key=lambda child: child.id):
             add(child, depth + 1)
 
-    for record in sorted(children.get(None, []), key=lambda r: (r.metadata["type"] != "epic", r.id)):
-        add(record, 0)
+    for item in sorted(children.get(None, []), key=lambda item: (item.type != "epic", item.id)):
+        add(item, 0)
     for path, errors in sorted(snapshot.errors.items()):
         try:
-            name = str(path.relative_to(repository.root))
+            name = str(path.relative_to(backlog.root))
         except ValueError:
             name = str(path)
-        result.append(Row(str(path), name, "; ".join(errors), step="INVALID", errors=tuple(errors)))
+        result.append(Row(str(path), name, "; ".join(errors), errors=tuple(errors)))
     return result
 
 
 def visible(data, only_mine):
-    """With the filter on: the items waiting on the customer, plus the ancestors that give them context."""
+    """With the filter on: the items waiting on the customer and invalid files, with the ancestors that place them."""
     if not only_mine:
         return list(data)
     keep = set()
@@ -131,98 +90,46 @@ def visible(data, only_mine):
     return [row for index, row in enumerate(data) if index in keep]
 
 
-def summary(data):
-    items = [row for row in data if row.is_item]
-    mine = sum(row.needs_you for row in items)
-    agents = sum(bool(row.waiting_on) and not row.needs_you for row in items)
-    text = Text.assemble(
-        (f" {mine} waiting on you ", YOU if mine else "dim"), "  ",
-        (f"{agents} with agents", AGENT if agents else "dim"), "  ",
-        (f"{len(items) - mine - agents} finished", DONE), "  ",
-        (f"{len(items)} items", "dim"))
-    invalid = sum(bool(row.errors) for row in data)
-    if invalid:
-        text.append(f"  {invalid} invalid", INVALID)
-    return text
-
-
-def item_label(row, pending=0):
+def item_label(row):
     if row.errors:
         return Text.assemble(("! ", INVALID), (row.label, INVALID), "  ", (row.title, "dim"))
     if not row.step:
-        text = Text.assemble((row.label, "bold"), "  ", row.title)
-        if pending:
-            text.append(f"  ({pending} waiting on you)", YOU)
-        return text
-    text = Text.assemble(("* " if row.needs_you else "  ", YOU), (f"{row.label:<10}", "bold"), " ",
-                         (f"{row.step:<10}", row.style), " ")
-    if row.running:
-        text.append("running  ", "bold " + AGENT)
-    elif row.failure:
+        return Text.assemble((row.label, "bold"), "  ", row.title)
+    text = Text.assemble(("* " if row.needs_you else "  ", YOU), (f"{row.label:<12}", "bold"), " ",
+                         (f"{row.step:<12}", row.style), " ", (f"{row.waiting_on or 'finished':<16}", row.style), " ")
+    if row.failure:
         text.append("FAILED  ", INVALID)
-    return text.append(row.title)
-
-
-def card(row):
-    if row.errors:
-        text = Text.assemble((row.label, INVALID), "\n")
-        for error in row.errors:
-            text.append(f"\nERROR: {error}", INVALID)
-        return text
-    text = Text.assemble((row.label, "bold"), "  ", (row.title, "bold"))
-    if row.step:
-        text.append("\n\nStep        ")
-        text.append(row.step, row.style)
-        text.append("\nWaiting on  ")
-        text.append(row.waiting_on or "nobody; this item is finished", row.style)
-        if row.running:
-            text.append("  (running now)", "bold " + AGENT)
-        text.append("\nNext        ")
-        text.append("   ".join(f"{name} -> {target}" for name, target, _ in row.transitions) or "-", "dim")
-        if row.failure:
-            text.append(f"\n\nThe agent failed: {row.failure}\nPress t to try again.", INVALID)
-        if row.held:
-            text.append(f"\n\nOn hold: {row.held}", YOU)
-        if row.unanswered:
-            text.append(f"\n\n{row.unanswered} unanswered question{'s' if row.unanswered != 1 else ''}. Press enter to answer.", YOU)
-        elif row.needs_you:
-            if row.questions_notice:
-                text.append(f"\n\n{row.questions_notice}", YOU)
-            text.append("\n\nPress enter to choose what happens next.", YOU)
-    if row.parent:
-        text.append(f"\nPart of     {row.parent}")
+    text.append(row.title)
+    if row.waiting:
+        text.append(f"  ({row.waiting})", "dim")
     return text
 
 
-class Actions(ModalScreen):
-    """What the customer can do with an item: answer, move it, or step in on a step that is not theirs."""
+def takes(step, field):
+    return isinstance(step.output, dict) and field in step.output.get("properties", {})
+
+
+def takes_answers(step):
+    return step.output == REQUIREMENTS or takes(step, "questions")
+
+
+def unanswered(item):
+    return [question.question for question in item.questions or [] if not question.answer]
+
+
+class Outcomes(ModalScreen):
     BINDINGS = [("escape", "dismiss(None)", "Cancel")]
 
-    def __init__(self, row):
+    def __init__(self, item, step):
         super().__init__()
-        self.row = row
+        self.item, self.step = item, step
 
     def compose(self):
-        row = self.row
-        options = []
-        if row.unanswered:
-            options.append(Option(f"Answer {row.unanswered} question{'s' if row.unanswered != 1 else ''}", id="answer"))
-        if not row.needs_you and row.waiting_on != "checks":
-            label = "Leave a note on the item" if row.waiting_on == "harness" else f"Leave a note for the {row.waiting_on}"
-            options.append(Option(label, id="note"))
-        for name, target, owner in row.transitions:
-            who = {"finished": "it is finished", "YOU": "back to you", "checks": "the checks run", "harness": "the harness runs"}.get(owner, f"the {owner} takes over")
-            label = Text.assemble(("" if row.needs_you else "override ", YOU), (name, "bold"), f"  ->  {target}  ", (who, "dim"))
-            options.append(Option(label, id=f"move:{name}"))
+        options = [Option(Text.assemble((outcome.name, "bold"), f"  ->  {outcome.next}\n", (outcome.means, "dim")),
+                          id=outcome.name)
+                   for outcome in self.step.customer_outcomes.values()]
         with Vertical(classes="dialog"):
-            yield Label(Text.assemble((row.label, "bold"), "  ", row.title, f"\nNow at {row.step}."))
-            if not row.needs_you:
-                yield Label(Text(f"This step belongs to the {row.waiting_on}. You can leave a note for its next run, "
-                                 "or override it by choosing the outcome yourself.", YOU))
-            if row.unanswered and row.transitions:
-                yield Label(Text("Unanswered questions remain; moving on now leaves them blank.", YOU))
-            if row.questions_notice:
-                yield Label(Text(row.questions_notice, YOU))
+            yield Label(Text.assemble((self.item.id, "bold"), "  ", self.item.title, f"\nAt {self.step.name}."))
             yield OptionList(*options)
             yield Label(Text("enter: choose    esc: cancel", "dim"))
 
@@ -231,39 +138,33 @@ class Actions(ModalScreen):
 
 
 class Answers(ModalScreen):
-    BINDINGS = [("escape", "dismiss(None)", "Cancel"), ("ctrl+s", "save", "Save answers")]
+    BINDINGS = [("escape", "dismiss(None)", "Cancel"), ("ctrl+s", "save", "Save")]
 
-    def __init__(self, row):
+    def __init__(self, heading, questions):
         super().__init__()
-        self.row = row
-        self.open = [(index, question) for index, question in enumerate(questions.parse(row.body)) if not question.answered]
+        self.heading, self.questions = heading, questions
 
     def compose(self):
         with Vertical(classes="dialog wide"):
-            yield Label(Text.assemble((self.row.label, "bold"), "  ", self.row.title))
-            with VerticalScroll():
-                for number, (index, question) in enumerate(self.open, 1):
-                    yield Label(Text(f"{number}. {question.text}", "bold"), shrink=True, classes="question")
-                    yield TextArea(id=f"answer-{index}", soft_wrap=True)
+            yield Label(self.heading)
+            with VerticalScroll(classes="answers"):
+                for number, question in enumerate(self.questions, 1):
+                    yield Label(Text(f"{number}. {question}", "bold"), shrink=True, classes="question")
+                    yield TextArea(soft_wrap=True)
             with Horizontal(classes="buttons"):
                 yield Button("Save answers (ctrl+s)", variant="primary", id="save")
                 yield Button("Cancel (esc)", id="cancel")
-            yield Label(Text("tab: next answer    blank answers stay unanswered", "dim"))
+            yield Label(Text("tab: next answer    every question needs an answer; write n/a to pass on one", "dim"))
 
     def on_mount(self):
         self.query(TextArea).first().focus()
 
-    def on_resize(self):
-        dialog = self.query_one(".dialog")
-        # Keep auto height for fitting questions, reserving the title (2),
-        # buttons (4), and hint (2) when the dialog reaches its height limit.
-        limit = int(dialog.styles.max_height.resolve(self.size, self.app.size))
-        self.query_one(VerticalScroll).styles.max_height = max(
-            1, min(30, limit - dialog.styles.gutter.height - 8)
-        )
-
     def action_save(self):
-        self.dismiss({index: self.query_one(f"#answer-{index}", TextArea).text for index, _ in self.open})
+        answers = [area.text.strip() for area in self.query(TextArea)]
+        if not all(answers):
+            self.notify("Answer every question first; write n/a for any you will not answer.", severity="error")
+            return
+        self.dismiss([{"question": question, "answer": answer} for question, answer in zip(self.questions, answers)])
 
     def on_button_pressed(self, event):
         if event.button.id == "save":
@@ -272,68 +173,68 @@ class Answers(ModalScreen):
             self.dismiss(None)
 
 
-class Note(ModalScreen):
-    """Feedback on a transition, or on its own (name is None)."""
-    BINDINGS = [("escape", "dismiss(None)", "Cancel"), ("ctrl+s", "move", "Move")]
+class Standards(ModalScreen):
+    BINDINGS = [("escape", "dismiss(None)", "Cancel"), ("ctrl+s", "save", "Save")]
 
-    def __init__(self, row, name, target, owner):
+    def __init__(self, heading, item, available):
         super().__init__()
-        self.row, self.move_name, self.target, self.next_owner = row, name, target, owner
+        self.heading = heading
+        reasons = {choice.name: choice.reason for choice in item.standards or []}
+        # The item's standards first, in its order, then the rest the customer may add.
+        names = [name for name in reasons if name in available] + [name for name in available if name not in reasons]
+        self.options = [Selection(Text.assemble((f"{name} ({available[name].kind})", "bold"), "\n",
+                                                (reasons.get(name, available[name].description), "dim")),
+                                  name, name in reasons)
+                        for name in names]
 
     def compose(self):
         with Vertical(classes="dialog wide"):
-            yield Label(Text.assemble((self.row.label, "bold"), "  ", self.row.title))
-            moving = self.move_name is not None
-            if self.next_owner == "harness":
-                description = (f"{self.move_name}  ->  {self.target}; the harness runs." if moving
-                               else f"The item stays at {self.row.step}; your note is saved on the item.")
-                yield Label(Text(description))
-            elif moving:
-                yield Label(Text.assemble((self.move_name, "bold"), f"  ->  {self.target}; the {self.next_owner} takes over."))
-            else:
-                yield Label(Text(f"The item stays at {self.row.step}; the {self.next_owner} reads your note on its next run."))
-            question = ("Anything to record for the next steps?" if self.next_owner == "harness"
-                        else f"Anything the {self.next_owner} should know or change?")
-            question += " (optional)" if moving else ""
-            yield Label(Text(question, "bold"), classes="question")
-            yield TextArea(id="note", soft_wrap=True)
+            yield Label(self.heading)
+            yield SelectionList(*self.options)
             with Horizontal(classes="buttons"):
-                yield Button("Move (ctrl+s)" if moving else "Save note (ctrl+s)", variant="primary", id="move")
+                yield Button("Save standards (ctrl+s)", variant="primary", id="save")
                 yield Button("Cancel (esc)", id="cancel")
-            hint = "Your note is added to the item under Feedback." + (" Leave it blank to just move." if moving else "")
-            yield Label(Text(hint, "dim"))
+            yield Label(Text("space: tick or untick    ticked reasons are analysis's; "
+                             "a standard you add is recorded as chosen by you", "dim"))
 
     def on_mount(self):
-        self.query_one(TextArea).focus()
+        self.query_one(SelectionList).focus()
 
-    def action_move(self):
-        self.dismiss(self.query_one(TextArea).text)
+    def action_save(self):
+        selected = set(self.query_one(SelectionList).selected)
+        self.dismiss([option.value for option in self.options if option.value in selected])
 
     def on_button_pressed(self, event):
-        if event.button.id == "move":
-            self.action_move()
+        if event.button.id == "save":
+            self.action_save()
         else:
             self.dismiss(None)
 
 
-class NewRequest(ModalScreen):
-    BINDINGS = [("escape", "dismiss(None)", "Cancel"), ("ctrl+s", "save", "Create request")]
+class FreeText(ModalScreen):
+    BINDINGS = [("escape", "dismiss(None)", "Cancel"), ("ctrl+s", "save", "Save")]
+
+    def __init__(self, heading, action, hint="", required=False):
+        super().__init__()
+        self.heading, self.action, self.hint, self.required = heading, action, hint, required
 
     def compose(self):
         with Vertical(classes="dialog wide"):
-            yield Label("New request: describe your idea, feature or change")
-            yield TextArea(id="request-text", soft_wrap=True)
+            yield Label(self.heading)
+            yield TextArea(soft_wrap=True)
             with Horizontal(classes="buttons"):
-                yield Button("Create request (ctrl+s)", variant="primary", id="save")
+                yield Button(f"{self.action} (ctrl+s)", variant="primary", id="save")
                 yield Button("Cancel (esc)", id="cancel")
+            if self.hint:
+                yield Label(Text(self.hint, "dim"))
 
     def on_mount(self):
         self.query_one(TextArea).focus()
 
     def action_save(self):
         text = self.query_one(TextArea).text
-        if not text.strip():
-            self.notify("Enter some text for the request.", severity="error")
+        if self.required and not text.strip():
+            self.notify("Write something first.", severity="error")
             return
         self.dismiss(text)
 
@@ -344,44 +245,28 @@ class NewRequest(ModalScreen):
             self.dismiss(None)
 
 
-class Confirm(ModalScreen):
-    BINDINGS = [("escape", "dismiss(False)", "No"), ("y", "dismiss(True)", "Yes"), ("n", "dismiss(False)", "No")]
-
-    def __init__(self, message):
-        super().__init__()
-        self.message = message
-
-    def compose(self):
-        with Vertical(classes="dialog"):
-            yield Label(self.message)
-            yield Label(Text("y: yes    n or esc: no", "dim"))
-
-
 class ItemTree(Tree):
-    BINDINGS = [Binding("enter", "select_cursor", "Answer / move item")]
+    BINDINGS = [Binding("enter", "select_cursor", "Choose an outcome")]
 
 
-class Backlog(App):
-    TITLE = "devteam"
+class Console(App):
+    TITLE = "dev-team"
     CSS = """
-    #summary { height: 1; padding: 0 1; background: $panel; }
     #items { width: 1fr; min-width: 40; border: round $primary; padding: 0 1; overflow-x: hidden; }
     #items:focus-within { border: round $accent; }
-    #right { width: 1fr; }
-    #detail { height: 1fr; border: round $primary; padding: 0 1; }
+    #detail { width: 1fr; border: round $primary; padding: 0 1; }
     #detail:focus { border: round $accent; }
-    #output { height: 1fr; border: round $primary; padding: 0 1; }
-    #card { padding: 1 1 0 1; }
-    #body { padding: 0 0 1 0; }
+    #stream { height: 10; border: round $primary; padding: 0 1; }
     #activity { height: 7; border: round $primary; padding: 0 1; }
     ModalScreen { align: center middle; }
-    .dialog { width: 70; max-width: 90%; height: auto; max-height: 85%; border: thick $accent; background: $surface; padding: 1 2; }
+    .dialog { width: 80; max-width: 90%; height: auto; max-height: 85%; border: thick $accent;
+              background: $surface; padding: 1 2; }
     .dialog.wide { width: 100; }
     .dialog Label { margin-bottom: 1; }
-    .dialog OptionList { height: auto; max-height: 12; margin-bottom: 1; }
-    .dialog VerticalScroll { height: auto; max-height: 30; }
-    .dialog TextArea { height: 5; margin-bottom: 1; }
-    .dialog #note { height: 8; }
+    .dialog OptionList { height: auto; max-height: 20; margin-bottom: 1; }
+    .dialog TextArea { height: 8; margin-bottom: 1; }
+    .dialog .answers { height: auto; max-height: 24; }
+    .dialog .answers TextArea { height: 4; }
     .dialog .question { margin-bottom: 0; }
     .buttons { height: auto; margin-bottom: 1; }
     .buttons Button { margin-right: 2; }
@@ -389,121 +274,113 @@ class Backlog(App):
     BINDINGS = [
         ("n", "new_request", "New request"),
         ("y", "toggle_mine", "Only waiting on you"),
-        ("g", "toggle_group", "Group by step / epic"),
-        ("s", "toggle_agents", "Start / stop agents"),
-        ("l", "toggle_output", "Agent output"),
-        ("t", "retry", "Retry failed"),
-        ("x", "switch_branch", "Switch to item branch"),
         ("tab", "switch_pane", "Switch pane"),
         ("r", "reload", "Refresh"),
         ("q", "quit", "Quit"),
     ]
 
-    def __init__(self, repository, runner=None):
+    def __init__(self, backlog, harness=None, templates=None):
         super().__init__()
-        self.repository = repository
-        self.repository.notice = self.notify
-        self.runner = runner
+        self.backlog = backlog
+        self.harness = harness
+        self.templates = templates or (harness.templates if harness else Templates())
         self.stop = threading.Event()
-        self.thread = None
-        self.sub_title = repository.root.parent.name
         self.only_mine = False
-        self.by_step = False
         self.data = []
+        self.shown_rows = []
         self.selected = None
-        self.shown = None
-        self.restoring = False
         self.signature = None
-        self.output_buffer = deque(maxlen=2000)
-        self.output_ready = False
+        self.restoring = False
+        self.detail_text = None
 
     def compose(self):
         yield Header()
-        yield Static(id="summary")
         with Horizontal():
             yield ItemTree("Backlog", id="items")
-            with Vertical(id="right"):
-                with VerticalScroll(id="detail"):
-                    yield Static(id="card")
-                    yield Markdown(id="body")
-                output = RichLog(id="output", auto_scroll=True, max_lines=2000,
-                                 markup=False, wrap=True, min_width=1)
-                output.display = False
-                yield output
+            with VerticalScroll(id="detail"):
+                yield Markdown(id="detail-body")
+        yield RichLog(id="stream", wrap=True, markup=False, max_lines=2000)
         yield RichLog(id="activity", wrap=True, markup=False)
         yield Footer()
 
     def on_mount(self):
         # Looked up once: while a dialog is open, queries run against the dialog instead.
         self.item_tree = self.query_one("#items", Tree)
-        self.summary_bar = self.query_one("#summary", Static)
         self.detail_pane = self.query_one("#detail", VerticalScroll)
-        self.card_view = self.query_one("#card", Static)
-        self.body_view = self.query_one("#body", Markdown)
-        self.agent_log = self.query_one("#activity", RichLog)
-        self.output_log = self.query_one("#output", RichLog)
+        self.detail_view = self.query_one("#detail-body", Markdown)
+        self.activity = self.query_one("#activity", RichLog)
+        self.activity.can_focus = False
+        self.agent_stream = self.query_one("#stream", RichLog)
+        self.agent_stream.border_title = "Agent stream"
         self.item_tree.show_root = False
         self.item_tree.guide_depth = 3
         self.item_tree.focus()
-        if self.runner is not None:
-            self.runner.report = lambda message: self.from_agents(self.agent_report, message)
-            self.runner.on_line = lambda item_id, line: self.from_agents(self.agent_output, f"{item_id} | {line}")
-            self.runner.on_change = lambda: self.from_agents(self.agents_changed)
-        self.agent_log.can_focus = False
-        self.output_log.can_focus = False
-        self.agents_title()
+        self.backlog.notice = self.notify
         self.action_reload()
         self.set_interval(REFRESH_SECONDS, self.action_reload)
+        if self.harness is None:
+            self.activity.border_title = "Harness: not running"
+        else:
+            self.activity.border_title = "Harness"
+            self.harness.report = lambda message: self.from_harness(self.reported, message)
+            self.harness.backlog.notice = lambda message: self.from_harness(self.notify, message)
+            self.harness.on_line = lambda item_id, line: self.from_harness(self.agent_stream.write, f"{item_id} | {line}")
+            threading.Thread(target=self.harness.run, kwargs={"interval": REFRESH_SECONDS, "stop": self.stop},
+                             daemon=True).start()
+
+    def on_unmount(self):
+        self.stop.set()
+        self.wake_harness()
+
+    def wake_harness(self):
+        if self.harness is not None:
+            self.harness.wake()
+
+    def from_harness(self, callback, *args):
+        # The harness thread can outlive the screen; a report after shutdown has nowhere to go.
+        if self.is_running:
+            try:
+                self.call_from_thread(callback, *args)
+            except RuntimeError:
+                pass
+
+    def reported(self, message):
+        self.activity.write(message)
+        self.action_reload()
 
     def action_reload(self):
         try:
-            data, error = rows(self.repository, self.runner), None
-        except (InvalidRecord, InvalidWorkflow, OSError) as exc:
+            data, error = rows(self.backlog, *((dict(self.harness.failed), dict(self.harness.waiting))
+                                               if self.harness else ())), None
+        except (InvalidWorkItem, OSError) as exc:
             data, error = [], str(exc)
-        signature = (data, error, self.only_mine, self.by_step)
+        signature = (data, error, self.only_mine)
         if signature == self.signature:
+            self.show(self.selected)
             return
         self.signature, self.data = signature, data
-        self.summary_bar.update(Text(f"ERROR: {error}", INVALID) if error else summary(data))
+        if error:
+            self.notify(error, severity="error")
         self.rebuild()
 
     def rebuild(self):
         tree = self.item_tree
         tree.clear()
-        shown = visible(self.data, self.only_mine)
+        self.shown_rows = visible(self.data, self.only_mine)
         nodes = {}
-        if self.by_step:
-            groups = {}
-            for row in shown:
-                if row.step:
-                    groups.setdefault((row.step_order if row.is_item else 999, row.step), []).append(row)
-            for (_, step), members in sorted(groups.items()):
-                who = members[0].waiting_on or ("" if members[0].errors else "finished")
-                label = Text.assemble((step, "bold " + members[0].style), f"  ({len(members)})  ", (who, members[0].style))
-                group = tree.root.add(label, expand=True)
-                for row in members:
-                    nodes[row.key] = group.add_leaf(item_label(row), data=row)
-        else:
-            stack = [tree.root]
-            for index, row in enumerate(shown):
-                del stack[row.depth + 1:]
-                has_children = index + 1 < len(shown) and shown[index + 1].depth > row.depth
-                pending = 0
-                if not row.step:
-                    for below in self.data[self.data.index(row) + 1:]:
-                        if below.depth <= row.depth:
-                            break
-                        pending += below.needs_you
-                label = item_label(row, pending)
-                node = stack[-1].add(label, data=row, expand=True) if has_children else stack[-1].add_leaf(label, data=row)
-                nodes[row.key] = node
-                stack.append(node)
+        stack = [tree.root]
+        for index, row in enumerate(self.shown_rows):
+            del stack[row.depth + 1:]
+            parent = index + 1 < len(self.shown_rows) and self.shown_rows[index + 1].depth > row.depth
+            node = stack[-1].add(item_label(row), data=row, expand=True) if parent \
+                else stack[-1].add_leaf(item_label(row), data=row)
+            nodes[row.key] = node
+            stack.append(node)
+        self.nodes = nodes
         target = nodes.get(self.selected) or next(iter(nodes.values()), None)
-        if target is None:
-            self.show(None)
-        else:
-            self.selected = target.data.key
-            self.show(target.data)
+        self.selected = target.data.key if target else None
+        self.show(self.selected)
+        if target is not None:
             self.restoring = True
             self.call_after_refresh(self.restore_cursor, target)
 
@@ -511,20 +388,41 @@ class Backlog(App):
         self.item_tree.move_cursor(node)
         self.restoring = False
 
-    def show(self, row):
-        if row == self.shown:
-            return
-        self.shown = row
-        self.card_view.update(card(row) if row else Text("Nothing to show.", "dim"))
-        self.body_view.update(row.body if row and not row.errors else "")
+    def select(self, key):
+        """Move the cursor to the row and show it, as the customer would with the arrow keys."""
+        node = self.nodes[key]
+        self.selected = key
+        self.item_tree.move_cursor(node)
+        self.show(key)
+
+    def row(self, key):
+        return next((row for row in self.shown_rows if row.key == key), None)
+
+    def show(self, key):
+        text = self.detail(self.row(key))
+        # Updating the Markdown on every refresh would throw away the customer's scroll position.
+        if text != self.detail_text:
+            self.detail_text = text
+            self.detail_view.update(text)
+
+    def detail(self, row):
+        if row is None:
+            return "_Nothing to show._"
+        if row.errors:
+            return f"# {row.label}\n\n" + "\n".join(f"- {error}" for error in row.errors)
+        try:
+            item = self.backlog.get(row.key)
+            step = self.backlog.step(item) if item.workflow else None
+            return self.templates.detail(item, step, self.backlog)
+        except (InvalidWorkItem, InvalidTemplate, OSError) as exc:
+            return f"# {row.label}\n\nCannot show this item: {exc}"
 
     def on_tree_node_highlighted(self, event):
-        # Rebuilding the tree highlights its first node; that must not replace the user's selection.
-        if self.restoring or event.node is not self.item_tree.cursor_node:
+        # Rebuilding the tree highlights its first node; that must not replace the customer's selection.
+        if self.restoring or event.node is not self.item_tree.cursor_node or not isinstance(event.node.data, Row):
             return
-        if isinstance(event.node.data, Row):
-            self.selected = event.node.data.key
-            self.show(event.node.data)
+        self.selected = event.node.data.key
+        self.show(self.selected)
 
     def check_action(self, action, parameters):
         # Keys typed into a dialog must not reach the main screen's actions.
@@ -532,191 +430,94 @@ class Backlog(App):
 
     def on_tree_node_selected(self, event):
         row = event.node.data
-        if not isinstance(row, Row) or not row.is_item:
+        if not isinstance(row, Row) or not row.step:
             return
-        if not row.waiting_on:
-            self.notify(f"{row.label} is finished; there is nothing for you to do.")
+        if not row.needs_you:
+            self.notify(f"{row.label} is finished." if not row.waiting_on
+                        else f"{row.label} is waiting on {row.waiting_on}, not you.")
             return
-        if row.running:
-            self.notify(f"The {row.waiting_on} is working on {row.label} now. Wait for it to finish, or stop the agents first.")
-            return
-        self.push_screen(Actions(row), lambda choice: self.chosen(row, choice))
-
-    def chosen(self, row, choice):
-        if choice == "answer":
-            self.push_screen(Answers(row), lambda answers: self.answered(row, answers))
-        elif choice == "note":
-            self.push_screen(Note(row, None, None, row.waiting_on), lambda note: self.noted(row, note))
-        elif choice:
-            name, target, owner = next(move for move in row.transitions if move[0] == choice.removeprefix("move:"))
-            steps = self.repository.workflow(self.repository.scan().valid[row.key].metadata["workflow"]).steps
-            # Finishing decisions skip the note; a rejected PR keeps the feedback prompt.
-            if owner in ("YOU", "finished", "checks") or steps[target].action in {"merged", "abandon", "sync"}:
-                self.move(row, name, "")
-            else:
-                self.push_screen(Note(row, name, target, owner),
-                                 lambda note: None if note is None else self.move(row, name, note))
-
-    def noted(self, row, note):
-        if not note or not note.strip():
-            return
-        current = self.repository.scan().valid.get(row.key)
-        if current is None or current.body != row.body:
-            self.notify(f"{row.label} changed while you were writing; nothing was saved.", severity="error")
-            return
-        body = questions.add_feedback(row.body, f"note at {row.step}", note)
-        if self.attempt(lambda: self.repository.write_body(row.key, body, "note")):
-            self.notify(f"Note saved for the {row.waiting_on}." + (" Press t to run it again." if row.failure else ""))
-
-    def move(self, row, name, note):
-        current = self.repository.scan().valid.get(row.key)
-        if note.strip() and (current is None or current.body != row.body):
-            self.notify(f"{row.label} changed while you were writing; nothing was moved.", severity="error")
-            return
-        self.attempt(lambda: self.repository.transition(row.key, name, note))
-
-    def answered(self, row, answers):
-        if not answers or not any(text.strip() for text in answers.values()):
-            return
-        current = self.repository.scan().valid.get(row.key)
-        if current is None or current.body != row.body:
-            self.notify(f"{row.label} changed while you were answering; nothing was saved.", severity="error")
-            return
-        if self.attempt(lambda: self.repository.write_body(row.key, questions.answer(row.body, answers), "answers")):
-            fresh = next((item for item in self.data if item.key == row.key), None)
-            if fresh is not None and fresh.needs_you:
-                self.push_screen(Actions(fresh), lambda choice: self.chosen(fresh, choice))
-
-    def attempt(self, change):
         try:
-            change()
-        except (InvalidRecord, InvalidWorkflow, OSError) as exc:
+            item = self.backlog.get(row.key)
+            step = self.backlog.step(item)
+        except InvalidWorkItem as exc:
             self.notify(str(exc), severity="error")
-            return False
-        finally:
-            self.action_reload()
-        return True
-
-    def agents_title(self):
-        log = self.agent_log
-        if self.runner is None:
-            log.border_title = "Agents: not available"
-        elif self.thread is not None and not self.stop.is_set():
-            log.border_title = "Agents: running - s to stop"
-        elif self.runner.active_ids():
-            log.border_title = "Agents: stopping - waiting for " + ", ".join(self.runner.active_ids())
-        else:
-            log.border_title = "Agents: stopped - s to start; agent-owned steps wait until then"
-
-    def agent_report(self, message):
-        self.agent_log.write(message)
-        self.action_reload()
-
-    def agent_output(self, line):
-        if self.output_ready:
-            self.output_log.write(line)
-        else:
-            self.output_buffer.append(line)
-
-    def action_toggle_output(self):
-        self.output_ready = False
-        self.output_log.display = not self.output_log.display
-        if self.output_log.display:
-            self.call_after_refresh(self.flush_output)
-
-    def flush_output(self):
-        # Wait for the shown pane's layout before wrapping; arrivals meanwhile stay ordered.
-        if not self.output_log.display:
             return
-        while self.output_buffer:
-            self.output_log.write(self.output_buffer.popleft())
-        self.output_ready = True
-
-    def agents_changed(self):
-        self.action_reload()
-        self.agents_title()
-
-    def agent_loop(self, stop=None):
-        stop = self.stop if stop is None else stop
-        self.runner.run(interval=REFRESH_SECONDS, stop=stop)
-        # An older loop finishing must not clear a newly started dispatcher.
-        if self.thread is threading.current_thread():
-            self.thread = None
-        self.from_agents(self.agents_title)
-
-    def from_agents(self, callback, *args):
-        # The agent thread can outlive the screen; a report after shutdown has nowhere to go.
-        if self.is_running:
-            try:
-                self.call_from_thread(callback, *args)
-            except RuntimeError:
-                pass
-
-    def on_unmount(self):
-        self.stop.set()
-
-    def action_toggle_agents(self):
-        if self.runner is None:
-            return
-        if self.thread is not None and not self.stop.is_set():
-            self.stop.set()
-            ids = self.runner.active_ids()
-            if ids:
-                self.notify(f"Stopping once the agents on {', '.join(ids)} finish.")
+        questions = unanswered(item) if takes_answers(step) else []
+        if questions:
+            heading = Text.assemble((item.id, "bold"), "  ", item.title, f"\nAnswer the questions at {step.name}.")
+            self.push_screen(Answers(heading, questions), lambda answers: self.answered(item, step, answers))
         else:
-            self.stop = threading.Event()
-            self.thread = threading.Thread(target=self.agent_loop, args=(self.stop,), daemon=True)
-            self.thread.start()
-        self.agents_title()
+            self.answered(item, step, [])
+
+    def answered(self, item, step, answers):
+        if answers is None:
+            return
+        output = {"questions": answers} if answers else {}
+        self.push_screen(Outcomes(item, step), lambda outcome: self.chosen(item, step, outcome, output))
+
+    def chosen(self, item, step, outcome, output):
+        if outcome is None:
+            return
+        if not takes(step, "standards"):
+            self.ask_feedback(item, step, outcome, output)
+            return
+        heading = Text.assemble((item.id, "bold"), f"  {outcome}  ->  {step.outcomes[outcome].next}\n\n",
+                                ("Standards for this item", "bold"))
+
+        def ticked(names):
+            if names is not None:
+                self.ask_feedback(item, step, outcome, {**output, "standards": names})
+        self.push_screen(Standards(heading, item, self.templates.standards), ticked)
+
+    def ask_feedback(self, item, step, outcome, output):
+        if not takes(step, "feedback"):
+            self.record(item, step, outcome, output)
+            return
+        heading = Text.assemble((item.id, "bold"), f"  {outcome}  ->  {step.outcomes[outcome].next}\n\n",
+                                ("Feedback for the next step (optional)", "bold"))
+
+        def given(text):
+            if text is not None:
+                self.record(item, step, outcome, {**output, "feedback": text.strip()} if text.strip() else output)
+        self.push_screen(FreeText(heading, "Record", "Leave it blank to just move on."), given)
+
+    def record(self, item, step, outcome, output):
+        try:
+            if self.backlog.get(item.id).step != step.name:
+                raise InvalidStep(f"{item.id} moved on while you were choosing; nothing was recorded")
+            updated = record_customer(self.backlog, item.id, outcome, output)
+        except (InvalidWorkItem, InvalidStep, OSError) as exc:
+            self.notify(str(exc), severity="error")
+        else:
+            self.activity.write(f"{item.id} {step.name}: {outcome} -> {updated.step}")
+            self.wake_harness()
+        self.action_reload()
 
     def action_new_request(self):
-        self.push_screen(NewRequest(), self.create_request)
+        heading = "New request: describe your idea, feature or change"
+        self.push_screen(FreeText(heading, "Capture request", required=True), self.capture)
 
-    def create_request(self, text):
+    def capture(self, text):
         if text is None or not text.strip():
             return
-        title = text.lstrip().splitlines()[0].strip()[:80]
-        self.attempt(lambda: self.repository.create("request", title, text))
-
-    def action_retry(self):
-        row = self.shown
-        if self.runner is not None and row is not None and self.runner.failed.get(row.key):
-            self.runner.retry(row.key)
-            self.action_reload()
-
-    def action_switch_branch(self):
-        if self.runner is None or self.shown is None or not self.shown.is_item:
-            return
-        if self.thread is not None and not self.stop.is_set():
-            self.notify("Press s to stop agents before switching branches.")
-            return
+        title = text.strip().splitlines()[0].strip()[:80]
         try:
-            branch = self.runner.switch_branch(self.shown.key)
-        except (StepFailed, Waiting, git.GitError, OSError) as exc:
+            item = self.backlog.create("request", title, {"overview": text.strip()})
+        except (InvalidWorkItem, InvalidStep, OSError) as exc:
             self.notify(str(exc), severity="error")
-            return
-        self.notify(f"Switched to {branch}. Start and stop the app in your own terminal.")
-        self.action_reload()
-
-    def action_quit(self):
-        if self.runner is not None and self.runner.active_ids():
-            message = f"Agents are still working on {', '.join(self.runner.active_ids())}. Quit and abandon those runs?"
-            self.push_screen(Confirm(message), lambda yes: self.exit() if yes else None)
         else:
-            self.exit()
+            self.activity.write(f"{item.id}: captured at {item.step}")
+            self.selected = item.id
+            self.wake_harness()
+        self.action_reload()
 
     def action_toggle_mine(self):
         self.only_mine = not self.only_mine
         self.action_reload()
 
-    def action_toggle_group(self):
-        self.by_step = not self.by_step
-        self.action_reload()
-
     def action_switch_pane(self):
-        tree, detail = self.item_tree, self.detail_pane
-        (detail if tree.has_focus else tree).focus()
+        (self.detail_pane if self.item_tree.has_focus else self.item_tree).focus()
 
 
-def run(repository, runner=None):
-    Backlog(repository, runner).run()
+def run(backlog, harness=None):
+    Console(backlog, harness).run()

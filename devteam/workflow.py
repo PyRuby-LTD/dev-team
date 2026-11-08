@@ -1,50 +1,19 @@
-"""Workflow definitions: one owner per step and named transitions to other steps."""
-import json
+"""Workflow definitions: named steps, each with an owner and outcomes that lead to other steps."""
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .config import ROOT, load_roles
+from . import steps
+from devteam.yaml_format import InvalidYaml, parse
+from devteam.config import ROOT, load_roles
 
-CHECK = "check"
-CHECK_OUTCOMES = {"passed", "failed"}
-HARNESS_ACTIONS = {"merged", "rejected", "abandon", "sync"}
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
+# The harness's own workflows, by name, once loaded in this process.
+CACHE = {}
 
 
 class InvalidWorkflow(ValueError):
     pass
-
-
-@dataclass
-class Step:
-    name: str
-    owner: str
-    transitions: dict
-
-    @property
-    def role(self):
-        return self.owner.removeprefix("agent:") if self.owner.startswith("agent:") else None
-
-    @property
-    def human(self):
-        return self.owner == "human"
-
-    @property
-    def check(self):
-        return self.owner == CHECK
-
-    @property
-    def harness(self):
-        return self.owner.startswith("harness:")
-
-    @property
-    def action(self):
-        return self.owner.removeprefix("harness:") if self.harness else None
-
-    @property
-    def terminal(self):
-        return not self.transitions
 
 
 @dataclass
@@ -54,60 +23,55 @@ class Workflow:
     steps: dict
 
 
-def _unique(pairs):
-    # json.loads keeps the last of two equal keys, which would silently drop a step.
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise InvalidWorkflow(f"duplicate key {key!r}")
-        result[key] = value
-    return result
-
-
-def build(name, data, roles):
-    if not isinstance(data, dict) or not isinstance(data.get("steps"), dict) or not data["steps"]:
-        raise InvalidWorkflow("a workflow needs a nonempty 'steps' object")
-    steps = {}
+def build(name, data, roles, prompts=None, schemas=True):
+    if not isinstance(data, dict) or set(data) != {"initial", "steps"}:
+        raise InvalidWorkflow("a workflow has exactly 'initial' and 'steps'")
+    if not isinstance(data["steps"], dict) or not data["steps"]:
+        raise InvalidWorkflow("'steps' must map each step name to its definition")
+    built = {}
     for step_name, spec in data["steps"].items():
-        if not isinstance(spec, dict) or set(spec) != {"owner", "transitions"}:
-            raise InvalidWorkflow(f"step {step_name!r} must have exactly 'owner' and 'transitions'")
-        owner, transitions = spec["owner"], spec["transitions"]
-        if not isinstance(owner, str) or (owner not in ("human", CHECK) and not owner.startswith(("agent:", "harness:"))):
-            raise InvalidWorkflow(f"step {step_name!r}: owner must be 'human', 'agent:<role>', 'check' or 'harness:<action>'")
-        if owner.startswith("agent:") and owner.removeprefix("agent:") not in roles:
-            raise InvalidWorkflow(f"step {step_name!r}: role {owner.removeprefix('agent:')!r} is not in config/roles.toml")
-        if owner.startswith("harness:") and owner.removeprefix("harness:") not in HARNESS_ACTIONS:
-            raise InvalidWorkflow(f"step {step_name!r}: unknown harness action {owner.removeprefix('harness:')!r}")
-        if not isinstance(transitions, dict):
-            raise InvalidWorkflow(f"step {step_name!r}: transitions must be an object of name -> step")
-        for transition, target in transitions.items():
-            if target not in data["steps"]:
-                raise InvalidWorkflow(f"step {step_name!r}: transition {transition!r} targets undefined step {target!r}")
-        if owner == CHECK and set(transitions) != CHECK_OUTCOMES:
-            raise InvalidWorkflow(f"step {step_name!r}: a check step has exactly the transitions 'passed' and 'failed'")
-        outcomes = {"completed", "conflicted"} if owner == "harness:sync" else {"completed"}
-        if owner.startswith("harness:") and set(transitions) != outcomes:
-            expected = "the transitions 'completed' and 'conflicted'" if owner == "harness:sync" else "the transition 'completed'"
-            raise InvalidWorkflow(f"step {step_name!r}: a harness step has exactly {expected}")
-        steps[step_name] = Step(step_name, owner, dict(transitions))
-    if data.get("initial") not in steps:
-        raise InvalidWorkflow(f"initial step {data.get('initial')!r} is not defined")
-    if set(data) != {"initial", "steps"}:
-        raise InvalidWorkflow("a workflow has only 'initial' and 'steps'")
-    return Workflow(name, data["initial"], steps)
+        try:
+            built[step_name] = steps.build(step_name, spec, roles, prompts, schemas)
+        except steps.InvalidStep as exc:
+            raise InvalidWorkflow(str(exc)) from None
+    for step in built.values():
+        for outcome in step.outcomes.values():
+            if outcome.next not in built:
+                raise InvalidWorkflow(f"step {step.name!r}: outcome {outcome.name!r} leads to "
+                                      f"undefined step {outcome.next!r}")
+    if data["initial"] not in built:
+        raise InvalidWorkflow(f"initial step {data['initial']!r} is not defined")
+    return Workflow(name, data["initial"], built)
 
 
-def load(name, directory=None, roles=None):
+def load(name, directory=None, roles=None, prompts=None, schemas=True):
     if not isinstance(name, str) or not NAME.fullmatch(name):
         raise InvalidWorkflow(f"invalid workflow name {name!r}")
-    path = Path(directory or ROOT / "workflows") / f"{name}.json"
+    path = Path(directory or ROOT / "workflows") / f"{name}.yaml"
     try:
-        data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique)
+        data = parse(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise InvalidWorkflow(f"workflow {name!r} is not defined ({path})") from None
-    except (OSError, ValueError) as exc:
-        raise InvalidWorkflow(f"workflow {name!r}: {exc}") from exc
+    except (OSError, InvalidYaml) as exc:
+        raise InvalidWorkflow(f"workflow {name!r}: {exc}") from None
     try:
-        return build(name, data, load_roles().keys() if roles is None else roles)
+        return build(name, data, load_roles().keys() if roles is None else roles, prompts, schemas)
     except InvalidWorkflow as exc:
         raise InvalidWorkflow(f"workflow {name!r}: {exc}") from None
+
+
+def load_all(directory=None, roles=None, prompts=None):
+    """Every workflow the harness defines, so a broken one is reported before anything runs."""
+    own = directory is None and roles is None and prompts is None
+    directory = Path(directory or ROOT / "workflows")
+    loaded = {path.stem: load(path.stem, directory, roles, prompts) for path in sorted(directory.glob("*.yaml"))}
+    if own:
+        CACHE.update(loaded)
+    return loaded
+
+
+def cached(name):
+    """One of the harness's own workflows, loaded once per process."""
+    if name not in CACHE:
+        CACHE[name] = load(name, schemas=False)
+    return CACHE[name]

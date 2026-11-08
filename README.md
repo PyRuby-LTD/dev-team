@@ -1,31 +1,35 @@
 # dev-team
 
-**A product delivery team, defined as roles and a workflow.** You describe what
+**A product delivery team, defined as roles and workflows.** You describe what
 you want; the roles question you, turn it into work items, implement them and
 review them, and you decide what is played and what is merged.
 
 This repository is the team. It is not about any particular product.
 
 ```
-devteam/              the runner and terminal UI: reads each work item's step and invokes its owner
-workflows/            the steps, their owners and valid transitions, as JSON
+devteam/              the harness, its command line and the terminal UI
+workflows/            the steps, their owners, outcomes and output shapes, as YAML
 roles/                one brief per agent role
-prompts/              one prompt per agent-owned step
-config/roles.toml     which engine and model each role uses
-docs/                 the work item format, and records of finished items
+standards/            the rules and lenses analysis chooses for an item
+prompts/              one Jinja template per agent-owned step, and example work items
+views/                the template for the TUI's detail view
+config/roles.toml     which engine and model each role uses, and the project check
 ```
 
-Work items are Markdown files whose front matter names a workflow and the
-item's current step. A workflow is JSON: each step has one owner (a human, an
-agent role, a project check or a harness action) and named transitions to other steps. The runner invokes the owning
-agent for agent-owned steps by shelling out to coding agent CLIs, and waits on
-human-owned ones.
+The harness does one thing: it finds a work item whose current step the
+harness or an agent owns, asks that step to perform, then validates and records
+the step's outcome and output on the item and moves it to the step that outcome
+leads to. Everything role-specific lives in the workflows, role briefs,
+standards and prompts, so changing what a role does is an edit to those files,
+not to the harness.
 
-Work starts as a request, which the product owner analyses with you and the
-other roles (`workflows/analysis.json`) and turns into epics, stories, tasks and
-bugs. Each of those then follows `workflows/default.json`.
+Work starts as a request, which the product owner analyses with you
+(`workflows/request.yaml`) and divides into draft epics, stories, tasks and
+bugs. Each of those then follows `workflows/default.yaml`.
 
-Nothing is promoted automatically - `play` is a transition only you can make.
+Nothing is promoted automatically: `play` is an outcome only you can choose.
+
+See [GLOSSARY.md](GLOSSARY.md) for the terms used here.
 
 ---
 
@@ -38,17 +42,18 @@ dependencies from `uv.lock`. You also need:
   for the product repository.
 - The engine CLIs named in `config/roles.toml`: `claude` and `codex` by
   default, both signed in with your own subscription.
-- `gh`, authenticated, for publishing, and permission to push to the product's
-  `origin`.
-- From the `test` step onwards, a product `Makefile` with a `regression` target
-  (`make regression`, optionally `TEST=<name>`). `init` creates a placeholder
-  that fails with an "unimplemented" message until you replace it.
+- `gh`, authenticated, for publishing and following pull requests, and
+  permission to push to the product's `origin`.
+- A product `Makefile` with a `regression` target (`make regression`,
+  optionally `TEST=<name>`). `init` creates a placeholder that fails with an
+  "unimplemented" message until you replace it.
 
 Makefile targets must select the product's own environment (for a uv product,
-use `uv run ...`), because `dev-team` runs `make` with the checkout's virtual
+use `uv run ...`), because `dev-team` runs `make` with the harness's virtual
 environment inherited. Engine CLIs and credentials are prerequisites; they
-are not bundled. The team uses the checkout's workflows, prompts, briefs and
-configuration, without agents or skills from your home directory.
+are not bundled. The team uses this checkout's workflows, prompts, briefs,
+standards and configuration, without agents or skills from your home
+directory.
 
 ## Set up the launcher
 
@@ -76,200 +81,216 @@ The checkout path must contain no whitespace or any of `* ? [ ] ( ) " ' \`.
 `--project` selects the harness environment while preserving your current
 directory; `-P` prevents product files from shadowing harness dependencies.
 
-## Use
+## Set up a product
 
-`dev-team` is the alias for `uv run --project <checkout> python -P -m devteam`.
-It acts on the directory it is run from, or the directory passed with
-`--product DIR` before the subcommand. `dev-team help` lists the commands;
-`dev-team backlog --help` describes the work item arguments. A bare `dev-team`
-prints usage and exits nonzero.
-
-Run `dev-team init` first in a new product. It requires an existing Git repository
-and a GitHub origin (HTTPS, `git@github.com:owner/repo`, or
-`ssh://git@github.com/owner/repo`; other hosts are refused). It refuses detached
-HEAD and `devteam/` item branches before making changes. It creates a missing
-Makefile and sets up the backlog. In an empty repository it commits only the
-Makefile on the current branch and pushes that branch if it does not exist on
-origin. A rerun completes a failed commit or push; an existing different origin
-commit produces a warning and no push. In an existing codebase it makes no
-commit or push: it leaves a new placeholder uncommitted and asks you to wire up
-`make regression` and commit before opening the TUI. Existing Makefiles are
-preserved, with a warning if they lack a regression target.
+`dev-team` acts on the directory it is run from, or the directory passed with
+`--product DIR` before the subcommand. Run `dev-team init` first in a new
+product:
 
 ```bash
 cd /path/to/product
 dev-team init
-dev-team help
-dev-team backlog capture request "An idea for the product" --file idea.md
-dev-team backlog capture story "CSV export drops the final row" --parent EPIC-001
-dev-team tui                           # open the TUI
-dev-team backlog validate
-dev-team backlog move STORY-008 analyse
-dev-team run --once                    # run agent-owned steps until none can run
-dev-team check                         # run the product's checks
 ```
 
-`tui` is the main way in: it shows every item, lets you answer an agent's
-questions and choose a transition, and runs the agents once you press `s`.
-Press `l` to show or hide live agent output below the item details. The pane
-starts closed and keeps a continuous stream across runs, including output
-received while hidden, bounded to the latest 2000 lines.
-Press `n` to create a request from your text. Requests follow `analysis.json`:
-move a submitted request with `analyse`, then the product owner asks questions
-or consults the architect, platform engineer and quality lead. Each role's
-questions return to that role after `answered`. The product owner captures
-the resulting work items and lists their IDs in the request before handing it
-to you at `review`. Choose `revise` to refine it or `approve` to finish. Created
-work stays at its initial step until you choose to move it.
-`move` applies a transition from the command line. `run` without `--once` keeps
-watching for items that reach an agent-owned step.
+`init` requires an existing Git repository and a GitHub origin (HTTPS,
+`git@github.com:owner/repo`, or `ssh://git@github.com/owner/repo`; other hosts
+are refused). It refuses detached HEAD and `devteam/` item branches before
+making changes. It creates a missing Makefile and sets up the backlog. In an
+empty repository it commits only the Makefile on the current branch and pushes
+that branch if it does not exist on origin. A rerun completes a failed commit
+or push; an existing different origin commit produces a warning and no push. In
+an existing codebase it makes no commit or push: it leaves a new placeholder
+uncommitted and asks you to wire up `make regression` and commit. Existing
+Makefiles are preserved, with a warning if they lack a regression target.
 
-Work items live in `backlog/`, which is the `devteam-backlog` branch checked out
-beside the code; the first command creates it. See
-[the work item and workflow format](docs/backlog.md).
+`tui` and `run` check this setup when they start, and refuse to run in a
+product without a backlog branch or a regression target. They also load every
+workflow first, so an invalid workflow is reported, naming the step and the
+problem, before anything runs.
 
-## Workflow
+## The backlog
 
-`workflows/default.json`:
+Work items are YAML files in `backlog/`, which is the `devteam-backlog` branch
+checked out beside the code: `backlog/requests/`, `epics/`, `stories/`,
+`tasks/` and `bugs/`. Every write is validated, then committed to that branch on
+its own, so work-item changes never mix with product code. Machine paths, such
+as your home directory, are masked in anything committed there; the original
+is kept under `backlog/log/unmasked/` and a notice says so.
 
-| Step | Owner | Transitions |
+An item's requirements (overview, scope, acceptance criteria, questions and
+their answers, chosen standards and so on) sit at its root. Every run of every
+step appends an entry to its `step_outputs` with its outcome, the step it leads
+to and what it produced. The entries addressed to an item's current step and
+not yet passed are what that step must address. See
+`prompts/examples/work-item.yaml` for every field an item can carry, and
+`story.yaml`, `draft-story.yaml`, `task.yaml`, `bug.yaml` and `epic.yaml` beside
+it for what each kind usually contains.
+
+The harness reads only `.yaml` items. Markdown items from the original harness
+are left alone for you to triage by hand.
+
+## Use
+
+```bash
+dev-team tui                      # the main way in
+dev-team run [--once]             # perform agent and harness steps without the TUI
+dev-team check [TEST]             # run the product's check, or one test
+dev-team prompt [STEP] --item ID  # print the prompt each agent step would be given
+dev-team --help                   # every command; each takes --help too
+```
+
+`tui` lists every item under its epic, with its step and who that step is
+waiting on, and runs the harness behind it. An invalid item file is listed with
+its error while the rest of the backlog still loads. Select an item to see its
+requirements and the step outputs waiting on its current step, rendered from
+`views/detail.md`.
+
+When a step is waiting on you, press `enter` on it:
+
+1. Any unanswered questions come first, each with a free-text answer box.
+   Every question needs an answer; use n/a for one you cannot or will not
+   answer.
+2. At `ready`, a checklist of standards, pre-ticked with those analysis chose
+   and their reasons. A standard you add is recorded as chosen by you.
+3. A list of the step's outcomes, each with what it means.
+4. Where the step takes feedback, a free-text box. Feedback reaches the owner
+   of the step the outcome leads to.
+
+Press `n` to capture a new request as free text, `y` to show only items
+waiting on you, `tab` to switch pane, `r` to refresh and `q` to quit. A running
+agent's output streams into the pane below the detail, prefixed with its item
+ID, and the harness's activity is reported beneath that.
+
+`run` keeps performing steps until interrupted; with `--once` it exits when no
+step can move. `prompt` renders prompts without running an agent, for an item
+in the backlog (`--item`), a work-item file (`--file`), or by default
+`prompts/examples/work-item.yaml`; `--set name=value` fills in run values such
+as `branch`.
+
+The same outcomes you choose in the TUI can be recorded from the command line
+with `dev-team backlog record ID OUTCOME`, with the step's output as YAML on
+stdin.
+
+## Workflows
+
+A workflow is YAML: an `initial` step and a map of `steps`. Each step names its
+`owner`, its `outcomes` (each with the `next` step and what it `means`), and
+the shape of its `output`, as a JSON Schema or `requirements`. Agent steps also
+name their `prompt`. Owners are:
+
+- `human`: you, through the TUI. A customer step's output may only ask for
+  questions, feedback or standards, since those are the inputs the TUI knows.
+- `agent:<role>`: a role from `config/roles.toml`.
+- `git:<Step>` or `harness:<Step>`: a step the harness performs itself.
+
+Change an owner, an outcome or an output shape by editing the YAML; the harness
+and the TUI follow.
+
+`workflows/request.yaml`:
+
+| Step | Owner | Outcomes |
 |---|---|---|
 | captured | you | `analyse` |
-| analysis | analyst | `questions` (to answering), `analysed` (to challenge) |
-| challenge | challenger | `sound` (to ready), `rework` (back to analysis) |
+| analysis | product owner | `questions` (to answering), `drafted` (to review) |
 | answering | you | `answered` (back to analysis) |
-| ready | you | `play`, `rework` |
-| implement | implementer, on the item's branch | `implemented` (to test), `blocked` (back to you at ready) |
-| test | tester, on the item's branch | `written` (to sync), `defect` (back to implement) |
-| sync | harness | `completed` (to verify), `conflicted` (to resolve) |
-| resolve | implementer | `resolved` (to verify), `blocked` (to ready) |
-| verify | the harness runs `make regression` | `passed` (to review), `failed` (back to test) |
-| review | reviewer, on the item's branch | `approve`, `revise` |
-| accept | you | `pr` (to sync-publish), `revise`, `abandon` (to abandoning) |
-| sync-publish | harness | `completed` (to verify-publish), `conflicted` (to resolve-publish) |
-| resolve-publish | implementer | `resolved` (to verify-publish), `blocked` (to ready) |
-| verify-publish | harness check | `passed` (to publish), `failed` (to implement) |
-| publish | publisher, on the item's branch | `published` (to pull-request) |
-| pull-request | you | `merged` (to merged), `rejected` (to rejected), `abandon` (to abandoning) |
-| merged | harness | `completed` (to done) |
-| rejected | harness | `completed` (back to implement) |
-| abandoning | harness | `completed` (to abandoned) |
-| abandoned | - | |
+| review | you | `approve` (to done), `revise` (back to analysis) |
 | done | - | |
 
-The implementer writes unit tests only where the logic is hard to get right;
-the tester builds the regression suite, driving the running system against
-canned data with as few mocks as possible. The challenger attacks the analyst's work before you are asked to play it, and
-runs on a stronger model than the analyst. Change an owner or a transition by
-editing the JSON. The reviewer should be a
-different engine from the implementer; that independence is most of the value.
+While analysing, the product owner creates each draft with
+`dev-team backlog create` and lists it in the request's `work_items`. When
+revising, it updates existing drafts and takes unneeded ones out of the
+request with a reason; it never closes them. Approved drafts wait at
+`captured` in the default workflow until you choose to analyse them.
+
+`workflows/default.yaml`:
+
+| Step | Owner | Outcomes |
+|---|---|---|
+| captured | you | `analyse`, `wontfix` |
+| analysis | product owner | `questions` (to answering), `analysed` (to challenge) |
+| answering | you | `answered` (back to analysis) |
+| challenge | challenger | `sound` (to ready), `rework` (back to analysis) |
+| ready | you, choosing standards | `play` (to implement), `rework`, `wontfix` |
+| implement | implementer, on the item branch | `implemented` (to test), `blocked` (to ready) |
+| test | tester, on the item branch | `written` (to sync), `defect` (to implement) |
+| sync | git | `completed` (to verify), `conflicted` (to resolve) |
+| resolve | implementer | `resolved` (to verify), `blocked` (to ready) |
+| verify | the project check | `passed` (to review), `failed` (to test) |
+| review | reviewer, on the item branch | `approve` (to accept), `revise` (to implement) |
+| accept | you | `pr` (to sync-publish), `revise` (to implement), `abandon` (to abandoning) |
+| sync-publish | git | `completed` (to verify-publish), `conflicted` (to resolve-publish) |
+| resolve-publish | implementer | `resolved` (to verify-publish), `blocked` (to ready) |
+| verify-publish | the project check | `passed` (to publish), `failed` (to implement) |
+| publish | publisher, on the item branch | `published` (to pull-request) |
+| pull-request | git, and you | `merged` (to merged), `rejected` (to rejected), `abandon` (to abandoning) |
+| merged | git | `completed` (to done) |
+| rejected | harness | `completed` (to implement) |
+| abandoning | git | `completed` (to abandoned) |
+| abandoned, wontfix, done | - | |
+
+The challenger attacks the analyst's work before you are asked to play it, and
+runs on a stronger model. The reviewer should be a different engine from the
+implementer; that independence is most of the value. Nothing is ever deleted
+from the backlog: `wontfix` keeps a dropped item there.
 
 ## How an agent step runs
 
-The runner renders `prompts/<workflow>/<step>.md` when present, falling back to
-`prompts/<step>.md`, then appends the path of the work item and
-the list of valid transitions, and invokes the owning role's CLI in the product
-checkout with the role brief from `roles/<role>.md`. The agent reads the item,
-may edit its body (questions, findings, implementation notes) but not its front
-matter, and ends its reply with `TRANSITION: <name>`. The runner checks the name
-against the step's transitions and moves the item.
+The harness renders the step's prompt from `prompts/` with the item, its
+current step, the step outputs waiting on it and its chosen standards, followed
+by the instructions for submitting. It runs the role's engine in the product
+checkout with the role brief from `roles/<role>.md`, keeping the transcript
+under `backlog/log/<item id>/`, and streams its output to the TUI.
 
-Non-branch agents run in parallel, with one running step per item. Analysis
-agents read the current checkout and may see its branch change mid-step.
+Agents talk to the harness only through `dev-team backlog` commands, which the
+rendered prompt gives with the full harness path:
 
-A nonzero exit, a missing or unknown transition, or changed front matter leaves
-the item where it is; the failure is printed with the path of the transcript
-under `backlog/log/<item id>/`, and the item is not retried until the runner is
-restarted. An item is run at most sixteen times per runner session, so a
-review/revise loop cannot continue unattended without limit.
+- `submit ID OUTCOME`, with the step's output as YAML on stdin. It is checked
+  at once and refused with the reasons if the outcome or output is invalid, so
+  the agent can correct it before it exits. The last valid submission is the
+  one recorded, once the agent has exited.
+- `create TYPE TITLE` and `update ID`, with the item's fields as YAML on stdin.
 
-## Branches
+An engine missing from the PATH, an engine exiting with an error, or an agent
+exiting without a valid submission leaves the item at its step with the reason
+reported. A failed item is not retried until the harness is restarted.
 
-Roles marked `branch = true` change code, so the runner first puts your
-checkout on `devteam/<item id>`, created from the branch you were on. You see
-the work happen in the repository you have open. When the agent finishes, the
-runner commits whatever it changed to that branch; agents are not expected to
-commit, since their sandboxes often cannot write `.git`. A stray file written
-by a parallel non-branch agent can be included in that commit on the running
-branch-role item's branch.
+## Branches and the checkout
 
-One checkout step runs at a time, while steps such as analysis carry on. An
-item keeps its place through checkout steps, but releases it at human review
-steps such as `accept` and `pull-request`. The runner returns to its base branch
-and switches to or creates the next item's branch from there. It never switches branch over
-uncommitted changes; it waits and says so.
+Roles marked `branch = true` change code. Before such a role runs, the harness
+puts your checkout on `devteam/<item id>`, created from the branch you were on,
+which it records as the item's base. You see the work happen in the repository
+you have open. When the agent finishes, the harness commits what it changed to
+that branch; agents are not expected to commit, since their sandboxes often
+cannot write `.git`. Roles marked `push = true` have the branch pushed for them
+first.
 
-Stories, tasks and bugs can declare `depends_on: [STORY-001, BUG-002]`.
-Before a local `devteam/<id>` branch exists, branch roles wait until every
-dependency is at `done`, reporting unfinished IDs and steps in the terminal UI.
-Held work leaves the checkout available to independent items. Analysis and
-other non-branch steps continue, and checks and harness actions are exempt.
-The next scan releases the hold once the dependencies are done, so the new
-branch starts from the returned base with the merged work. An `abandoned`
-dependency blocks the item until the customer edits `depends_on`; it never
-counts as done. Changes to dependencies after the item's branch exists have
-no scheduling effect.
+Only one step holds the checkout at a time: branch roles and git and check
+steps. Others queue for it, and the TUI says which item they are waiting
+behind. An item holds the checkout until it reaches a step that does not need
+it, and the harness never switches branch over uncommitted changes; it waits and
+says so. Steps that do not hold the checkout, such as analysis and challenge,
+run alongside it and alongside each other.
 
-Use repeatable `--depends-on ID` options with `dev-team backlog capture`, or
-`dev-team backlog depends-on STORY-003 STORY-001 BUG-002` to replace a list.
-`dev-team backlog depends-on STORY-003` clears it. The commands validate before
-writing and commit successful edits to the backlog branch. See
-[the field and validation rules](docs/backlog.md).
+`sync` and `sync-publish` fetch origin and rebase the item branch onto its
+base. If rebasing conflicts, the harness aborts the rebase and merges the base
+without committing, and `resolve` asks the implementer to resolve every
+conflicted file. The harness commits the merge after `resolved`; `blocked`
+aborts it. Later syncs keep an earlier merge from the base instead of replaying
+its conflict.
 
-After `test`, `sync` fetches origin and rebases the item onto its recorded
-`origin/<base>` before `verify -> review -> accept`. Choosing `pr` at `accept`
-needs no note and runs `sync-publish -> verify-publish -> publish`; a failure
-at `verify` returns to `test`, while `verify-publish` returns to `implement`.
-Both sync steps hold the checkout. Missing bases, fetch failures and dirty
-checkouts fail the step without switching or rewriting the branch.
+Publishing pushes with `--force-with-lease` pinned to the last recorded remote
+head, so rebased branches can be republished. Remote commits the harness has
+not accounted for stop sync or publication with a message naming them; merge
+them into the item branch by hand, or reset the remote branch, then retry.
 
-If rebasing conflicts, the harness aborts the rebase and merges the base without
-committing. `resolve` or `resolve-publish` asks the implementer to resolve all
-conflicted files in one round without committing. The harness rejects remaining
-markers and commits the merge after `resolved`. `blocked` aborts the merge and
-returns to `ready`. A clean merge fallback goes straight to verification. Later
-syncs preserve an earlier merge from the base instead of replaying its conflict.
-
-Publishing uses `git push --force-with-lease` pinned to the recorded remote head,
-so rebased branches can be republished. `branch.<branch>.pushed` records remote
-history accounted for at each passing sync and each successful push. Remote
-commits reachable from neither that record nor the local branch stop sync or
-publication with a message naming the commits. To recover, on the item's branch
-fetch and run `git merge origin/<branch>` to incorporate them, then replay the
-step; alternatively reset the remote branch to the last published head to
-discard them, then replay. Remote changes after sync are also protected by the
-publication check and lease.
-
-At `accept`, look at the result in place. `pr` runs `sync-publish` and
-`verify-publish`, then pushes the branch to `origin` and hands it to the publisher, which opens a pull request against
-the base branch with `gh`. Re-publishing after a rejection updates the existing
-open PR's body and commits, preserving its title and URL. If no open PR exists,
-the publisher creates one. The item then waits at `pull-request` for your decision
-and releases the checkout. Merging is yours to do; the tool does not
-merge or close the PR. Choose `merged` to finish or `rejected` to return to
-implementation, with an optional feedback note. At `merged`, the harness fetches
-`origin`, switches to the recorded base branch, and fast-forwards it before
-finishing at `done`. Local commits ahead of origin are kept. A dirty checkout
-(including untracked files) or a base that has diverged from origin fails the
-step before switching or moving any local branch. The item stays at `merged`
-and holds the checkout, so other code-changing items wait. Fix the cause, then
-press `t` in the TUI or call `Runner.retry(id)` to try again. At `rejected`, the
-harness reads the PR's review, inline and conversation comments with `gh`, which
-must be installed and authenticated. It replaces `## Pull request feedback`
-before returning to `implement`. A failure leaves the item at `rejected`; fix
-the cause and retry. Neither action changes the PR.
-
-At `accept` or `pull-request`, choose `abandon` to stop work without merging.
-It moves straight to `abandoning` without asking for a feedback note. If the
-checkout is on the item's branch, the harness requires a clean tree and a
-recorded base, then switches to that base before finishing at `abandoned`.
-A failure leaves the item at `abandoning`, holding the checkout; clean the tree
-or fix the recorded base and retry. If another branch is checked out, the
-harness leaves it alone and finishes without those checks. The local item
-branch and its commits are kept for manual recovery; the harness does not
-fetch, merge or push. Closing any open PR is your job. `abandoned` releases the
-checkout, and the next item starts from the branch then checked out. `done`
-is reached only through `merged`; existing finished items are unchanged.
+At `pull-request` the harness checks the pull request with `gh` every minute
+and moves on to `merged` once it has been merged. You may instead choose
+`rejected` or `abandon`. Merging is yours to do; the harness neither merges nor
+closes a pull request. At `merged`, the harness fetches origin and fast-forwards
+the base branch before finishing at `done`. At `rejected`, it reads the pull
+request's review, inline and conversation comments into the step's output for
+the implementer. At `abandoning`, it switches the checkout back to the base,
+keeping the item branch and its commits for recovery.
 
 ## The project check
 
@@ -277,25 +298,14 @@ Every product repository has a `Makefile` in its root with one target that
 proves the system works: `make regression`, which also accepts `TEST=<name>` to
 run a single test. It is named in `[check]` in `config/roles.toml`.
 
-Agents never call `make`. Their rendered prompts supply the absolute harness
-command followed by `check [<test>]`,
-which runs the target, prints a short result and keeps the full output under
-`backlog/log/check/`. A workflow step owned by `check` is run by the harness
-itself: the exit code chooses `passed` or `failed`, and the result is written
-into the item under `## Test run`. That run, not any agent's account, is what
-the reviewer is given.
+Agents never call `make`. Their prompts give them the harness command followed
+by `check [<test>]`, which runs the target, prints a short result and keeps the
+full output under `backlog/log/check/`. The `verify` steps are run by the
+harness itself: the exit code chooses `passed` or `failed`, and that run, not
+any agent's account, is what the reviewer is given.
 
-To inspect a story's code, press `s` in the TUI to stop agents and wait for
-running steps to finish. Select the story and press `x` to switch to its
-existing `devteam/<id>` branch. The action refuses a switch while steps are
-running or the checkout has uncommitted changes, and reports a missing branch
-without creating one. It works at any step with an existing branch.
-
-Start and stop the app yourself in another terminal, including any local
-stubs or databases it needs. There is no required startup target and the harness
-does not manage the app. Stop it before restarting agents with `s`, as agents
-may switch branches. Human steps such as `accept` and `pull-request` release
-the checkout so queued stories can continue while you review.
+Start and stop the app yourself in another terminal, including any local stubs
+or databases it needs. The harness does not manage it.
 
 ## Choosing models per role
 
@@ -311,20 +321,18 @@ branch = true
 
 Placeholders substituted per invocation: `{prompt}` `{model}` `{brief}`
 `{cwd}` `{extra_dir}` (the backlog directory) `{permission}` `{max_turns}`
-`{harness_command}`. Prompts and briefs use `{{harness_command}}` for the same
-command derived from the checkout path.
+`{harness_command}`. Prompts use `{{ harness_command }}` for the same command
+derived from the checkout path, and role briefs may too.
 
-Role briefs and step prompts are prose you should edit as you learn what each
-role gets wrong.
+Role briefs and standards are prose in the team author's own words; prompts
+are templates to edit as you learn what each role gets wrong. Preview a change
+with `dev-team prompt` before running anything.
 
 ## Before the first real run
 
 - Confirm the codex model id in `config/roles.toml` against `codex exec --help`
-  and your account; the default is a placeholder.
-- The engine templates have only been exercised with a fake engine in the
-  tests. Try one item on a throwaway repository and read `log/` first.
-- Publishing needs `git push` access to `origin` for you, and an authenticated
-  `gh` that the publisher's engine is permitted to run for PR lookup, creation
-  and editing. Re-publishing after a rejection updates the existing open PR.
-- Expect to hit subscription rate limits mid-run. Restart the runner once the
+  and your account.
+- The engine templates have only been exercised with stub engines in the
+  tests. Try one item on a throwaway repository and read `backlog/log/` first.
+- Expect to hit subscription rate limits mid-run. Restart the harness once the
   window resets; every step resumes from the item file.

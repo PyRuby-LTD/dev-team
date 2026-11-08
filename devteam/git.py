@@ -1,11 +1,12 @@
 """The git operations the harness relies on: the backlog branch and per-item code branches."""
-import json
 import re
 import subprocess
+import time
 from pathlib import Path
 
 BACKLOG_BRANCH = "devteam-backlog"
 BACKLOG_DIR = "backlog"
+LOCK_ATTEMPTS = 20
 
 
 class GitError(Exception):
@@ -19,7 +20,7 @@ def run(directory, *args):
 def must(directory, *args):
     out = run(directory, *args)
     if out.returncode:
-        raise GitError(f"git {' '.join(args)}: {out.stderr.strip() or out.stdout.strip()}")
+        raise GitError(f"git {' '.join(map(str, args))}: {out.stderr.strip() or out.stdout.strip()}")
     return out.stdout.strip()
 
 
@@ -71,7 +72,21 @@ def fast_forward(directory, branch, remote_ref):
 
 
 def commit_all(directory, message, *paths):
-    """Commit everything, or just the given paths; returns False when nothing changed."""
+    """Commit everything, or just the given paths; returns False when nothing changed.
+
+    Writers that commit at the same moment collide on git's index lock, so a collision is waited out and the
+    whole commit tried again; each writer commits only its own paths, so a retry takes nothing of another's.
+    """
+    for attempt in range(1, LOCK_ATTEMPTS + 1):
+        try:
+            return _commit(directory, message, paths)
+        except GitError as exc:
+            if "index.lock" not in str(exc) or attempt == LOCK_ATTEMPTS:
+                raise
+            time.sleep(0.05 * attempt)
+
+
+def _commit(directory, message, paths):
     must(directory, "add", "-A", "--", *(paths or (".",)))
     if run(directory, "diff", "--cached", "--quiet", "--", *(paths or (".",))).returncode == 0:
         return False
@@ -79,11 +94,18 @@ def commit_all(directory, message, *paths):
     return True
 
 
-def ensure_backlog(top):
-    """Check out the backlog branch at backlog/, creating the branch if it does not exist anywhere."""
+def has_backlog(top):
+    return (Path(top) / BACKLOG_DIR / ".git").exists() or has_ref(top, f"refs/heads/{BACKLOG_BRANCH}") \
+        or has_ref(top, f"refs/remotes/origin/{BACKLOG_BRANCH}")
+
+
+def ensure_backlog(top, create=True):
+    """Check out the backlog branch at backlog/, creating the branch if it does not exist anywhere and create is set."""
     path = Path(top) / BACKLOG_DIR
     if (path / ".git").exists():
         return path
+    if not create and not has_backlog(top):
+        raise GitError(f"{top} has no {BACKLOG_BRANCH} branch; run dev-team init")
     if path.exists() and any(path.iterdir()):
         raise GitError(f"{path} exists but is not the {BACKLOG_BRANCH} worktree")
     common = Path(top, must(top, "rev-parse", "--git-common-dir"))
@@ -157,6 +179,13 @@ def finish_merge(directory, files):
     must(directory, "commit", "-q", "--no-edit")
 
 
+def abort_merge(directory):
+    """Abort the merge and discard whatever else was left in the working tree."""
+    must(directory, "merge", "--abort")
+    must(directory, "reset", "--hard", "-q", "HEAD")
+    must(directory, "clean", "-fdq")
+
+
 def sync_branch(directory, branch, base):
     """Rebase once, falling back to a single merge for conflict resolution."""
     remote = f"refs/remotes/origin/{base}"
@@ -182,7 +211,6 @@ def sync_branch(directory, branch, base):
     if result.returncode and not files:
         raise GitError(result.stderr.strip() or result.stdout.strip())
     if files:
-        must(directory, "config", f"branch.{branch}.conflicts", json.dumps(files))
         return "conflicted"
     finish_merge(directory, [])
     return "completed"

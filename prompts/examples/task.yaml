@@ -1,0 +1,15 @@
+# Task example: technical, small and self-contained; may name files and functions relative to the project root
+title: Extract InputWidget as a component
+parent: STORY-NNN # Required. The story or bug this task belongs to; NNN stands for any item ID
+context: |
+  `src/components/RecipeSearchWidget.tsx`, `src/components/RecipeForm.tsx` and `src/components/UserForm.tsx`
+  all use <input type="text" ...> input fields with the same rules and rendering.
+change: |
+  Create `src/components/InputWidget.tsx` and replace the individual uses of <input type="text" ...> in those
+  three components with it.
+acceptance_criteria:
+  - InputWidget supports the validation rules currently applied in RecipeSearchWidget, RecipeForm and UserForm
+  - RecipeSearchWidget, RecipeForm and UserForm render no <input type="text" ...> of their own
+  - RecipeSearchWidget, RecipeForm and UserForm behave as they did before the change
+  - CSS for input widget styling is only defined once
+  - The existing journey tests should pass without changes

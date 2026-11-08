@@ -1,4 +1,4 @@
-"""Mask machine paths in Markdown records and newly committed backlog text."""
+"""Mask machine paths in newly committed backlog text."""
 import difflib
 import os
 import re
@@ -69,17 +69,11 @@ class PathGuard:
             for tag, _, _, start, end in difflib.SequenceMatcher(None, before, lines, autojunk=False).get_opcodes():
                 if tag in {"insert", "replace"}:
                     selected.update(range(start, end))
-            item = path.suffix == ".md" and Path(name).parts[0] in {"epics", "stories", "tasks", "bugs", "requests"}
-            if item and lines and lines[0].rstrip("\r\n") == "---":
-                end = next((i for i in range(1, len(lines)) if lines[i].rstrip("\r\n") == "---"), None)
-                if end is not None:
-                    selected.difference_update(range(end + 1))
             masked, numbers = self.mask(text, selected)
             if not numbers:
                 continue
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
-            saved = (root / "log" / path.stem / f"unmasked-{stamp}.md" if item else
-                     root / "log" / "unmasked" / f"{stamp}-{name.replace('/', '__')}")
+            saved = root / "log" / "unmasked" / f"{stamp}-{name.replace('/', '__')}"
             saved.parent.mkdir(parents=True, exist_ok=True)
             saved.write_bytes(text.encode("utf-8"))
             path.write_bytes(masked.encode("utf-8"))

@@ -1,0 +1,47 @@
+initial: captured
+steps:
+  captured:
+    owner: human
+    outcomes:
+      analyse:
+        next: analysis
+        means: The request says what you want well enough for the product owner to start.
+
+  analysis:
+    owner: agent:product_owner
+    prompt: analysis/product-owner.md
+    output: requirements
+    outcomes:
+      questions:
+        next: answering
+        means: The work cannot be divided without the customer's answers to the questions added to the request.
+      drafted:
+        next: review
+        means: Every draft item the request needs exists and is listed in work_items.
+
+  answering:
+    owner: human
+    output: requirements
+    outcomes:
+      answered:
+        next: analysis
+        means: Every question on the request has an answer beneath it.
+
+  review:
+    owner: human
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        feedback: {type: string}
+    outcomes:
+      approve:
+        next: done
+        means: The drafts cover the request; each is ready for analysis when played.
+      revise:
+        next: analysis
+        means: The drafts need changing first; say why under Feedback before choosing this.
+
+  done:
+    owner: human
+    outcomes: {}

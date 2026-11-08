@@ -1,8 +1,7 @@
-Resolve the merge of origin/{{base}} into {{branch}} in {{checkout}}.
-The previously conflicted files are:
-{{conflicted_files}}
+The customer has accepted this {{ item.type }} for publishing, and bringing its
+branch up to date with {{ base }} before the pull request stopped at conflicts.
+Resolve them as you would before review: the change being published is the one
+the customer accepted, so keep its behaviour exactly and take nothing more from
+{{ base }} than the merge needs.
 
-Resolve all conflict markers in one round, keeping the intended changes from
-both branches. Do not run `git commit` yourself: the harness commits the merge
-after `resolved`. If you cannot resolve it, reply `blocked`; the harness will
-abort the merge and return the item to ready.
+{% include "resolve.md" %}

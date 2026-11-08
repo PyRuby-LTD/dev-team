@@ -1,0 +1,88 @@
+# Draft story example: what request analysis leaves for story analysis to detail when the story is played
+title: Filter recipes by name and tags
+parent: # The epic this story belongs to.
+depends_on:
+  - STORY-NNN # Leave it off when this story has no dependencies
+overview: |
+    As a family member,
+    I want to search for recipes by partial name and / or tags
+    So that I can add them to my meal plan
+scope: | 
+    Adding a meal plan requires a recipe ID, a date, a member ID and a meal slot.
+    The current endpoint GET /group/{group_id}/recipes returns a list of all recipes for the family.
+    Add optional query parameters to the OpenAPI spec and return the results in a Results object.
+    Search endpoints share the Results envelope so pagination, timestamps and other metadata can
+    be added later without breaking callers.
+
+    Breaking change: the response changes from an array of Recipe to a RecipeResults object,
+    so existing callers of this endpoint must be updated.
+
+    ```yaml
+    paths:
+      /group/{group_id}/recipes:
+        get:
+          summary: All recipes with optional filters
+          tags:
+            - Recipes
+          operationId: listRecipes # operationId format should be consistent with the language and framework being used
+          parameters:
+            - in: path
+              name: group_id
+              required: true
+              schema:
+                type: integer
+            - in: query
+              name: tags
+              schema: 
+                type: array
+                items:
+                  type: string
+            - in: query
+              name: name
+              schema:
+                type: string
+          responses:
+            "200": 
+              description: "Filtered list of recipes"
+              content:
+                application/json:
+                  schema:
+                    $ref: "#/components/schemas/RecipeResults"
+    components:
+      schemas:
+        Results:
+          type: object
+          description: >
+            Common envelope for search results. Search endpoints extend it rather than
+            returning bare arrays, so metadata such as pagination or timestamps can be
+            added later without a breaking change.
+          required:
+            - count
+            - results
+          properties:
+            count: 
+              type: integer
+              minimum: 0
+              description: count of total matching results
+            results:
+              type: array
+              items: {}
+          
+        RecipeResults:
+          allOf: 
+            - $ref: "#/components/schemas/Results"
+            - type: object
+              properties:
+                results:
+                  type: array
+                  items: 
+                    $ref: "#/components/schemas/Recipe"
+              
+        # use existing Recipe definition
+    ```
+glossary_changes:
+  - name: Tag
+    description: A user-defined string used to group recipes.
+persona_changes:
+  - name: Family member
+    description: A family member plans what meals to eat and adds them to a meal slot

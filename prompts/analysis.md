@@ -1,57 +1,66 @@
-Analyse this work item against the repository you are in. Do not change any
-files other than the work item.
+Analyse this {{ item.type }} against the repository as it is now, and settle it
+into something a competent engineer could build and a tester could verify
+without asking anyone. Do not change any files; your output is the item's
+requirement fields, submitted below.
 
-Establish whether the item is understood well enough to implement: what exists
-today, what would change, and whether its acceptance criteria are concrete and
-checkable. Record your findings under `## Analysis`, and add or tighten the
-item's `## Acceptance Criteria`.
+Read `README.md`, the glossary and the personas file first, then the code the
+{{ item.type }} touches, so you can say how the change alters what the
+application does today.
 
-On every pass through analysis, including rework, revise the requirements so
-an implementer and tester working only from the statement, `## Context` and
-`## Acceptance Criteria` have everything they need to build and verify the
-story, bug or task. Only those parts are the requirements; `## Analysis`
-remains a working record of your repository findings.
+- Keep the customer's own words. Revise the overview only when a decision
+  changes what the {{ item.type }} is about.
+- Every acceptance criterion comes from the customer: their request, their
+  answers or their feedback. What you learn from the code goes in `scope` or
+  `context`, never in a criterion you invented.
+- Criteria describe the new behaviour in the glossary's terms, not how to
+  build or test it, except that a task may name files and functions.
+- Add only what was asked for. Where you suspect an edge case, error handling
+  or the like is an oversight, ask rather than add it.
+- A change to a public API carries its contract fragment in `scope`.
+- New terms go in `glossary_changes`, new or changed personas in
+  `persona_changes`, and every persona the {{ item.type }} touches in
+  `personas_affected`.
+- Propose the standards the {{ item.type }} needs from those below, each with
+  the reason it applies, in `standards`. Leave out a standard it does not need.
 
-For a story, bug or task, put everything the implementer and tester need from
-findings or decisions into `## Context` and `## Acceptance Criteria`; the
-analyst or product owner may revise the statement, leaving original request
-text the customer wrote as written, and nothing needed may exist only in
-other sections.
+Submit only the fields you change. Nothing the implementer or tester needs may
+live only in a question, a finding or feedback: fold its effect into the
+requirements.
 
-Fold in your repository findings and the effect of answered questions,
-feedback received and challenges addressed: what changes about what is built
-and any information the tester needs to verify it. Do not copy or quote
-question, answer, feedback or challenge wording into Context or the criteria.
-Include a reason for a change only when the implementer or tester needs it.
-Nothing needed may remain only in working sections such as `## Analysis`,
-`## Questions`, `## Feedback` or `## Challenge`.
+If you cannot settle the {{ item.type }} without the customer, add one to five
+sharp questions to `questions` and choose `questions`. Ask about what you need
+to build it, offering the likely answers as options a) ... b) ... ending with
+one for something else. Earlier questions and their answers stay in place; do
+not answer your own. Assumptions you are comfortable stating are not
+questions.
+{% if pending | selectattr("output.findings", "defined") | list or pending | selectattr("output.feedback", "defined") | list %}
 
-In the text above the first `##` heading, the analyst or product owner may
-revise the "As a ... I want ... so that ..." statement when a decision changes
-what the story is about; the implementer, tester and reviewer may not revise
-it. Leave any original request text the customer wrote as written.
+Each finding and piece of feedback below must be addressed before you choose
+`analysed`: change the requirements, or ask the customer when only they can
+settle it.
+{% endif %}
 
-If you cannot proceed without an answer from the customer, add each question as
-an item in a numbered list under a `## Questions` heading in the item body and
-choose `questions`. The customer's reply appears beneath each question as
-`**Answer:** ...`. Leave earlier questions and their answers in place and add
-new questions to the end of the list. Assumptions you are comfortable
-stating are not questions. Otherwise choose `analysed`; the item then goes to a
-challenger before the customer sees it.
+## The {{ item.type }}: {{ item.title }}
 
-If the item has a `## Challenge` section, it was sent back to you. Address each
-finding in the item, by changing it or by asking the customer, before choosing
-`analysed` again.
+~~~yaml
+{{ requirements | yaml }}~~~
+{% for entry in pending if entry.output %}
 
-Do not write an `**Answer:**` line under a new question; the customer's reply
-is added beneath it. Keep one `## Questions` heading and one numbered list
-across rounds, with no nested lists, and put findings elsewhere.
+## Sent back by {{ entry.step }} ({{ entry.outcome }})
 
-Record dependencies when this work needs code from another story, task or bug
-before implementation can start. Use `{{harness_command}} backlog depends-on
-<item-id> <dependency-id> ...` to replace the list, or omit dependency IDs to
-clear it. A valid `depends_on` change is permitted during analysis; keep other
-front-matter fields unchanged. Do not use epics or requests as dependencies.
-Dependencies must reach `done` before the first branch role starts. An
-`abandoned` dependency blocks unbranched work until the customer edits the
-list. Once the item's branch exists, dependencies no longer hold it.
+~~~yaml
+{{ entry.output | yaml }}~~~
+{% endfor %}
+
+## Standards you can propose
+{% include "_available_standards.md" %}
+{% set example %}{% include "examples/" ~ item.type ~ ".yaml" ignore missing %}{% endset %}
+{% if example %}
+
+## Example {{ item.type }}
+
+The shape and level of detail an analysed {{ item.type }} should reach. Submit only the requirement fields.
+
+~~~yaml
+{{ example }}~~~
+{% endif %}

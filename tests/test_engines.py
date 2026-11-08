@@ -6,10 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from devteam import engines, render
-from devteam.backlog import Repository
-from devteam.config import Role, load_roles
-from devteam.runner import Runner
-from tests.test_runner import WORKFLOW
+from devteam.config import Role
 
 
 # Recorded stream-json event shapes; UUID/session/usage fields are immaterial here.
@@ -32,7 +29,7 @@ class Streams(unittest.TestCase):
         script.write_text('import pathlib, sys\nsys.stdout.write(pathlib.Path("stdout").read_text())\n'
                           'sys.stdout.flush()\nsys.stderr.write(pathlib.Path("stderr").read_text())\n'
                           f'sys.exit({code})\n')
-        role = Role('analyst', 'arbitrary-name', 'm', 5, [sys.executable, str(script)], 'w', stream=stream)
+        role = Role('product_owner', 'arbitrary-name', 'm', 5, [sys.executable, str(script)], 'w', stream=stream)
         return engines.run(role, '', self.root, self.root, self.log, on_line=on_line)
 
     def test_recorded_stream_replies_and_raw_log(self):
@@ -102,32 +99,11 @@ pathlib.Path("exited").touch()
             observations.append((not (self.root / 'exited').exists(), line + '\n' in self.log.read_text()))
             (self.root / (line + '.ack')).touch()
 
-        role = Role('analyst', 'fake', 'm', 5, [sys.executable, str(script)], 'w')
+        role = Role('product_owner', 'fake', 'm', 5, [sys.executable, str(script)], 'w')
         self.assertEqual((0, 'stdout\n'), engines.run(role, '', self.root, self.root, self.log, on_line=listener))
         self.assertEqual(['stdout', 'stderr'], received)
         self.assertEqual([(True, True), (True, True)], observations)
         self.assertEqual('stdout\nstderr\n', self.log.read_text().split('\n\n', 1)[1])
-
-    def test_runner_passes_registered_listener(self):
-        workflows = self.root / 'workflows'
-        workflows.mkdir()
-        (workflows / 'default.json').write_text(json.dumps(WORKFLOW))
-        roles = load_roles()
-        repo = Repository(self.root / 'backlog', workflows, roles)
-        epic = repo.create('epic', 'Epic')
-        story = repo.create('story', 'Story', parent=epic.id)
-        repo.transition(story.id, 'analyse')
-        received = []
-
-        def engine(role, prompt, cwd, extra_dir, log, *, on_line):
-            on_line('live')
-            return 0, 'TRANSITION: ready'
-
-        runner = Runner(repo, roles, engine, report=lambda message: None)
-        runner.on_line = lambda item_id, line: received.append((item_id, line))
-        runner.run(once=True)
-        self.assertEqual([(story.id, 'live')], received)
-        self.assertEqual('ready', repo.scan().valid[story.id].metadata['step'])
 
 
 class Rendering(unittest.TestCase):

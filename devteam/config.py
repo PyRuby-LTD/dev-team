@@ -5,11 +5,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def harness_command() -> str:
+def harness_command(module: str = "devteam") -> str:
     path = str(ROOT)
     if any(char.isspace() or char in "*?[]()\"'\\" for char in path):
         raise ValueError("Harness checkout path cannot contain whitespace or * ? [ ] ( ) \" ' \\")
-    return f"uv run --project {path} python -P -m devteam"
+    return f"uv run --project {path} python -P -m {module}"
 
 
 @dataclass
@@ -21,7 +21,6 @@ class Role:
     command: list[str]
     permission: str
     branch: bool = False
-    record: bool = False
     push: bool = False
     stream: str = "text"
 
@@ -44,7 +43,6 @@ def load_roles(path: Path | None = None) -> dict[str, Role]:
             permission=engine["permission"],
             stream=engine.get("stream", "text"),
             branch=spec.get("branch", False),
-            record=spec.get("record", False),
             push=spec.get("push", False),
         )
     return roles

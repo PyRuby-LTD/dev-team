@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
-"""Offline gh stand-in, with per-endpoint fixtures and failure controls."""
+"""Offline gh stand-in, with per-call fixtures and failure controls.
+
+Each call is logged to GH_STUB_ARGV and answered from GH_STUB_FIXTURES/<kind>.json, where kind is
+state (pr view), list (pr list), create (pr create), or reviews, inline or conversation (api).
+"""
 import json
 import os
 from pathlib import Path
 import sys
 import time
 
+args = sys.argv[1:]
 with Path(os.environ["GH_STUB_ARGV"]).open("a") as log:
-    log.write(json.dumps(sys.argv[1:]) + "\n")
-kind = "state" if sys.argv[1:3] == ["pr", "view"] else "reviews" if sys.argv[2].endswith("/reviews") else (
-    "inline" if "/pulls/" in sys.argv[2] else "conversation")
+    log.write(json.dumps(args) + "\n")
+commands = {("pr", "view"): "state", ("pr", "list"): "list", ("pr", "create"): "create"}
+kind = commands.get(tuple(args[:2])) or (
+    "reviews" if args[1].endswith("/reviews") else "inline" if "/pulls/" in args[1] else "conversation")
 if os.environ.get("GH_STUB_FAIL") == kind:
     sys.stderr.write(os.environ.get("GH_STUB_ERROR", "stub gh: authentication failed") + "\n")
     sys.exit(1)

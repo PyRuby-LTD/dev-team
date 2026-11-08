@@ -1,0 +1,21 @@
+# Bug example
+title: Log file multi-line formatting
+parent: STORY-NNN # Optional. The epic, story or task whose behaviour is broken; NNN stands for any item ID
+current_behaviour: |
+  Stack trace lines are written as separate log lines:
+  ```
+  {"timestamp": "2026-05-12T11:02:12.142", "level": "ERROR", "message": "InvalidArgumentException"}
+  {"timestamp": "2026-05-12T11:02:12.142", "level": "ERROR", "stacktrace": "com.pyruby.fubar.Step:12"}
+  {"timestamp": "2026-05-12T11:02:12.142", "level": "ERROR", "stacktrace": "com.pyruby.fubar.Handler:43"}
+  ```
+expected_behaviour: |
+  Stack trace lines are captured in a single log message:
+  ```
+  {"timestamp": "2026-05-12T11:02:12.142", "level": "ERROR", "message": "InvalidArgumentException", "stacktrace": "com.pyruby.fubar.Step:12\ncom.pyruby.fubar.Handler:43"}
+  ```
+steps_to_reproduce:
+  - curl the REST API `curl http://localhost:8080/group/232/recipes?name=<name matching a broken recipe>`
+  - The response is a 500 Server Error
+  - The log file contains multiple log lines for the stack trace
+questions:
+  - question: |

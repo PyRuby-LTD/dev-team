@@ -1,77 +1,127 @@
-Analyse this request as the product owner. Establish the customer's audience,
-problem, desired outcome and boundaries. Consult the architect, platform
-engineer or quality lead by choosing their transition when their input would
-help. Record what input you need in the request body. You alone can choose
-`complete`, which hands the request to the customer for review.
+Analyse this request as the product owner. Do not change any files in the
+repository; the backlog commands below write the work items.
 
-Read the customer's text, all previous findings and answers, and the latest
-feedback. Preserve them in the request body. Record your findings under a
-heading for your role so the next owner understands what you learned.
+Work at the level of the idea: the audience, the problem, the desired outcome
+and the boundaries of the request, and how the work divides into epics,
+stories, bugs and tasks. Understand the application from `README.md`, the
+glossary and the personas file, and look at the code only enough to see which
+parts of the application the request touches. Each item gets a detailed
+analysis against the codebase and the user journeys when it is played; that
+is where acceptance criteria are written and implementation questions asked.
 
-If you need the customer's answer, append numbered questions under the existing
-`## Questions` heading (create it if absent) and choose `questions`. Answers
-appear beneath each question as `**Answer:** ...`. Keep earlier questions and
-answers, and add new questions to the end of that list. Put findings outside
-the Questions section. State reasonable assumptions instead of asking needless
-questions. Do not change the request's front matter; requests cannot carry dependencies.
+Analyse the request through every lens below. Each lens gives the opinions to
+apply and the questions to ask yourself. Where a lens has nothing to say about
+this request, say so in a line, such as "no platform impact". Apply every rule
+below to what you write.
 
-Before choosing `complete`, create the necessary epics, stories, tasks and bugs
-through the existing capture code. Use `{{harness_command}} --product <product>
-backlog capture <type> "<title>" --file <body-file>`; the product is the repository
-you are running in, and its backlog must be the directory containing this
-request.
-Write each body file inside the repository, since you cannot write outside it,
-and delete it once the item is captured.
-Create epics first, stories with `--parent EPIC-...`, tasks with a story or bug
-parent, and bugs with an optional epic, story or task parent. Include concrete
-acceptance criteria reflecting the answers and specialist findings in each
-body. Epics are grouping items with no workflow; other types start at their
-own workflow's initial step. Do not move any created item.
+If you cannot divide the request into work without the customer's answers, add
+each question to `questions` and choose `questions`. Ask about the idea, not
+the implementation. Ask one to five sharp questions, offering the likely
+answers as options a) ... b) ... ending with one for something else. Earlier
+questions and their answers stay in place; new questions go to the end.
+Assumptions you are comfortable stating are not questions. Do not write an
+answer to your own question.
 
-List every created item's ID, title and purpose under `## Created work items`
-in the request body. Before completing, run backlog validate and check that
-all listed items exist, have valid links, and remain at their initial steps.
-On `revise`, read the customer's feedback, update the listed items' bodies as
-needed and reuse their IDs; avoid duplicating previously captured work.
+Otherwise draft the work items that deliver the request. Capture each one with
 
-For the stories, bugs and tasks you capture or revise, only the statement,
-`## Context` and `## Acceptance Criteria` are the requirements. On every pass,
-including `revise`, make those parts give an implementer and tester working
-only from them everything they need to build and verify the work. This rule
-does not apply to the request body: it remains a working document preserving
-the customer's text, findings and answers as instructed above.
+```
+{{ harness_command }} backlog create <type> "<title>" <<'ITEM'
+<fields>
+ITEM
+```
 
-For a story, bug or task, put everything the implementer and tester need from
-findings or decisions into `## Context` and `## Acceptance Criteria`; the
-analyst or product owner may revise the statement, leaving original request
-text the customer wrote as written, and nothing needed may exist only in
-other sections.
+where `<type>` is `epic`, `story`, `bug` or `task` and `<fields>` is YAML in
+the shape of the examples below, without the title. The command prints the new item's ID and
+refuses fields it cannot accept, saying why. Create epics before their
+stories, and an item before anything that depends on it, so `parent` and
+`depends_on` can name them. Then submit every ID you created as `work_items`
+and choose `drafted`; the customer reviews the drafts.
 
-Fold in the effect of answered questions, feedback received, challenges
-addressed and specialist findings: what changes about what is built and any
-information the tester needs to verify it. Do not copy or quote question,
-answer, feedback or challenge wording into Context or the criteria. Include
-a reason for a change only when the implementer or tester needs it. Nothing
-needed may remain only in working sections such as `## Analysis`,
-`## Questions`, `## Feedback` or `## Challenge`.
+A draft carries a statement, rough scope, and first-pass glossary and persona
+changes. Leave acceptance criteria to analysis. The exception is a change to a
+public API: the draft's scope carries the proposed contract in full, so the
+customer can challenge it now.
 
-In a captured story, bug or task's text above the first `##` heading, the
-analyst or product owner may revise the "As a ... I want ... so that ..."
-statement when a decision changes what the story is about; the implementer,
-tester and reviewer may not revise it. Leave any original request text the
-customer wrote as written.
+- An epic is a grouping label: a title and a one-line outcome. No role working
+  on a story reads its epic, so put any boundary or constraint a story needs
+  into that story's scope.
+- A story is an independently testable slice delivered end to end. Do not
+  split front end from back end, or one area with little logic, such as basic
+  CRUD for a new entity, into several stories.
+- A story's "As a ..." names a persona from the personas file, or one proposed
+  in its `persona_changes`.
+- A bug states the current behaviour, the expected behaviour and the steps to
+  reproduce it.
+- A task is technical, small and self-contained, and belongs to a story or a
+  bug.
+- A new product starts with a walking skeleton as its first item.
+- Record `depends_on` when an item needs code from another before it can be
+  built. Epics and requests neither carry nor serve as dependencies.
 
-Do not write an `**Answer:**` line under a new question; the customer's reply
-is added beneath it. Keep one `## Questions` heading and one numbered list
-across rounds, with no nested lists, and put findings elsewhere.
+Draft only what the customer asked for. You may ask whether to add things such
+as error handling or pagination, but add them only when the customer says so.
 
-When captured work builds on code from other stories, tasks or bugs, record
-those IDs as dependencies. Add one `--depends-on <id>` option per dependency
-to the capture command. To replace an existing item's list use
-`{{harness_command}} --product <product> backlog depends-on <item-id>
-<dependency-id> ...`; omit dependency IDs to clear it. Commands validate before
-writing and commit successful edits. Epics and requests cannot carry or serve
-as dependencies. Only `done` satisfies a dependency; `abandoned` blocks an
-unbranched item until the customer edits its list. The hold starts at the first
-branch role, leaving analysis available, and has no effect after the item's
-branch exists. Capture prerequisites before work that depends on them.
+When the request comes back from review, change the drafts it lists rather than
+adding duplicates. Replace an item's fields with
+
+```
+{{ harness_command }} backlog update <id> <<'ITEM'
+<fields>
+ITEM
+```
+
+where a field set to `null` is removed. Submit `work_items` again with every
+draft the request now needs.
+
+A draft the request no longer needs comes out of `work_items`. Never delete,
+close or empty it; the customer marks it won't fix. Add it to `dropped` with
+the reason it is no longer needed, keeping any earlier entries:
+
+```
+dropped:
+  - id: STORY-NNN
+    reason: <why the request no longer needs it>
+```
+
+## The request: {{ item.title }}
+
+~~~yaml
+{{ requirements | yaml }}~~~
+{% for entry in pending if entry.output %}
+
+## Sent back by {{ entry.step }} ({{ entry.outcome }})
+
+~~~yaml
+{{ entry.output | yaml }}~~~
+{% endfor %}
+{% if work_items %}
+
+## Drafts
+
+{% for draft in work_items %}
+~~~yaml
+{{ draft | yaml }}~~~
+{% endfor %}
+{% endif %}
+{% for kind, heading in [("lens", "Lens"), ("rule", "Rule")] %}
+{% for standard in available_standards if standard.kind == kind %}
+
+## {{ heading }}: {{ standard.name }}
+
+{{ standard.description }}
+
+{{ standard.body }}
+{% endfor %}
+{% endfor %}
+
+## Example draft story
+
+The shape and level of detail a story should reach at this stage.
+
+~~~yaml
+{% include "examples/draft-story.yaml" %}~~~
+
+## Example epic
+
+~~~yaml
+{% include "examples/epic.yaml" %}~~~
