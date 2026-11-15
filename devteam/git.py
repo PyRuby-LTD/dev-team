@@ -74,16 +74,22 @@ def fast_forward(directory, branch, remote_ref):
 def commit_all(directory, message, *paths):
     """Commit everything, or just the given paths; returns False when nothing changed.
 
-    Writers that commit at the same moment collide on git's index lock, so a collision is waited out and the
-    whole commit tried again; each writer commits only its own paths, so a retry takes nothing of another's.
+    Writers that commit at the same moment collide on git's index lock, or find HEAD moved under them
+    ("cannot lock ref 'HEAD'"), so a collision is waited out and the whole commit tried again; each writer
+    commits only its own paths, so a retry takes nothing of another's.
     """
     for attempt in range(1, LOCK_ATTEMPTS + 1):
         try:
             return _commit(directory, message, paths)
         except GitError as exc:
-            if "index.lock" not in str(exc) or attempt == LOCK_ATTEMPTS:
+            if not _contended(exc) or attempt == LOCK_ATTEMPTS:
                 raise
             time.sleep(0.05 * attempt)
+
+
+def _contended(exc):
+    message = str(exc)
+    return "index.lock" in message or "cannot lock ref 'HEAD'" in message
 
 
 def _commit(directory, message, paths):
