@@ -31,13 +31,18 @@ steps:
       properties:
         findings:
           type: array
+          description: Most damaging first.
           items:
             type: object
             additionalProperties: false
             required: [concern, finding]
             properties:
-              concern: {type: string}
-              finding: {type: string}
+              concern:
+                type: string
+                description: The finding in a few words.
+              finding:
+                type: string
+                description: What the item says, why it does not hold and what would fix it.
     outcomes:
       sound:
         next: ready
@@ -80,10 +85,15 @@ steps:
       type: object
       additionalProperties: false
       properties:
-        branch: {type: string}
-        blocked_by: {type: string}
+        branch:
+          type: string
+          description: The branch you worked on.
+        blocked_by:
+          type: string
+          description: With `blocked`, exactly what is blocked, what you tried and what you need from the customer.
         libraries_added:
           type: array
+          description: Every library you added.
           items:
             type: object
             additionalProperties: false
@@ -91,9 +101,34 @@ steps:
             properties:
               name: {type: string}
               licence: {type: string}
-        tech_tasks: {type: array, items: {type: string}}
-        surprises: {type: array, items: {type: string}}
-        opinions: {type: array, items: {type: string}}
+        tech_tasks:
+          type: array
+          description: Every tech task you created for this item, in this round or an earlier one.
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, why, summary]
+            properties:
+              id:
+                type: string
+                description: The task's ID, as `backlog create` printed it.
+              why:
+                enum: [refactor, disagreement, deferred]
+                description: "`refactor` you propose; `disagreement` with a finding you complied with; `deferred` for a design finding left for later."
+              summary:
+                type: string
+                description: The change the task asks for, in one line.
+              finding:
+                type: string
+                description: With `disagreement` or `deferred`, the `concern` of the finding it answers.
+        surprises:
+          type: array
+          description: Assumptions you made where the item was silent, and anything the reviewer or customer would not expect.
+          items: {type: string}
+        opinions:
+          type: array
+          description: Anything you introduced that the item did not ask for.
+          items: {type: string}
     outcomes:
       implemented:
         next: test
@@ -111,20 +146,31 @@ steps:
       properties:
         journeys:
           type: array
+          description: Each journey you considered for the item.
           items:
             type: object
             additionalProperties: false
             required: [journey, action]
             properties:
               journey: {type: string}
-              action: {enum: [extend, new, none]}
-              personas: {type: array, items: {type: string}}
-              reason: {type: string}
-        defects: {type: array, items: {type: string}}
+              action:
+                enum: [extend, new, none]
+                description: Whether you extended an existing journey test, wrote a new one, or left the journey without a test.
+              personas:
+                type: array
+                description: The personas the journey walks.
+                items: {type: string}
+              reason:
+                type: string
+                description: With `none`, why a test would add too little.
+        defects:
+          type: array
+          description: With `defect`, each one naming the failing test, what it expected and the log path `check` printed.
+          items: {type: string}
     outcomes:
       written:
         next: sync
-        means: Every journey the item adds or changes has a journey test, and the whole suite passes.
+        means: Every journey worth a test has one, and the whole suite passes.
       defect:
         next: implement
         means: A test shows the code misses a criterion or breaks existing behaviour.
@@ -151,7 +197,9 @@ steps:
       type: object
       additionalProperties: false
       properties:
-        blocked_by: {type: string}
+        blocked_by:
+          type: string
+          description: With `blocked`, which conflict, what you tried and what you need from the customer.
     outcomes:
       resolved:
         next: verify
@@ -185,23 +233,28 @@ steps:
       properties:
         findings:
           type: array
+          description: Most damaging first.
           items:
             type: object
             additionalProperties: false
-            required: [concern, finding, outcome]
+            required: [concern, finding]
             properties:
-              location: {type: string}
-              concern: {type: string}
-              finding: {type: string}
-              outcome: {enum: [fix, task]}
-              task: {type: string}
+              location:
+                type: string
+                description: The file and line the finding is about, where there is one.
+              concern:
+                type: string
+                description: The finding in a few words.
+              finding:
+                type: string
+                description: What is wrong and what would fix it; for a defect, the input or state that triggers it and the wrong result.
     outcomes:
       approve:
         next: accept
-        means: Every criterion is met and either proven by a test or accepted without one for its recorded reason.
+        means: The change is clean, simple and meets the acceptance criteria and only those; you have no findings.
       revise:
         next: implement
-        means: A criterion is unmet or unproven, or there is no change to approve.
+        means: There are findings for the implementer, or there is no change to approve.
 
   accept:
     owner: human
@@ -243,7 +296,9 @@ steps:
       type: object
       additionalProperties: false
       properties:
-        blocked_by: {type: string}
+        blocked_by:
+          type: string
+          description: With `blocked`, which conflict, what you tried and what you need from the customer.
     outcomes:
       resolved:
         next: verify-publish
@@ -276,11 +331,33 @@ steps:
       additionalProperties: false
       required: [pull_request, summary]
       properties:
-        pull_request: {type: integer}
-        summary: {type: string}
-        api_changes: {type: string}
-        surprises: {type: array, items: {type: string}}
-        opinions: {type: array, items: {type: string}}
+        pull_request:
+          type: integer
+          description: The pull request's number.
+        summary:
+          type: string
+          description: What the change does, as in the pull request's body.
+        api_changes:
+          type: string
+          description: The API changes, as in the pull request's body.
+        libraries_added:
+          type: array
+          description: Each library the body lists, with its licence.
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, licence]
+            properties:
+              name: {type: string}
+              licence: {type: string}
+        surprises:
+          type: array
+          description: Each surprise the body raises, as one line.
+          items: {type: string}
+        opinions:
+          type: array
+          description: Each opinion the body raises, as one line.
+          items: {type: string}
     outcomes:
       published:
         next: pull-request

@@ -1,6 +1,6 @@
-{% for standard in available_standards %}
+{% for standard in available_standards if standard.kind == "rule" %}
 
-### {{ standard.name }} ({{ standard.kind }})
+### {{ standard.name }}
 
 {{ standard.description }}
 

@@ -20,9 +20,19 @@ Outcomes:
 {% if step.output == "requirements" %}
 The output holds only the requirement fields you change: {{ requirement_fields | join(", ") }}. Each
 replaces the item's field, except `questions`: a question already on the item keeps its place, and a
-new one is added to the end.
+new one is added to the end. Submit only your new questions, each as its own entry:
+
+```yaml
+questions:
+  - question: |
+      <the question>
+      a) <a likely answer>
+      b) <another>
+      c) Something else
+```
 {% elif step.output %}
-The output must fit this JSON Schema:
+The output must fit this JSON Schema. Each field's `description` says what belongs in it; leave out a
+field you have nothing for, unless it is required:
 
 ```yaml
 {{ step.output | yaml }}```

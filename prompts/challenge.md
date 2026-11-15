@@ -1,28 +1,18 @@
 Challenge this {{ item.type }} before the customer decides whether to play it.
-Read it against the repository as it is now and against what the customer
-said: their answers to the questions and any feedback below. Do not change
-any files.
+Do not change any files.
 
-Besides the challenges in your brief, ask:
+Read it against what the customer said, in their answers and feedback below,
+and against the repository as it is now: `README.md`, the glossary, the
+personas file and the code the {{ item.type }} touches.
 
-- Is the {{ item.type }} consistent with itself?
-- Does it change a public API, and is every change set out in `scope`?
-- Would it change a user journey? Name the journey in a finding.
-- Are the personas it names in the personas file or in `persona_changes`?
-- Does it deliver value on its own?
-- Are the proposed standards right? A missing or unnecessary one is a finding.
-
-Give each finding a short `concern` and, in `finding`, what the item says, why
-it does not hold and what would fix it, most damaging first. Choose `rework`
-when a finding would change what is built or how it is judged, including one
-only the customer can settle: say what must be asked, and the product owner
-will ask it. Otherwise choose `sound`, with any minor findings for the
-customer to see. Do not manufacture findings.
+Submit your findings, each with a short `concern`. Choose `sound` when none of
+them needs the {{ item.type }} to change; any you submit with it are notes for
+the customer. Otherwise choose `rework`.
 
 ## The {{ item.type }}: {{ item.title }}
 
-~~~yaml
-{{ requirements | yaml }}~~~
+{% include "_requirements.md" %}
+{% include "_questions.md" %}
 {% set feedback = item.step_outputs | selectattr("output.feedback", "defined") | list %}
 {% if feedback %}
 
@@ -51,7 +41,12 @@ again unchanged.
 {{ entry.output | yaml }}~~~
 {% endfor %}
 
-## Standards
+## Standards the product owner could propose
 
-The proposed standards are in `standards` above; judge against these.
+Those it did propose are in `standards` above.
 {% include "_available_standards.md" %}
+
+## Example findings
+
+~~~yaml
+{% include "examples/challenge.yaml" %}~~~

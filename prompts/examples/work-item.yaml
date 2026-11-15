@@ -157,18 +157,18 @@ step_outputs:
         - location: ui/src/components/recipes/Recipe:112
           concern: glossary
           finding: Recipe shows a list of "labels" which should be a list of "tags".
-          outcome: fix # fix or task
         - concern: testing
           finding: Expected a journey test to be updated for filtering recipes
-          outcome: task
           task: TASK-NNN
   - step: implement
     outcome: implemented
     to: test
     passed: true
     output:
-      tech_tasks: # refactors proposed rather than done in this item
-        - TASK-NNN
+      tech_tasks:
+        - id: TASK-NNN
+          why: refactor # refactor, disagreement or deferred
+          summary: Extract the access log formatter from the request filter
   - step: test
     outcome: written
     to: sync

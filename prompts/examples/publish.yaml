@@ -1,7 +1,11 @@
-# Pull request example: the publisher's PR body - the title for the PR is taken from the work-item title
+# Publish example: the publisher's output, which mirrors the pull request's body
+pull_request: 42
 summary: Create an access log with one entry per request
-api_changes: # leave this off when there is no contract change for the REST or GraphQL API
-surprises: # Anything surprising or unexpected
+# api_changes: leave this off when there is no change to a public API
+libraries_added:
+  - name: logstash-logback-encoder
+    licence: Apache-2.0
+surprises:
   - Found 2 different log libraries available in the application. Configured access logging in logback.properties.
-opinions: # Opinions an agent introduced outside the scope of the story
-  - Introduced the logstash JSON appender library
+opinions:
+  - Wrote access logs to their own file rather than the application log

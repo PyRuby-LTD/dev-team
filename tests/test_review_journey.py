@@ -7,10 +7,8 @@ from tests.journey import submit
 from tests.test_implement_journey import blocked, implemented
 from tests.test_verify_journey import WRITTEN, Synced
 
-FINDINGS = [{"location": "planner.py:12", "concern": "correctness", "finding": "A week starting on Sunday loses a day",
-             "outcome": "fix"},
-            {"concern": "design", "finding": "The planner and printer share a date helper", "outcome": "task",
-             "task": "Extract the date helper"}]
+FINDINGS = [{"location": "planner.py:12", "concern": "correctness", "finding": "A week starting on Sunday loses a day"},
+            {"concern": "design", "finding": "The planner and printer share a date helper"}]
 
 REVISE = submit("revise", yaml.safe_dump({"findings": FINDINGS}))
 APPROVE = submit("approve")
