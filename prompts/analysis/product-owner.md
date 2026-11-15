@@ -1,28 +1,19 @@
-Analyse this request as the product owner. Do not change any files in the
-repository; the backlog commands below write the work items.
+This is the first pass: turn the customer's request into draft work items.
 
-Work at the level of the idea: the audience, the problem, the desired outcome
-and the boundaries of the request, and how the work divides into epics,
-stories, bugs and tasks. Understand the application from `README.md`, the
-glossary and the personas file, and look at the code only enough to see which
-parts of the application the request touches. Each item gets a detailed
-analysis against the codebase and the user journeys when it is played; that
-is where acceptance criteria are written and implementation questions asked.
+Work from the customer's request and what the application is for: `README.md`,
+the glossary, the personas file and the public API spec. Do not read the source
+code. Each draft gets its second pass, against the code, when it is played;
+acceptance criteria are written then, not now.
 
-Analyse the request through every lens below. Each lens gives the opinions to
-apply and the questions to ask yourself. Where a lens has nothing to say about
-this request, say so in a line, such as "no platform impact". Apply every rule
-below to what you write.
+Look at the request through every lens below. Answer a lens's questions
+yourself where the request and the documents let you. Take one to the customer
+only when its answer changes which work items the request needs.
 
-If you cannot divide the request into work without the customer's answers, add
-each question to `questions` and choose `questions`. Ask about the idea, not
-the implementation. Ask one to five sharp questions, offering the likely
-answers as options a) ... b) ... ending with one for something else. Earlier
-questions and their answers stay in place; new questions go to the end.
-Assumptions you are comfortable stating are not questions. Do not write an
-answer to your own question.
+If you cannot divide the request into work items without the customer, add your
+questions to `questions` and choose `questions`. Ask about what they want and
+why, not how it will be built.
 
-Otherwise draft the work items that deliver the request. Capture each one with
+Otherwise create the draft work items that deliver the request:
 
 ```
 {{ harness_command }} backlog create <type> "<title>" <<'ITEM'
@@ -30,39 +21,28 @@ Otherwise draft the work items that deliver the request. Capture each one with
 ITEM
 ```
 
-where `<type>` is `epic`, `story`, `bug` or `task` and `<fields>` is YAML in
-the shape of the examples below, without the title. The command prints the new item's ID and
-refuses fields it cannot accept, saying why. Create epics before their
-stories, and an item before anything that depends on it, so `parent` and
+`<type>` is `epic`, `story`, `bug` or `task`, and `<fields>` is YAML shaped like
+the examples below, without the title. The command prints the new item's ID,
+and refuses fields it cannot accept, saying why. Create an epic before its
+stories and an item before anything that depends on it, so `parent` and
 `depends_on` can name them. Then submit every ID you created as `work_items`
 and choose `drafted`; the customer reviews the drafts.
 
-A draft carries a statement, rough scope, and first-pass glossary and persona
-changes. Leave acceptance criteria to analysis. The exception is a change to a
-public API: the draft's scope carries the proposed contract in full, so the
-customer can challenge it now.
+A draft says what the work item is for:
 
-- An epic is a grouping label: a title and a one-line outcome. No role working
-  on a story reads its epic, so put any boundary or constraint a story needs
-  into that story's scope.
-- A story is an independently testable slice delivered end to end. Do not
-  split front end from back end, or one area with little logic, such as basic
-  CRUD for a new entity, into several stories.
-- A story's "As a ..." names a persona from the personas file, or one proposed
-  in its `persona_changes`.
-- A bug states the current behaviour, the expected behaviour and the steps to
-  reproduce it.
-- A task is technical, small and self-contained, and belongs to a story or a
-  bug.
+- A story has its `overview`, a rough `scope`, and any `glossary_changes` and
+  `persona_changes` you can already see. No `acceptance_criteria`.
+- A bug or a task is the customer's request set out in that type's fields, in
+  their words. Leave out a field the customer has given you nothing for; the
+  second pass fills it.
+- Draft a task only when the customer's request names the code to change. A
+  task belongs to a story or a bug.
 - A new product starts with a walking skeleton as its first item.
-- Record `depends_on` when an item needs code from another before it can be
-  built. Epics and requests neither carry nor serve as dependencies.
-
-Draft only what the customer asked for. You may ask whether to add things such
-as error handling or pagination, but add them only when the customer says so.
+- Record `depends_on` when an item needs another built first. Epics and
+  requests neither have dependencies nor are them.
 
 When the request comes back from review, change the drafts it lists rather than
-adding duplicates. Replace an item's fields with
+adding duplicates:
 
 ```
 {{ harness_command }} backlog update <id> <<'ITEM'
@@ -70,12 +50,12 @@ adding duplicates. Replace an item's fields with
 ITEM
 ```
 
-where a field set to `null` is removed. Submit `work_items` again with every
-draft the request now needs.
+A field set to `null` is removed. Submit `work_items` again with every draft
+the request now needs.
 
 A draft the request no longer needs comes out of `work_items`. Never delete,
 close or empty it; the customer marks it won't fix. Add it to `dropped` with
-the reason it is no longer needed, keeping any earlier entries:
+the reason, keeping any earlier entries:
 
 ```
 dropped:
@@ -85,8 +65,8 @@ dropped:
 
 ## The request: {{ item.title }}
 
-~~~yaml
-{{ requirements | yaml }}~~~
+{% include "_requirements.md" %}
+{% include "_questions.md" %}
 {% for entry in pending if entry.output %}
 
 ## Sent back by {{ entry.step }} ({{ entry.outcome }})
@@ -125,3 +105,17 @@ The shape and level of detail a story should reach at this stage.
 
 ~~~yaml
 {% include "examples/epic.yaml" %}~~~
+
+## Example bug
+
+A bug after its second pass. A draft may have less.
+
+~~~yaml
+{% include "examples/bug.yaml" %}~~~
+
+## Example task
+
+A task after its second pass. A draft may have less.
+
+~~~yaml
+{% include "examples/task.yaml" %}~~~

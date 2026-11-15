@@ -15,7 +15,10 @@ def implemented(change):
 libraries_added:
   - name: left-pad
     licence: MIT
-tech_tasks: [Extract the planner]
+tech_tasks:
+  - id: TASK-001
+    why: refactor
+    summary: Extract the planner
 surprises: [Weeks start on Sunday in the seed data]
 opinions: [The planner wants a service]
 """)
@@ -83,7 +86,7 @@ class ImplementAndTest(Played):
         implementation = self.story("STORY-001").step_outputs[-3].output
         self.assertEqual({"branch": "devteam/STORY-001",
                           "libraries_added": [{"name": "left-pad", "licence": "MIT"}],
-                          "tech_tasks": ["Extract the planner"], "surprises": ["Weeks start on Sunday in the seed data"],
+                          "tech_tasks": [{"id": "TASK-001", "why": "refactor", "summary": "Extract the planner"}], "surprises": ["Weeks start on Sunday in the seed data"],
                           "opinions": ["The planner wants a service"]}, implementation)
 
     def test_a_tester_defect_returns_the_item_to_implement_with_the_defects_pending(self):

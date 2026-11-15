@@ -21,5 +21,4 @@ merge, discarding your changes, and returns the {{ item.type }} to ready.
 
 ## The {{ item.type }}: {{ item.title }}
 
-~~~yaml
-{{ requirements | yaml }}~~~
+{% include "_requirements.md" %}

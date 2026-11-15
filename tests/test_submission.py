@@ -20,7 +20,6 @@ FINDINGS = """
 findings:
   - concern: glossary
     finding: Recipe shows "labels" which should be "tags".
-    outcome: fix
 """
 
 

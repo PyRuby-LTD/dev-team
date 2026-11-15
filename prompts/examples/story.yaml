@@ -23,16 +23,3 @@ persona_changes:
   - name: Support engineer
     description: The person responsible for ensuring the production application is working properly. When the system is not healthy, it is their job to investigate and raise bugs to fix the problem.
 # personas_affected: []  identifies all personas impacted by this story
-questions:
-  - question: |
-      What level should the logs be written at?
-      a) Write 2xx requests at DEBUG, 3xx and 4xx at INFO and 5xx at ERROR
-      b) Write them all at INFO
-      c) Write them all at DEBUG
-      d) Something else? 
-  - question: |
-      Timing - Should the elapsed time be captured and in what time-unit?
-      a) Do not capture elapsed time
-      b) Nanos - finest measurement but with slightly greater overhead.
-      c) Milliseconds - standard system time
-      d) Something else?

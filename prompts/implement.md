@@ -3,41 +3,35 @@ branch, {{ branch }}, made from {{ base }}. Leave your changes in the working
 tree: the harness commits them to the branch when you exit, so do not run
 `git commit` yourself.
 
-Build what the acceptance criteria ask for, and nothing they do not. Run the
-tests you wrote or changed and the tests of the code you modified; the full
-suite is run for you after the tester's step. The latest workflow check log is
-{{ verify_log }}.
-{% if item.glossary_changes %}
-
-Apply the glossary changes below to `glossary.md` on this branch, keeping the
-document consistent as a whole rather than appending.
-{% endif %}
+The full suite is run for you after the tester's step. The latest workflow
+check log is {{ verify_log }}.
 {% if pending | selectattr("output") | list %}
 
 Everything sent back to you below must be addressed before you choose
-`implemented`. Comply with review findings and with feedback; where you
-disagree, make the change anyway and raise a tech task with your alternative.
-For a tester's defect, fix the code rather than the test.
+`implemented`.
 {% endif %}
 
-Record in your output:
+Create a tech task with
 
-- `branch`: the branch you worked on.
-- `libraries_added`: every library you added, with its licence.
-- `tech_tasks`: refactors you propose and disagreements you record, each
-  naming the change and the target pattern.
-- `surprises`: assumptions you made where the item was silent, and anything
-  the reviewer or customer would not expect.
-- `opinions`: anything you introduced that the item did not ask for.
-- `blocked_by`: when you choose `blocked`, exactly what is blocked, what you
-  tried and what you need from the customer.
+```
+{{ harness_command }} backlog create task "<title>" <<'ITEM'
+parent: {{ item.id }}
+<fields>
+ITEM
+```
 
-Leave out a field you have nothing for.
+where `<fields>` is YAML shaped like the example task below, without the
+title. The command prints the new task's ID; record each one in `tech_tasks`.
+{% set earlier = item.step_outputs | selectattr("step", "equalto", step.name) | selectattr("output") | list %}
+{% if earlier %}
+
+Your output describes the whole {{ item.type }}, not only this round. Carry
+forward everything you recorded last time that still holds, and add to it.
+{% endif %}
 
 ## The {{ item.type }}: {{ item.title }}
 
-~~~yaml
-{{ requirements | yaml }}~~~
+{% include "_requirements.md" %}
 {% for entry in pending if entry.output %}
 
 ## Sent back by {{ entry.step }} ({{ entry.outcome }})
@@ -45,4 +39,17 @@ Leave out a field you have nothing for.
 ~~~yaml
 {{ entry.output | yaml }}~~~
 {% endfor %}
+{% if earlier %}
+
+## What you recorded last time ({{ earlier[-1].outcome }})
+
+~~~yaml
+{{ earlier[-1].output | yaml }}~~~
+
+{% endif %}
 {% include "_standards.md" %}
+
+## Example task
+
+~~~yaml
+{% include "examples/task.yaml" %}~~~
